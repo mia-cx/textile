@@ -1,21 +1,39 @@
 {
-  "$schema": "https://turbo.build/schema.json",
-  "ui": "tui",
-  "tasks": {
-    "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
-    },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
-    "check-types": {
-      "dependsOn": ["^check-types"]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
+    "$schema": "https://turbo.build/schema.json",
+    "globalDependencies": ["**/*.{env,vars}*", "**/*.{env,vars}!.example"],
+    "ui": "tui",
+    "tasks": {
+        "build": {
+            "dependsOn": ["^build"],
+            "outputs": ["dist/**"]
+        },
+        "deploy": {
+            "dependsOn": ["build", "test"]
+        },
+        "dev": {
+            "cache": false,
+            "dependsOn": [],
+            "interactive": true,
+            "persistent": true
+        },
+        "dev:host": {
+            "cache": false,
+            "dependsOn": [],
+            "interactive": true,
+            "persistent": true
+        },
+        "format": {},
+        "lint": {
+            "dependsOn": ["format"]
+        },
+        "test": {
+            "dependsOn": ["build", "lint"],
+            "inputs": ["src/**", "test*/**", "static/**"],
+            "outputs": ["dist/**"]
+        },
+        "test:watch": {
+            "cache": false,
+            "persistent": true
+        }
     }
-  }
 }
