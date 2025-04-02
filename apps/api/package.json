@@ -1,0 +1,21 @@
+{
+	"name": "api",
+	"version": "0.1.0",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy --minify --env canary",
+		"deploy:canary": "wrangler deploy --minify --env canary",
+		"deploy:prod": "wrangler deploy --minify --env production"
+	},
+	"dependencies": {
+		"@hono/oauth-providers": "^0.7.0",
+		"@microsoft/microsoft-graph-client": "^3.0.7",
+		"hono": "^4.7.5",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20250327.0",
+		"prisma": "^6.5.0",
+		"wrangler": "^4.6.0"
+	}
+}

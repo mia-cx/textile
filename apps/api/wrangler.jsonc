@@ -1,0 +1,92 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"compatibility_date": "2025-03-26",
+	"main": "src/routes/index.ts",
+	"name": "textile-api",
+	"routes": [
+		{
+			"pattern": "*/api",
+			"zone_name": "mia.cx",
+		},
+		{
+			"pattern": "*/api/*",
+			"zone_name": "mia.cx",
+		},
+	],
+
+	"observability": {
+		"logs": {
+			"enabled": true,
+		},
+	},
+	"vars": {
+		"ENVIRONMENT": "development",
+		"VERSION": "1.0.0",
+	},
+	"env": {
+		"canary": {
+			"routes": [
+				{
+					"pattern": "canary.textile.mia.cx/api",
+					"zone_name": "mia.cx",
+				},
+				{
+					"pattern": "canary.textile.mia.cx/api/*",
+					"zone_name": "mia.cx",
+				},
+			],
+			"vars": {
+				"ENVIRONMENT": "canary",
+				"VERSION": "0.1.0",
+			},
+		},
+		"production": {
+			"routes": [
+				{
+					"pattern": "textile.mia.cx/api/*",
+					"zone_name": "mia.cx",
+				},
+				{
+					"pattern": "textile.mia.cx/api",
+					"zone_name": "mia.cx",
+				},
+			],
+			"vars": {
+				"ENVIRONMENT": "production",
+				"VERSION": "1.0.0",
+			},
+		},
+	},
+	// "compatibility_flags": [
+	//   "nodejs_compat"
+	// ],
+	// "vars": {
+	//   "MY_VAR": "my-variable"
+	// },
+	// "kv_namespaces": [
+	//   {
+	//     "binding": "MY_KV_NAMESPACE",
+	//     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	//   }
+	// ],
+	// "r2_buckets": [
+	//   {
+	//     "binding": "MY_BUCKET",
+	//     "bucket_name": "my-bucket"
+	//   }
+	// ],
+	// "d1_databases": [
+	//   {
+	//     "binding": "MY_DB",
+	//     "database_name": "my-database",
+	//     "database_id": ""
+	//   }
+	// ],
+	// "ai": {
+	//   "binding": "AI"
+	// },
+	// "observability": {
+	//   "enabled": true,
+	//   "head_sampling_rate": 1
+	// }
+}
