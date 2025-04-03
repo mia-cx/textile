@@ -49,3 +49,22 @@ coverage
 
 # Vercel
 .vercel
+
+# Obsidian
+
+# OR only to exclude workspace cache
+**/.obsidian/workspace/*
+
+# Exclude plugins
+**/.obsidian/plugins
+
+# Exclude themes
+**/.obsidian/themes
+
+# This file is used to keep track of last auto backup/pull
+**/.obsidian-git-data
+
+# Exclude Untitled Notes
+**/Untitled*
+# Exclude "bad" names
+**/null*

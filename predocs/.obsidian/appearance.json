@@ -1,0 +1,8 @@
+{
+  "cssTheme": "FastPpuccin",
+  "accentColor": "#6de3d5",
+  "theme": "system",
+  "enabledCssSnippets": [
+    "Colored Sidebar Items"
+  ]
+}
