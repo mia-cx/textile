@@ -1,0 +1,16 @@
+# defaults
+#**/.git
+#**/.svn
+#**/.hg
+#**/node_modules
+
+**/.obsidian
+
+**/*-lock*
+
+**/apps/**
+**/packages/**
+
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock

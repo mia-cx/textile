@@ -1,0 +1,34 @@
+model User {
+    id        Int    @id @default(autoincrement())
+    public_id String @unique @default(nanoid(16))
+
+    password_hash String
+    password_salt String   @unique
+    password_date DateTime @updatedAt
+
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
+
+    email      String  @unique
+    phone      String?
+    first_name String?
+    last_name  String?
+
+    sessions Session[]
+}
+
+model Session {
+    id         Int      @id @default(autoincrement())
+    user_id    Int
+    expires_at DateTime
+
+    user User @relation(fields: [user_id], references: [id])
+}
+
+model InvalidatedToken {
+    token      String   @id
+    expires_at DateTime
+}
+
+model Account {
+}

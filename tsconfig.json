@@ -1,0 +1,4 @@
+{
+    "description": "The base configuration for all packages.",
+    "extends": "@mia-cx/config/typescript/svelte",
+}
