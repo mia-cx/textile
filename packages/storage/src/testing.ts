@@ -8,14 +8,29 @@ import { advisoryLocks } from './locks.ts'
 import * as schema from './schema.ts'
 import { createStorage, migrationsFolder } from './store.ts'
 
+let template: Promise<Blob> | undefined
+
+/**
+ * The data directory of a freshly migrated database. A new PGlite runs initdb in WebAssembly,
+ * about five times the cost of loading a data directory, and seconds of CPU on a busy machine, so
+ * each process pays it once.
+ */
+const migrated = () =>
+  (template ??= (async () => {
+    const client = new PGlite()
+    await migrate(drizzle(client, { schema }), { migrationsFolder })
+    const dump = await client.dumpDataDir('none')
+    await client.close()
+    return dump
+  })())
+
 /**
  * A migrated in-process Postgres (PGlite) for tests. Each call is a fresh, empty database. PGlite
  * has one session, which holds every advisory lock it takes.
  */
 export const inMemoryStorage = async (): Promise<Storage> => {
-  const client = new PGlite()
+  const client = new PGlite({ loadDataDir: await migrated() })
   const db = drizzle(client, { schema })
-  await migrate(db, { migrationsFolder })
   const locks = advisoryLocks(async () => ({
     query: async (text, values) =>
       (await client.query<Record<string, unknown>>(text, [...values])).rows,
