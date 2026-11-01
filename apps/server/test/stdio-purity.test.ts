@@ -12,12 +12,18 @@ interface Captured {
 }
 
 /**
- * Run the real binary as a subprocess, feed it JSON-RPC on stdin, and capture both streams.
+ * Run the real binary as a subprocess, feed it JSON-RPC on stdin, and capture both streams until it
+ * exits. The server holds its scope open deliberately, so once `done` holds for what it has
+ * written, the test ends it with SIGTERM.
  *
  * Nothing short of a subprocess proves this: an in-process test shares the parent's stdout and
  * would never notice a stray write.
  */
-const runServer = (stdin: string, env: Record<string, string>): Promise<Captured> =>
+const runServer = (
+  stdin: string,
+  env: Record<string, string>,
+  done: (output: { readonly stdout: string; readonly stderr: string }) => boolean = () => false,
+): Promise<Captured> =>
   new Promise((resolve) => {
     const child = spawn(TSX, [BIN], {
       env: { ...process.env, ...env },
@@ -26,30 +32,42 @@ const runServer = (stdin: string, env: Record<string, string>): Promise<Captured
 
     let stdout = ''
     let stderr = ''
+    const check = () => {
+      if (child.killed || !done({ stdout, stderr })) return
+      child.kill('SIGTERM')
+    }
     child.stdout.on('data', (c: Buffer) => {
       stdout += c.toString()
+      check()
     })
     child.stderr.on('data', (c: Buffer) => {
       stderr += c.toString()
+      check()
     })
 
     child.stdin.write(stdin)
 
-    const finish = (exitCode: number | null) =>
+    // 'close' rather than 'exit': stdio streams flush after the process exits, and a startup
+    // failure's stderr arrives in that window.
+    child.on('close', (exitCode) =>
       resolve({
         stdoutLines: stdout.split('\n').filter((l) => l.trim().length > 0),
         stderr,
         exitCode,
-      })
+      }),
+    )
+  })
 
-    // 'close' rather than 'exit': stdio streams flush after the process exits, and a startup
-    // failure's stderr arrives in that window.
-    child.on('close', finish)
-    // The server holds its scope open deliberately, so end the test on its own terms.
-    setTimeout(() => {
-      child.kill('SIGTERM')
-      setTimeout(() => finish(null), 300)
-    }, 6000)
+/** The server is ready and has written its whole answer to `tools/list`, request 2. */
+const answeredToolsList = ({ stdout, stderr }: { stdout: string; stderr: string }) =>
+  stderr.includes('discord-mcp ready on stdio') &&
+  stdout.split('\n').some((line) => {
+    try {
+      return (JSON.parse(line) as { id?: number }).id === 2
+    } catch {
+      // A line still arriving.
+      return false
+    }
   })
 
 const initialize = `${JSON.stringify({
@@ -67,10 +85,14 @@ const listTools = `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list
 
 describe('stdio purity', () => {
   it('writes only JSON-RPC to stdout and every log to stderr', async () => {
-    const { stdoutLines, stderr } = await runServer(initialize + listTools, {
-      DISCORD_TOKEN: 'test-token-not-used-without-a-call',
-      MCP_TRANSPORT: 'stdio',
-    })
+    const { stdoutLines, stderr } = await runServer(
+      initialize + listTools,
+      {
+        DISCORD_TOKEN: 'test-token-not-used-without-a-call',
+        MCP_TRANSPORT: 'stdio',
+      },
+      answeredToolsList,
+    )
 
     expect(stdoutLines.length).toBeGreaterThan(0)
 
@@ -87,10 +109,14 @@ describe('stdio purity', () => {
   }, 20_000)
 
   it('advertises the tracer-bullet tool over the real stdio transport', async () => {
-    const { stdoutLines } = await runServer(initialize + listTools, {
-      DISCORD_TOKEN: 'test-token-not-used-without-a-call',
-      MCP_TRANSPORT: 'stdio',
-    })
+    const { stdoutLines } = await runServer(
+      initialize + listTools,
+      {
+        DISCORD_TOKEN: 'test-token-not-used-without-a-call',
+        MCP_TRANSPORT: 'stdio',
+      },
+      answeredToolsList,
+    )
 
     const responses = stdoutLines.map((l) => JSON.parse(l) as { id?: number; result?: unknown })
     const toolsList = responses.find((r) => r.id === 2)?.result as
