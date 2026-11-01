@@ -1,6 +1,6 @@
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
-import type { OptOutWatcher } from '@discord-mcp/storage'
+import type { OptOutWatcher, Storage } from '@discord-mcp/storage'
 import { inMemoryStorage } from '@discord-mcp/storage/testing'
 import opus from '@discordjs/opus'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -29,6 +29,17 @@ const cleanup: Array<() => unknown> = []
 afterEach(async () => {
   for (const step of cleanup.splice(0).reverse()) await step()
 })
+
+/**
+ * Wait until `count` of the bot's shards have saved the session READY started. A host resumes a
+ * shard it takes over from that save, so a handover before it identifies afresh.
+ */
+const sessionsSaved = (storage: Storage, count: number) =>
+  vi.waitFor(async () =>
+    expect(
+      (await createTokenVault(Buffer.alloc(32, 1), storage).loadOnline())[0]?.sessions.size,
+    ).toBe(count),
+  )
 
 /** A bot online on a fake Gateway that routes voice joins to a fake voice server. */
 const start = async ({
@@ -556,6 +567,7 @@ describe('voice', () => {
     await vi.waitFor(() =>
       expect(gateway.connections.filter((c) => c.received[0]?.op === 2)).toHaveLength(2),
     )
+    await sessionsSaved(storage, 2)
     const before = gateway.connections.find(
       (c) => (c.received[0]?.d as { shard?: number[] } | undefined)?.shard?.[0] === 0,
     )
@@ -627,6 +639,7 @@ describe('voice', () => {
     )
     await other?.use(BOT_ID, TOKEN)
     await vi.waitFor(() => expect(gateway.connections[0]?.received[0]?.op).toBe(2))
+    await sessionsSaved(storage, 1)
 
     // As the relay does: the agent call records the bot without waiting, then joins.
     const used = owner?.use(BOT_ID, TOKEN)
@@ -670,6 +683,7 @@ describe('voice', () => {
     await vi.waitFor(() =>
       expect(gateway.connections.filter((c) => c.received[0]?.op === 2)).toHaveLength(2),
     )
+    await sessionsSaved(storage, 2)
 
     const joining = owner?.voice(BOT_ID)?.join(GUILD_ID, FAKE_VOICE_CHANNEL_ID, true)
     clock.advance(5_000)
