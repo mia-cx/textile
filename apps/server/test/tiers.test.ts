@@ -516,7 +516,10 @@ describe('workflow events across bot hosts', () => {
     )
     for (let n = 0; n < 50; n += 1)
       route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n } } })
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    // The first is dropped at its retry, a second on; the rest, already too old, right after it.
+    await vi.waitFor(() =>
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('its REST owner fetch failed')),
+    )
 
     // The owner comes back: the next event goes straight through.
     const ran: unknown[] = []
@@ -529,7 +532,10 @@ describe('workflow events across bot hosts', () => {
     )
     route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n: 50 } } })
     await vi.waitFor(() => expect(ran).toEqual([{ n: 50 }]))
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('50 events were dropped'))
+    // The router logs once the owner's answer is back, which can be after the owner ran it.
+    await vi.waitFor(() =>
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('50 events were dropped')),
+    )
     server.close()
   })
 
