@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { prepareScript } from '../src/bundle.ts'
 import { makeIsolateHost, type ScriptExecution } from '../src/isolate-host.ts'
+
+/**
+ * A deadline only a hung script reaches, for tests that are not about deadlines. A deadline runs
+ * from spawn, and starting workerd alone can take seconds on a busy machine.
+ */
+const UNHURRIED_MS = 15_000
 
 const execution = async (
   botId: string,
@@ -15,34 +21,80 @@ const execution = async (
   broker: async () => new Response(null, { status: 404 }),
 })
 
+/**
+ * An execution that holds its slot until `release`. Its script's first fetch reaches the broker,
+ * which marks it started and answers once released. Scheduling tests order runs with these, not
+ * with sleeps a slow workerd start can outlast.
+ */
+const held = async (botId: string) => {
+  const source = 'export default async () => { await fetch("http://hold.test/") }'
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let started = false
+  const run: ScriptExecution = {
+    ...(await execution(botId, source, UNHURRIED_MS)),
+    broker: async () => {
+      started = true
+      await released
+      return new Response(null)
+    },
+  }
+  return { run, release, started: () => started }
+}
+
 describe('the isolate host', () => {
-  it('kills a runaway script at its deadline while another bot keeps answering', async () => {
+  it('kills a runaway script at its deadline', async () => {
     const host = makeIsolateHost()
     const spin = await execution('1', 'export default () => { for (;;) {} }', 2000)
-    const answer = await execution('2', 'export default ({ client }) => client.user.username', 2000)
 
-    let spun = false
-    const spinning = host.run(spin).finally(() => {
-      spun = true
-    })
-    const answered = await host.run(answer)
-
-    expect(answered).toEqual({ outcome: 'completed', result: 'bot-2', logs: [] })
-    expect(spun).toBe(false)
-    expect(await spinning).toEqual({ outcome: 'timed_out', timeoutMs: 2000 })
+    expect(await host.run(spin)).toEqual({ outcome: 'timed_out', timeoutMs: 2000 })
 
     // The same bot runs again: the killed process took nothing with it.
-    const recovered = await host.run(await execution('1', 'export default () => "back"', 2000))
+    const recovered = await host.run(
+      await execution('1', 'export default () => "back"', UNHURRIED_MS),
+    )
     expect(recovered).toEqual({ outcome: 'completed', result: 'back', logs: [] })
+  })
+
+  it('keeps answering another bot while one script spins', async () => {
+    const host = makeIsolateHost()
+    let spinning = false
+    const stop = new AbortController()
+    const spin: ScriptExecution = {
+      ...(await execution(
+        '1',
+        'export default async () => { await fetch("http://spin.test/"); for (;;) {} }',
+        UNHURRIED_MS,
+      )),
+      broker: async () => {
+        spinning = true
+        return new Response(null)
+      },
+      signal: stop.signal,
+    }
+    const spun = host.run(spin)
+    await vi.waitFor(() => expect(spinning).toBe(true))
+
+    const answer = await execution(
+      '2',
+      'export default ({ client }) => client.user.username',
+      UNHURRIED_MS,
+    )
+    expect(await host.run(answer)).toEqual({ outcome: 'completed', result: 'bot-2', logs: [] })
+
+    stop.abort(new Error('done spinning'))
+    await expect(spun).rejects.toThrow('done spinning')
   })
 
   it('reports a script that never settles, or exhausts its heap, as crashed', async () => {
     const host = makeIsolateHost()
-    const waiting = await execution('1', 'export default () => new Promise(() => {})', 5000)
+    const waiting = await execution('1', 'export default () => new Promise(() => {})', UNHURRIED_MS)
     const hog = await execution(
       '2',
       'export default () => { const a = []; for (;;) a.push(new Array(1e6).fill(1)) }',
-      20_000,
+      UNHURRIED_MS,
     )
 
     const [never, oom] = await Promise.all([host.run(waiting), host.run(hog)])
@@ -56,7 +108,7 @@ describe('the isolate host', () => {
       await execution(
         '1',
         `export default () => { Array.prototype.toJSON = () => null; console.log('hi') }`,
-        5000,
+        UNHURRIED_MS,
       ),
     )
 
@@ -74,7 +126,7 @@ describe('the isolate host', () => {
           await attempt(() => require('../../../package.json')),
           await attempt(() => readFileSync('${process.cwd()}/package.json', 'utf8')),
         ]`,
-        5000,
+        UNHURRIED_MS,
       ),
     )
 
@@ -94,7 +146,7 @@ describe('the isolate host', () => {
           const { EmbedBuilder } = await import('discord.js')
           return [new EmbedBuilder().setTitle('dynamic').toJSON(), client instanceof Discord.Client]
         }`,
-        5000,
+        UNHURRIED_MS,
       ),
     )
 
@@ -107,7 +159,7 @@ describe('the isolate host', () => {
 
   it('returns a large result with multi-byte characters intact', async () => {
     const run = await makeIsolateHost().run(
-      await execution('1', `export default () => '€'.repeat(200000)`, 5000),
+      await execution('1', `export default () => '€'.repeat(200000)`, UNHURRIED_MS),
     )
 
     expect(run).toEqual({ outcome: 'completed', result: '€'.repeat(200000), logs: [] })
@@ -119,9 +171,9 @@ describe('the isolate host', () => {
     const slow = await execution(
       '1',
       'export default () => new Promise((r) => setTimeout(r, 500))',
-      5000,
+      UNHURRIED_MS,
     )
-    const quick = await execution('2', 'export default () => "quick"', 5000)
+    const quick = await execution('2', 'export default () => "quick"', UNHURRIED_MS)
 
     await Promise.all([
       host.run(slow).then(() => finished.push('slow')),
@@ -134,18 +186,24 @@ describe('the isolate host', () => {
   it('runs urgent executions in slots of their own, bounded like the rest', async () => {
     const host = makeIsolateHost(1)
     const finished: string[] = []
-    const sleep = (ms: number) => `export default () => new Promise((r) => setTimeout(r, ${ms}))`
-    const ordinary = await execution('1', sleep(2000), 5000)
-    const first = { ...(await execution('2', sleep(600), 5000)), urgent: true }
-    const second = { ...(await execution('3', sleep(0), 5000)), urgent: true }
+    const ordinary = await held('1')
+    const first = await held('2')
+    const second = await execution('3', 'export default () => 0', UNHURRIED_MS)
+    const runs = Object.entries({
+      ordinary: ordinary.run,
+      first: { ...first.run, urgent: true },
+      second: { ...second, urgent: true },
+    })
 
-    await Promise.all(
-      Object.entries({ ordinary, first, second }).map(([name, run]) =>
-        host.run(run).then(() => finished.push(name)),
-      ),
+    const all = Promise.all(
+      runs.map(([name, run]) => host.run(run).then(() => finished.push(name))),
     )
-
-    // Never behind the ordinary run, but one at a time in a single urgent slot.
+    await vi.waitFor(() => expect([ordinary.started(), first.started()]).toEqual([true, true]))
+    // One at a time in the single urgent slot, but never behind the ordinary run holding its own.
+    first.release()
+    await vi.waitFor(() => expect(finished).toEqual(['first', 'second']))
+    ordinary.release()
+    await all
     expect(finished).toEqual(['first', 'second', 'ordinary'])
   })
 
@@ -155,13 +213,13 @@ describe('the isolate host', () => {
     const busy = await execution(
       '1',
       'export default () => new Promise((r) => setTimeout(r, 300))',
-      5000,
+      UNHURRIED_MS,
     )
     const runs = [
       { ...busy, queue: 'bot-1:a', label: 'bot-1 a' },
       { ...busy, queue: 'bot-1:b', label: 'bot-1 b' },
       { ...busy, queue: 'bot-1:c', label: 'bot-1 c' },
-      { ...(await execution('2', 'export default () => 0', 5000)), label: 'bot-2' },
+      { ...(await execution('2', 'export default () => 0', UNHURRIED_MS)), label: 'bot-2' },
     ]
 
     await Promise.all(
@@ -174,90 +232,76 @@ describe('the isolate host', () => {
   it('never lets one bot hold every slot, so another bot answers its interaction at once', async () => {
     const host = makeIsolateHost(2)
     const finished: string[] = []
-    const slow = {
-      ...(await execution(
-        '1',
-        'export default () => new Promise((r) => setTimeout(r, 600))',
-        5000,
-      )),
-      urgent: true,
-    }
+    const [a, b] = [await held('1'), await held('1')]
     const runs = [
-      { ...slow, queue: 'bot-1:a', label: 'bot-1 a' },
-      { ...slow, queue: 'bot-1:b', label: 'bot-1 b' },
-      { ...(await execution('2', 'export default () => 0', 5000)), urgent: true, label: 'bot-2' },
+      { ...a.run, urgent: true, queue: 'bot-1:a', label: 'bot-1 a' },
+      { ...b.run, urgent: true, queue: 'bot-1:b', label: 'bot-1 b' },
+      {
+        ...(await execution('2', 'export default () => 0', UNHURRIED_MS)),
+        urgent: true,
+        label: 'bot-2',
+      },
     ]
 
-    await Promise.all(
+    const all = Promise.all(
       runs.map(({ label, ...run }) => host.run(run).then(() => finished.push(label))),
     )
-
+    // Bot 1 holds one of the two slots and waits for the other; bot 2 takes it.
+    await vi.waitFor(() => expect(finished).toEqual(['bot-2']))
+    expect(b.started()).toBe(false)
+    a.release()
+    await vi.waitFor(() => expect(b.started()).toBe(true))
+    b.release()
+    await all
     expect(finished).toEqual(['bot-2', 'bot-1 a', 'bot-1 b'])
   })
 
   it('skips an execution that waits for a slot past its admission deadline', async () => {
     const host = makeIsolateHost(1)
-    const busy = {
-      ...(await execution(
-        '1',
-        'export default () => new Promise((r) => setTimeout(r, 1500))',
-        5000,
-      )),
+    const busy = await held('1')
+    const late = {
+      ...(await execution('2', 'export default () => 0', UNHURRIED_MS)),
       urgent: true,
     }
-    const late = { ...(await execution('2', 'export default () => 0', 5000)), urgent: true }
 
-    const running = host.run(busy)
+    const running = host.run({ ...busy.run, urgent: true })
     await expect(host.run({ ...late, admitWithinMs: 300 })).rejects.toThrow('No process slot')
-    expect(await host.run(late)).toMatchObject({ outcome: 'completed' })
+    busy.release()
     expect((await running).outcome).toBe('completed')
+    expect(await host.run(late)).toMatchObject({ outcome: 'completed' })
   })
 
   it('stops waiting for a slot as soon as the execution is abandoned', async () => {
     const host = makeIsolateHost(1)
-    const busy = await execution(
-      '1',
-      'export default () => new Promise((r) => setTimeout(r, 1500))',
-      5000,
-    )
-    const waiting = await execution('2', 'export default () => 0', 5000)
+    const busy = await held('1')
+    const waiting = await execution('2', 'export default () => 0', UNHURRIED_MS)
 
-    const running = host.run(busy)
-    const started = Date.now()
+    const running = host.run(busy.run)
+    // Waited out, the admission deadline would refuse it with "No process slot".
     await expect(
-      host.run({ ...waiting, admitWithinMs: 5000, signal: AbortSignal.timeout(100) }),
-    ).rejects.toThrow()
-    expect(Date.now() - started).toBeLessThan(1000)
+      host.run({ ...waiting, admitWithinMs: UNHURRIED_MS, signal: AbortSignal.timeout(100) }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' })
+    busy.release()
     expect((await running).outcome).toBe('completed')
   })
 
   it('lets a bot past its share use idle slots while one stays free for another bot', async () => {
     const host = makeIsolateHost(4)
-    const finished: string[] = []
-    const slow = {
-      ...(await execution(
-        '1',
-        'export default () => new Promise((r) => setTimeout(r, 800))',
-        5000,
-      )),
-      urgent: true,
-    }
-    const runs = [
-      { ...slow, queue: 'bot-1:a', label: 'slow a' },
-      { ...slow, queue: 'bot-1:b', label: 'slow b' },
-      // A third deferred slash command of the same bot, past its share of two.
-      {
-        ...(await execution('1', 'export default () => 0', 5000)),
-        urgent: true,
-        queue: 'bot-1:c',
-        label: 'third',
-      },
+    const [a, b] = [await held('1'), await held('1')]
+    const running = [
+      host.run({ ...a.run, urgent: true, queue: 'bot-1:a' }),
+      host.run({ ...b.run, urgent: true, queue: 'bot-1:b' }),
     ]
+    // A third deferred slash command of the same bot, past its share of two, while both hold.
+    const third = {
+      ...(await execution('1', 'export default () => 0', UNHURRIED_MS)),
+      urgent: true,
+      queue: 'bot-1:c',
+    }
 
-    await Promise.all(
-      runs.map(({ label, ...run }) => host.run(run).then(() => finished.push(label))),
-    )
-
-    expect(finished[0]).toBe('third')
+    expect(await host.run(third)).toMatchObject({ outcome: 'completed' })
+    a.release()
+    b.release()
+    await Promise.all(running)
   })
 })
