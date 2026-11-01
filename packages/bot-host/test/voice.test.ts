@@ -184,14 +184,12 @@ const agentSocket = async () => {
 const daveReady = (voiceServer: Awaited<ReturnType<typeof fakeVoiceServer>>) =>
   vi.waitFor(() => expect(voiceServer.received).toContainEqual({ op: 23, d: { transition_id: 1 } }))
 
-/** Audio plays in real time, so this waits for as long as the longest clip. */
+/** Audio plays in real time, so this waits out the clip. */
 const stoppedSpeaking = (voiceServer: Awaited<ReturnType<typeof fakeVoiceServer>>) =>
-  vi.waitFor(
-    () =>
-      expect(voiceServer.received).toContainEqual(
-        expect.objectContaining({ op: 5, d: expect.objectContaining({ speaking: 0 }) }),
-      ),
-    { timeout: 5_000 },
+  vi.waitFor(() =>
+    expect(voiceServer.received).toContainEqual(
+      expect.objectContaining({ op: 5, d: expect.objectContaining({ speaking: 0 }) }),
+    ),
   )
 
 describe('voice', () => {

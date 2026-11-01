@@ -6,5 +6,6 @@ export default defineConfig({
     // The e2e suite talks to a real test guild. PLAN.md: explicit opt-in, never in ordinary CI.
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.e2e.test.ts'],
     testTimeout: 20_000,
+    setupFiles: ['./vitest.setup.ts'],
   },
 })

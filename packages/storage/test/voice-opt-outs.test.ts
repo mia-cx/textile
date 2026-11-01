@@ -48,7 +48,7 @@ it.skipIf(database === undefined)(
     )
     await admin.end()
     await vi.waitFor(() => expect(lost).toHaveLength(1))
-    await vi.waitFor(() => expect(live).toBe(2), { timeout: 5_000 })
+    await vi.waitFor(() => expect(live).toBe(2))
 
     const scope = { botId: '345678901234567890', guildId: '234567890123456789' }
     await writer.setVoiceOptOut(scope, USER_ID, true)

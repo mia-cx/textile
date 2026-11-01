@@ -460,7 +460,7 @@ describe('workflow events across bot hosts', () => {
     )
     for (const n of [1, 2, 3]) route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n } } })
 
-    await vi.waitFor(() => expect(ran).toHaveLength(3), { timeout: 5_000 })
+    await vi.waitFor(() => expect(ran).toHaveLength(3))
     expect(ran).toEqual(
       [1, 2, 3].map((n) => ({
         self: owner,
@@ -496,7 +496,7 @@ describe('workflow events across bot hosts', () => {
     route({ botId, token: botToken(botId), dispatch: { t: 'MESSAGE_CREATE', d: { n: 1 } } })
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(ran).toEqual([])
-    await vi.waitFor(() => expect(ran).toEqual([{ n: 1 }]), { timeout: 3_000 })
+    await vi.waitFor(() => expect(ran).toEqual([{ n: 1 }]))
     expect(own).toHaveBeenCalledTimes(2)
   })
 
@@ -528,7 +528,7 @@ describe('workflow events across bot hosts', () => {
       port,
     )
     route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n: 50 } } })
-    await vi.waitFor(() => expect(ran).toEqual([{ n: 50 }]), { timeout: 3_000 })
+    await vi.waitFor(() => expect(ran).toEqual([{ n: 50 }]))
     expect(log).toHaveBeenCalledWith(expect.stringContaining('50 events were dropped'))
     server.close()
   })
