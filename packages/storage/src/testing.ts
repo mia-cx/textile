@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
@@ -8,20 +9,28 @@ import { advisoryLocks } from './locks.ts'
 import * as schema from './schema.ts'
 import { createStorage, migrationsFolder } from './store.ts'
 
-let template: Promise<Blob> | undefined
-
 /**
  * The data directory of a freshly migrated database. A new PGlite runs initdb in WebAssembly,
- * about five times the cost of loading a data directory, and seconds of CPU on a busy machine, so
- * each process pays it once.
+ * about five times the cost of loading a data directory, and seconds of CPU on a busy machine.
  */
+export const migratedDataDir = async (): Promise<Blob> => {
+  const client = new PGlite()
+  await migrate(drizzle(client, { schema }), { migrationsFolder })
+  const dump = await client.dumpDataDir('none')
+  await client.close()
+  return dump
+}
+
+/** A file holding `migratedDataDir()`, which a test run's global setup writes once for all. */
+export const MIGRATED_DATA_DIR_ENV = 'DISCORD_MCP_TEST_PGLITE_DATA_DIR'
+
+let template: Promise<Blob> | undefined
+
+/** The run's migrated data directory, or else this process's own, made once. */
 const migrated = () =>
   (template ??= (async () => {
-    const client = new PGlite()
-    await migrate(drizzle(client, { schema }), { migrationsFolder })
-    const dump = await client.dumpDataDir('none')
-    await client.close()
-    return dump
+    const path = process.env[MIGRATED_DATA_DIR_ENV]
+    return path === undefined ? migratedDataDir() : new Blob([await readFile(path)])
   })())
 
 /**

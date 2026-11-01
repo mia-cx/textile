@@ -12,5 +12,6 @@ export default defineConfig({
     // ran the suite faster, not slower.
     maxWorkers: '50%',
     setupFiles: ['./vitest.setup.ts'],
+    globalSetup: ['./vitest.global-setup.ts'],
   },
 })
