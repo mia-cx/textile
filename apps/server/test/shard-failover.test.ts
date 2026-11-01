@@ -11,6 +11,7 @@ import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ownerOf } from '../src/router.ts'
 import { botToken } from './login-fixture.ts'
+import { reservedPort } from './support/ports.ts'
 
 /** The built binary: `pnpm check` builds before testing, and three hosts transpiling at once are slow. */
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
@@ -54,14 +55,6 @@ const fakeRest = async (gatewayUrl: string) => {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   }
-}
-
-const freePort = async () => {
-  const server = createServer().listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  const { port } = server.address() as AddressInfo
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-  return port
 }
 
 /** A bot ID whose shards rendezvous hashing spreads over more than one of `hosts`. */
@@ -148,7 +141,7 @@ describe('shard failover across bot host processes', () => {
     const databaseUrl = `postgres://postgres@${postgres.getServerConn()}/postgres`
     gateway = await fakeGateway()
     rest = await fakeRest(gateway.url)
-    const ports = [await freePort(), await freePort(), await freePort()]
+    const ports = [await reservedPort(), await reservedPort(), await reservedPort()]
     hosts = ports.map((port) => `http://127.0.0.1:${port}`)
     BOT_ID = botSpreadOver(hosts)
     TOKEN = botToken(BOT_ID)

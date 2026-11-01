@@ -14,6 +14,7 @@ import {
   routeDispatches,
 } from '../src/tiers.ts'
 import { botToken, config, discordOAuth, executor, login } from './login-fixture.ts'
+import { reservedPort } from './support/ports.ts'
 
 const BIN = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
 const TSX = fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url))
@@ -90,14 +91,6 @@ const fakeDiscord = async (tokens: ReadonlyMap<string, string>) => {
   }
 }
 
-const freePort = async () => {
-  const server = createServer().listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  const { port } = server.address() as AddressInfo
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-  return port
-}
-
 /** Start the real server binary as `name` and resolve with its port once it listens. */
 const startTier = (name: string, discordUrl: string, env: Record<string, string>) =>
   new Promise<{ readonly url: string; readonly stop: () => void }>((resolve, reject) => {
@@ -168,7 +161,7 @@ describe('central and bot-host tiers', () => {
   const bots: Array<{ id: string; token: string; host: string }> = []
 
   beforeAll(async () => {
-    const ports = [await freePort(), await freePort()]
+    const ports = [await reservedPort(), await reservedPort()]
     hosts = ports.map((port) => `http://127.0.0.1:${port}`)
     for (const [index, host] of hosts.entries()) {
       const id = botOwnedBy(hosts, host)
@@ -431,7 +424,7 @@ describe('workflow events across bot hosts', () => {
   }
 
   it("runs a bot's events on its REST owner, in order, once the owner holds the bot", async () => {
-    const ports = [await freePort(), await freePort()]
+    const ports = [await reservedPort(), await reservedPort()]
     const hosts = ports.map((port) => `http://127.0.0.1:${port}`)
     const [owner = '', other = ''] = hosts
     const botId = botOwnedBy(hosts, owner)
@@ -501,7 +494,7 @@ describe('workflow events across bot hosts', () => {
   })
 
   it('drops the events a down owner missed once they are too old, rather than queueing them', async () => {
-    const [port = 0] = [await freePort()]
+    const [port = 0] = [await reservedPort()]
     const owner = `http://127.0.0.1:${port}`
     const other = 'http://127.0.0.1:1'
     const botId = botOwnedBy([owner, other], owner)
