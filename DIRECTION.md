@@ -96,6 +96,8 @@ recovery decision. `PLAN.md` describes that historical design.
 ## Next
 
 - Staging on olympus, then runner isolation (gVisor, NetworkPolicy, per-bot cgroup limits).
+- A web dashboard: humans sign in with Discord in the browser and manage their bots and
+  workflows there, beside the agents that manage them over MCP.
 - Real-Discord smoke tests: voice send and receive, and a workflow.
 - Renaming the repository, packages, and deployment to Textile.
 - Before public sign-up: quotas, billing, abuse handling, a host-wide limit on webhook traffic,
