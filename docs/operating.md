@@ -1,6 +1,11 @@
-# Operating the relay
+---
+title: Operating the relay
+description: Run your own relay from source or containers, call it with curl, recover from failures, and keep its access list.
+order: 5
+---
 
-Configure one relay-owned Discord OAuth application as described in the README.
+Configure one relay-owned Discord OAuth application as described in the
+[README](https://github.com/mia-cx/textile#deploy).
 HTTP fails closed if its OAuth settings are missing. Each caller logs in with
 Discord and supplies a separate bot credential on every MCP request.
 

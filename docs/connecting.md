@@ -1,4 +1,8 @@
-# Add Discord MCP to your agent
+---
+title: Connect an agent
+description: Sign in with Discord once, save your bot token privately, and add Textile to Claude Code, Codex, Devin, Cursor, or any stdio MCP client.
+order: 1
+---
 
 Get the relay's MCP URL from its operator, plus permission to use it.
 Replace `https://YOUR_RELAY_HOST/mcp` below with that URL.
@@ -11,8 +15,8 @@ application; the relay operator configures that once.
 ## 1. Get the client scripts
 
 ```sh
-git clone https://github.com/mia-cx/discord-mcp.git
-cd discord-mcp
+git clone https://github.com/mia-cx/textile.git
+cd textile
 DISCORD_MCP_NODE="$(command -v node)"
 DISCORD_MCP_CLIENT="$(pwd)/scripts/client.mjs"
 ```
@@ -130,7 +134,7 @@ Start a new agent session or reconnect its MCP servers. In T3 Code, use
 **Restart agent session** in the command palette, then send a new message.
 
 Ask the agent to list the Discord servers its bot can access. It should discover
-eight tools, including `discord_api_search` and `discord_api_read`, and complete
+tools including `discord_api_search` and `discord_api_read`, and complete
 the read through the relay. No second OAuth login is needed for another agent
 under the same OS account; its bridges share the login and take turns refreshing it.
 
