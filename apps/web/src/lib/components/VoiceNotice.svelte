@@ -1,4 +1,6 @@
 <script lang="ts">
+import { tick } from 'svelte'
+
 /**
  * The notice a bot posts in a voice channel's chat before it relays anyone's voice, with its real copy and buttons
  * (packages/bot-host/src/consent.ts). The buttons answer as they do in Discord, with a reply only the clicker sees,
@@ -14,6 +16,15 @@ const UNDO: Record<Choice, string> = {
   all: 'Textile bots can relay your voice again.',
 }
 let reply = $state<{ choice: Choice; undone: boolean } | undefined>()
+let answer = $state<HTMLParagraphElement>()
+
+/** Undo removes its own button, so focus moves to the answer it leaves behind rather than falling to the page. */
+async function undo() {
+  if (!reply) return
+  reply = { ...reply, undone: true }
+  await tick()
+  answer?.focus()
+}
 </script>
 
 <div>
@@ -23,14 +34,19 @@ let reply = $state<{ choice: Choice; undone: boolean } | undefined>()
     <div class="min-w-0">
       <p class="author" data-markdown="skip">Your bot <span class="badge">App</span></p>
       <blockquote>I’m relaying voice in this channel to an AI agent.</blockquote>
-      <div class="actions">
-        <button type="button" class="discord-button" onclick={() => (reply = { choice: 'bot', undone: false })}>
-          Opt out here
-        </button>
-        <button type="button" class="discord-button" onclick={() => (reply = { choice: 'all', undone: false })}>
-          Opt out of all Textile bots
-        </button>
-      </div>
+      <!-- The Markdown twin keeps these labels: they are the notice's real wording. -->
+      <ul class="actions">
+        <li>
+          <button type="button" class="discord-button" data-markdown="keep" onclick={() => (reply = { choice: 'bot', undone: false })}>
+            Opt out here
+          </button>
+        </li>
+        <li>
+          <button type="button" class="discord-button" data-markdown="keep" onclick={() => (reply = { choice: 'all', undone: false })}>
+            Opt out of all Textile bots
+          </button>
+        </li>
+      </ul>
     </div>
   </div>
   <figcaption data-markdown="skip">A preview of the notice. Its buttons answer here, but change nothing in Discord.</figcaption>
@@ -42,9 +58,9 @@ let reply = $state<{ choice: Choice; undone: boolean } | undefined>()
         <div class="avatar" aria-hidden="true"></div>
         <div class="min-w-0">
           <p class="only-you">Only you can see this</p>
-          <p>{reply.undone ? UNDO[reply.choice] : OPT_OUT[reply.choice]}</p>
+          <p bind:this={answer} tabindex="-1">{reply.undone ? UNDO[reply.choice] : OPT_OUT[reply.choice]}</p>
           {#if !reply.undone}
-            <button type="button" class="discord-button mt-2" onclick={() => reply && (reply = { ...reply, undone: true })}>
+            <button type="button" class="discord-button mt-2" onclick={undo}>
               Undo
             </button>
           {/if}

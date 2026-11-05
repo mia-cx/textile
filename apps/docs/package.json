@@ -13,7 +13,7 @@
   "devDependencies": {
     "@discord-mcp/web": "workspace:*",
     "@svartz/config": "2.2.0",
-    "@svartz/theme-minimal": "2.2.0",
+    "@svartz/theme-api-docs": "2.2.0",
     "@svartz/ui": "2.2.0",
     "@svartz/vite": "2.2.0",
     "@sveltejs/adapter-static": "3.0.10",

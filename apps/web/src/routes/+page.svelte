@@ -38,7 +38,7 @@ const structuredData = JSON.stringify({
         <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in with Discord</a>
         <a class="button button-secondary" href="/docs/">Read the docs</a>
       </div>
-      <p class="mt-4 text-muted">Closed alpha. Access opens in rounds.</p>
+      <p class="mt-4 text-muted">Access opens in rounds, by invitation.</p>
     </div>
     <div class="hero-loom">
       <Loom />

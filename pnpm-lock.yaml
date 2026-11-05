@@ -53,7 +53,7 @@ importers:
       '@svartz/config':
         specifier: 2.2.0
         version: 2.2.0(@types/node@24.10.1)
-      '@svartz/theme-minimal':
+      '@svartz/theme-api-docs':
         specifier: 2.2.0
         version: 2.2.0(svelte@5.57.1)
       '@svartz/ui':
@@ -1949,6 +1949,12 @@ packages:
   '@svartz/plugins@2.2.0':
     resolution: {integrity: sha512-e/CFXN5eTHON931fGAhgkabLJ01PgoVxYAm9eMULXnpskYw4DYTJIszDwf2Q0L246WrwR1F3X9r92CMuUjso1A==}
     engines: {node: ^20.19.0 || >=22.12.0}
+
+  '@svartz/theme-api-docs@2.2.0':
+    resolution: {integrity: sha512-1PPWhnmLGYpg1n6ubelhuQICA468sGcVvkkcqzxg53J/sMvp0g/5VayKjVdkOlPFEuJk1uBmMkIhmfp+cWIX5w==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    peerDependencies:
+      svelte: ^5.0.0
 
   '@svartz/theme-minimal@2.2.0':
     resolution: {integrity: sha512-VEGYgXyzjp3rC95XhtO0ySIZ2d1cUpqBsPKfMETJtg0Ir8GpbyEFktsjNtA7gAyU6p55nxQHKxWMuWnpLdQrXg==}
@@ -5552,6 +5558,19 @@ snapshots:
       - react
       - supports-color
       - svelte
+
+  '@svartz/theme-api-docs@2.2.0(svelte@5.57.1)':
+    dependencies:
+      '@svartz/core': 2.2.0
+      '@svartz/theme-minimal': 2.2.0(svelte@5.57.1)
+      '@svartz/ui': 2.2.0(svelte@5.57.1)
+      svelte: 5.57.1
+    transitivePeerDependencies:
+      - '@types/react'
+      - encoding
+      - preact-render-to-string
+      - react
+      - supports-color
 
   '@svartz/theme-minimal@2.2.0(svelte@5.57.1)':
     dependencies:

@@ -6,7 +6,7 @@ import { overs, verticals } from '$lib/weave'
  * code an agent writes, passing over and under it row by row until the cloth is a running bot. Decorative: the text
  * beside it says the same thing.
  */
-const TRIGGERS = ['messageCreate', 'interactionCreate', 'schedule', 'fetch', 'voice']
+const TRIGGERS = ['messageCreate', 'interactionCreate', 'guildMemberAdd', 'schedule', 'fetch']
 const THREADS_PER_TRIGGER = 3
 const PITCH = 24
 const LEFT = 46

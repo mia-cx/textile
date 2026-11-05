@@ -4,7 +4,10 @@ import { markdownPath } from '$lib/markdown-paths'
 /** The layout puts each page's own content in `#content`, the skip link's target, outside the header and footer. */
 const CONTENT = '#content'
 
-/** Decoration and machinery: they mean nothing outside the screen. */
+/**
+ * Decoration and machinery: they mean nothing outside the screen. An element marked `data-markdown="keep"` stays, such
+ * as a button whose label is content, like the voice notice's.
+ */
 const SKIPPED_TAGS = new Set(['svg', 'script', 'style', 'template', 'button', 'form'])
 
 /** Routes that act rather than render: they have no Markdown twin. */
@@ -13,7 +16,7 @@ const ACTIONS = /^\/(login|logout|auth)(\/|$)/
 const isElement = (node: Node): node is ElementNode => node.type === ELEMENT_NODE
 
 const isNoise = ({ name, attributes }: ElementNode) =>
-  SKIPPED_TAGS.has(name) ||
+  (SKIPPED_TAGS.has(name) && attributes['data-markdown'] !== 'keep') ||
   attributes['aria-hidden'] === 'true' ||
   attributes['data-markdown'] === 'skip' ||
   attributes.hidden !== undefined ||

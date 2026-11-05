@@ -32,11 +32,12 @@ export default defineConfig({
       exclude: ['architecture/**'],
       target: { type: 'host' },
       theme: {
-        // Guides only, so minimal's navigation and contents list; no reference pages.
-        base: '@svartz/theme-minimal',
+        // The API docs theme, for its top bar: it inherits minimal's guide navigation and contents list, and shows `nav`,
+        // the way back to textile.cx, which minimal's header has no place for.
+        base: '@svartz/theme-api-docs',
         tokens,
         logo: { src: '/favicon.svg' },
-        nav: { Home: '/' },
+        nav: { Textile: '/' },
         footer: {
           links: {
             Textile: '/',

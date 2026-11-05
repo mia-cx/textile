@@ -96,10 +96,11 @@ function onkeydown(event: KeyboardEvent) {
   [role='tab']:hover {
     color: var(--ink);
   }
+  /* Raised, and underlined in indigo: the underline carries the state at over 3:1 in both modes, not colour alone. */
   [role='tab'][aria-selected='true'] {
     background: var(--surface);
     color: var(--ink);
-    box-shadow: 0 1px 0 var(--rule);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   .panels {
     display: grid;

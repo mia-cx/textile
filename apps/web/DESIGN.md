@@ -62,7 +62,7 @@ Below 56rem every section is one column.
 Motion tells one story: the cloth being woven.
 
 - **Hero loom.** The warp threads are labelled with the triggers a bot listens for (`messageCreate`,
-  `interactionCreate`, `schedule`, `fetch`, `voice`). On load, 13 weft rows pass across from the bottom up, the shuttle
+  `interactionCreate`, `guildMemberAdd`, `schedule`, `fetch`). On load, 13 weft rows pass across from the bottom up, the shuttle
   turning at each edge, in about 2.4 s. CSS keyframes on `stroke-dashoffset`; no script.
 - **Woven bands.** Between sections, a strip of plain weave whose three rows pass across as it scrolls into view, driven
   by a CSS view timeline. Scrolling back unweaves it. Browsers without scroll timelines show it woven.

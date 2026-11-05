@@ -77,7 +77,7 @@ client.login(process.env.DISCORD_TOKEN)`,
   },
   {
     name: 'Schedules',
-    summary: 'Post on a cron schedule. Each tick runs once, however many hosts there are.',
+    summary: 'Post on a cron schedule. Each tick runs once, never twice.',
     source: `import { Client } from 'discord.js'
 
 const client = new Client({ intents: [], schedules: ['0 9 * * *'] })
@@ -90,13 +90,19 @@ client.on('schedule', async ({ scheduledAt }) => {
   },
   {
     name: 'Webhooks',
-    summary: 'Give the bot an HTTP route for other services to call.',
+    summary:
+      'Give the bot an HTTP route for other services to call. Anyone can reach it, so it checks the caller.',
     source: `import { Client } from 'discord.js'
 
 const client = new Client({ intents: [] })
+// The secret you give the service that calls this route.
+const SECRET = 'replace-with-a-long-random-string'
 
 export default {
   async fetch(request: Request) {
+    if (request.headers.get('authorization') !== \`Bearer \${SECRET}\`) {
+      return new Response('unauthorized', { status: 401 })
+    }
     const { text } = await request.json()
     await client.rest.post('/channels/123456789012345678/messages', {
       body: { content: text },

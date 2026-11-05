@@ -18,7 +18,7 @@ let { data, children } = $props()
     <a class="nav-link" href="/docs/">Docs</a>
     <a class="nav-link" href={GITHUB_URL}>GitHub</a>
     {#if data.signedIn}
-      <a class="nav-link" href="/access">Your access</a>
+      <a class="nav-link" href="/access">Access</a>
     {:else}
       <a class="nav-link" href="/login" data-sveltekit-reload>Sign in</a>
     {/if}
@@ -29,8 +29,8 @@ let { data, children } = $props()
   {@render children()}
 </main>
 
-<footer class="mx-auto mt-24 max-w-6xl border-t border-rule px-4 pt-6 pb-10 text-[0.9375rem] sm:px-8">
-  <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-2">
+<footer class="mx-auto mt-24 max-w-6xl px-4 pb-10 text-[0.9375rem] sm:px-8">
+  <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-2 border-t border-rule pt-6">
     <nav aria-label="Footer" class="flex flex-wrap gap-x-5">
       <a class="nav-link" href="/docs/">Docs</a>
       <a class="nav-link" href={GITHUB_URL}>GitHub</a>

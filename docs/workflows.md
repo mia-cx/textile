@@ -88,9 +88,9 @@ Workflows listen for `messageCreate`, `messageUpdate`, `messageDelete`,
 process for at most 30 seconds, so nothing in memory lasts between events, and listeners
 may receive partial objects. Each workflow receives only the events its own intents cover.
 A guild's events run in order; interactions run at once. The bot's own messages are not
-delivered. Grants work as for scripts. A workflow may also answer the interaction it is handling
-(`reply`, `deferReply`, `editReply`, `followUp`) with the `interaction` and `webhook` families,
-and set the bot's presence:
+delivered. Grants work as for scripts. A workflow may also set the bot's presence, and answer the
+interaction it is handling (`reply`, `deferReply`, `editReply`, `followUp`) with the
+`interaction` and `webhook` families:
 
 ```ts
 client.on(Events.InteractionCreate, async (interaction) => {

@@ -94,6 +94,8 @@ describe('Markdown for agents', () => {
     // Sign-in is an action, not a page.
     expect(markdown).toContain(`(${ORIGIN}/login)`)
     expect(markdown).toContain('> I’m relaying voice in this channel to an AI agent.')
+    // The notice's buttons are its opt-out wording.
+    expect(markdown).toContain('Opt out of all Textile bots')
   })
 
   it('serves a docs page’s twin from the docs build, with its links made absolute', async () => {
@@ -124,8 +126,6 @@ describe('Markdown for agents', () => {
         '/docs/security.md',
         '/docs/operating.md',
         '/docs/feed.md',
-        '/docs/folders.md',
-        '/docs/tags.md',
       ]),
     )
     const linked = new Set<string>()

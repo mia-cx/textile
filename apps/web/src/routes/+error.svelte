@@ -1,5 +1,8 @@
 <script lang="ts">
 import { page } from '$app/state'
+
+/** Sign-in failures that another attempt can fix: Discord refused the code (400) or didn't say who signed in (502). */
+const RETRYABLE = new Set([400, 502])
 </script>
 
 <svelte:head>
@@ -15,7 +18,11 @@ import { page } from '$app/state'
     <h1 class="text-4xl font-extrabold sm:text-5xl">Something went wrong</h1>
     <p class="mt-5 text-lg">{page.error?.message}</p>
     <div class="mt-8">
-      <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in again</a>
+      {#if RETRYABLE.has(page.status)}
+        <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in again</a>
+      {:else}
+        <a class="button button-primary" href="/">Go to the home page</a>
+      {/if}
     </div>
   {/if}
 </section>

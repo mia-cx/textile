@@ -27,7 +27,7 @@ async function copy() {
     <span class="grid justify-items-start">
       <span class="label" class:shown={!copied && !failed}>Copy page</span>
       <span class="label" class:shown={copied}>Copied</span>
-      <span class="label" class:shown={failed}>Couldn’t copy</span>
+      <span class="label" class:shown={failed}>Copy failed</span>
     </span>
   </button>
   <!-- A full load: the client router would map the `.md` path back to the page and render its HTML. -->

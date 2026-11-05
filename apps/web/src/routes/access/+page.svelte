@@ -24,7 +24,7 @@ let { data }: PageProps = $props()
   {:else}
     <h1 class="text-4xl font-extrabold sm:text-5xl">You don’t have access yet</h1>
     <p class="mt-5 text-lg">
-      Textile is in a closed alpha, and access opens in rounds. Join {COMMUNITY.name} to follow progress and get
+      Access to Textile opens in rounds, by invitation. Join {COMMUNITY.name} to follow progress and get
       invited in the next round.
     </p>
     <div class="mt-8">

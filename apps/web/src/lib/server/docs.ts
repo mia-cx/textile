@@ -37,9 +37,9 @@ export interface DocsPage {
 }
 
 /**
- * Every docs page, by page path: the notes the docs build lists in its own `/docs/llms.txt`, then the listings Svartz
- * generates beside them (recent notes, tags, and a listing of the notes in each folder). Listings have no note, so
- * their Markdown is the converted page.
+ * Every docs page worth reading, by page path: the notes the docs build lists in its own `/docs/llms.txt`, then the
+ * listings Svartz generates beside them that have entries (recent notes, and folder listings once there are folders).
+ * Listings have no note, so their Markdown is the converted page.
  */
 export async function docsPages(assets: Env['ASSETS'], url: URL): Promise<ReadonlyArray<DocsPage>> {
   const response = await assets.fetch(new URL(`${DOCS_BASE}/llms.txt`, url))
@@ -63,15 +63,29 @@ export async function docsPages(assets: Env['ASSETS'], url: URL): Promise<Readon
       }),
     ),
   ].sort()
+  // Listings with nothing on them stay out: the notes use no tags, and folder listings exist only once there are folders.
+  const folderListings =
+    folders.length === 0
+      ? []
+      : [
+          {
+            path: `${DOCS_BASE}/folders`,
+            title: 'Folders',
+            description: 'Every docs page, by folder.',
+          },
+          ...folders.map((folder) => ({
+            path: `${DOCS_BASE}/folders/${folder}`,
+            title: `Folder: ${folder}`,
+            description: `The pages in \`${folder}/\`.`,
+          })),
+        ]
   return [
     ...notes,
-    { path: `${DOCS_BASE}/feed`, title: 'Recently updated', description: 'The latest docs pages.' },
-    { path: `${DOCS_BASE}/tags`, title: 'Tags', description: 'Every tag the docs use.' },
-    { path: `${DOCS_BASE}/folders`, title: 'Folders', description: 'Every docs page, by folder.' },
-    ...folders.map((folder) => ({
-      path: `${DOCS_BASE}/folders/${folder}`,
-      title: `Folder: ${folder}`,
-      description: `The pages in \`${folder}/\`.`,
-    })),
+    {
+      path: `${DOCS_BASE}/feed`,
+      title: 'Recent notes',
+      description: 'The docs pages, newest first.',
+    },
+    ...folderListings,
   ]
 }
