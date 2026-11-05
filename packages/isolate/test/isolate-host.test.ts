@@ -292,6 +292,7 @@ describe('the isolate host', () => {
       host.run({ ...a.run, urgent: true, queue: 'bot-1:a' }),
       host.run({ ...b.run, urgent: true, queue: 'bot-1:b' }),
     ]
+    await vi.waitFor(() => expect([a.started(), b.started()]).toEqual([true, true]))
     // A third deferred slash command of the same bot, past its share of two, while both hold.
     const third = {
       ...(await execution('1', 'export default () => 0', UNHURRIED_MS)),
