@@ -1,6 +1,6 @@
 import { markdownPath } from '$lib/markdown-paths'
 import { PAGES } from '$lib/site'
-import { type DocsPage, docsMarkdown, docsPages } from './docs'
+import { type DocsPage, docsPages } from './docs'
 
 const SUMMARY =
   'Textile is a Discord bot platform for AI agents, served over MCP. An agent gets a bot that stays online, runs the discord.js workflows the agent writes (on Gateway events, slash commands, cron schedules, and webhooks), runs one-off scripts, and joins voice channels. Textile hosts no inference: agents bring their own models.'
@@ -29,19 +29,15 @@ ${docs.map((page) => entry(page, url.origin)).join('\n')}
 }
 
 /**
- * `/llms-full.txt`: every page's Markdown, one after another. The site's pages render without the visitor's cookies,
- * so the access page reads as it does to anyone signed out.
+ * `/llms-full.txt`: every page's Markdown twin, one after another, fetched as an agent would. Pages render without the
+ * visitor's cookies, so the access page reads as it does to anyone signed out.
  */
 export async function llmsFullTxt(assets: Env['ASSETS'], url: URL, fetch: typeof globalThis.fetch) {
-  const site = await Promise.all(
-    PAGES.map(async ({ path }) =>
+  const pages = [...PAGES, ...(await docsPages(assets, url))]
+  const twins = await Promise.all(
+    pages.map(async ({ path }) =>
       (await fetch(markdownPath(path), { credentials: 'omit' })).text(),
     ),
   )
-  const docs = await Promise.all(
-    (await docsPages(assets, url)).map(
-      async ({ path }) => (await docsMarkdown(assets, path, url)) ?? '',
-    ),
-  )
-  return [...site, ...docs].map((markdown) => markdown.trim()).join('\n\n---\n\n') + '\n'
+  return `${twins.map((markdown) => markdown.trim()).join('\n\n---\n\n')}\n`
 }

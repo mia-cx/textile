@@ -40,6 +40,12 @@ describe('Markdown for agents', () => {
       'markdown',
     ],
     [
+      'a client asking for Markdown with a document destination',
+      '/terms',
+      { 'user-agent': CHROME, accept: 'text/markdown', 'sec-fetch-dest': 'document' },
+      'markdown',
+    ],
+    [
       'Googlebot',
       '/',
       { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
@@ -98,7 +104,7 @@ describe('Markdown for agents', () => {
     expect(markdown).toContain(`](${ORIGIN}/docs/workflows.md)`)
   })
 
-  it('lists every page in llms.txt, and every listed twin answers with Markdown', async () => {
+  it('lists every page in llms.txt, and every twin answers with Markdown whose links all resolve', async () => {
     const response = await get('/llms.txt', {})
     const index = await response.text()
     expect(index).toMatch(/^# Textile\n\n> /)
@@ -117,13 +123,24 @@ describe('Markdown for agents', () => {
         '/docs/voice.md',
         '/docs/security.md',
         '/docs/operating.md',
+        '/docs/feed.md',
+        '/docs/folders.md',
+        '/docs/tags.md',
       ]),
     )
+    const linked = new Set<string>()
     for (const twin of twins) {
       const page = await get(twin, {})
       expect(page.status, twin).toBe(200)
       expect(page.headers.get('content-type'), twin).toBe(MARKDOWN)
+      for (const [, path] of (await page.text()).matchAll(
+        /\]\(https:\/\/textile\.cx(\/[^)#\s]*)/g,
+      )) {
+        linked.add(path!)
+      }
     }
+    // Sign-in links redirect to Discord; nothing linked is missing.
+    for (const path of linked) expect((await get(path, {})).status, path).toBeLessThan(400)
   })
 
   it('puts every page’s Markdown in llms-full.txt', async () => {

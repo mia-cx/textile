@@ -47,10 +47,7 @@ const crawler = anyOf(SEARCH_CRAWLERS)
 export function wantsMarkdown(headers: Headers) {
   const userAgent = headers.get('user-agent') ?? ''
   if (crawler.test(userAgent)) return false
-  return (
-    shouldServeMarkdown(
-      headers.get('accept') ?? undefined,
-      headers.get('sec-fetch-dest') ?? undefined,
-    ) || agent.test(userAgent)
-  )
+  // Accept alone decides, not `Sec-Fetch-Dest`: an explicit request for Markdown wins, and a browser navigating asks for
+  // HTML in its Accept anyway. The choice then rests only on the headers `Vary` names.
+  return shouldServeMarkdown(headers.get('accept') ?? undefined) || agent.test(userAgent)
 }

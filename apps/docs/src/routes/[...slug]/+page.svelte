@@ -11,6 +11,7 @@ let { data }: { data: PageData } = $props()
   {#each data.svartzStylesheets as stylesheet}
     <link rel="stylesheet" href={stylesheet} />
   {/each}
+  {#if data.markdown}<link rel="alternate" type="text/markdown" href={data.markdown} />{/if}
 </svelte:head>
 
 <SvartzRuntimePage pathname={page.url.pathname} />

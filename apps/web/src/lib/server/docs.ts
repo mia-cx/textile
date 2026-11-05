@@ -36,15 +36,42 @@ export interface DocsPage {
   readonly description: string
 }
 
-/** Every docs note, by page path, from the docs build's `/docs/llms.txt`. */
+/**
+ * Every docs page, by page path: the notes the docs build lists in its own `/docs/llms.txt`, then the listings Svartz
+ * generates beside them (recent notes, tags, and a listing of the notes in each folder). Listings have no note, so
+ * their Markdown is the converted page.
+ */
 export async function docsPages(assets: Env['ASSETS'], url: URL): Promise<ReadonlyArray<DocsPage>> {
   const response = await assets.fetch(new URL(`${DOCS_BASE}/llms.txt`, url))
   if (!response.ok) throw new Error(`The docs build has no llms.txt: ${response.status}`)
-  return [...(await response.text()).matchAll(LLMS_PAGE)].map(
+  const notes = [...(await response.text()).matchAll(LLMS_PAGE)].map(
     ([, title = '', href = '', description = '']) => ({
       path: pageOf(new URL(href).pathname) ?? DOCS_BASE,
       title,
       description,
     }),
   )
+  // Every folder above a note, below the docs: `guides`, `guides/voice`.
+  const folders = [
+    ...new Set(
+      notes.flatMap(({ path }) => {
+        const dirs = path
+          .slice(DOCS_BASE.length + 1)
+          .split('/')
+          .slice(0, -1)
+        return dirs.map((_, depth) => dirs.slice(0, depth + 1).join('/'))
+      }),
+    ),
+  ].sort()
+  return [
+    ...notes,
+    { path: `${DOCS_BASE}/feed`, title: 'Recently updated', description: 'The latest docs pages.' },
+    { path: `${DOCS_BASE}/tags`, title: 'Tags', description: 'Every tag the docs use.' },
+    { path: `${DOCS_BASE}/folders`, title: 'Folders', description: 'Every docs page, by folder.' },
+    ...folders.map((folder) => ({
+      path: `${DOCS_BASE}/folders/${folder}`,
+      title: `Folder: ${folder}`,
+      description: `The pages in \`${folder}/\`.`,
+    })),
+  ]
 }

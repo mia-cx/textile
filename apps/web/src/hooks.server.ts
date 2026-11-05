@@ -60,7 +60,9 @@ export const handle: Handle = async ({ event, resolve }) => {
     return response
   }
   if (!isHtml(response)) return response
-  const markdown = pageToMarkdown(await response.text(), new URL(path, url))
+  // Docs listings render at their path with a slash and link relatively from there; the site's own pages link absolutely.
+  const rendered = new URL(path === '/' ? path : `${path}/`, url)
+  const markdown = pageToMarkdown(await response.text(), rendered)
   return new Response(markdown, {
     status: response.status,
     headers: { ...headers, 'cache-control': response.headers.get('cache-control') ?? 'no-cache' },

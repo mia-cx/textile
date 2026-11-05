@@ -12,8 +12,9 @@ export default {
     paths: { base: BASE },
     prerender: {
       // The header and footer link the web app's own pages, outside /docs; apps/web serves those.
+      // A generated listing's Markdown twin (`/docs/feed.md`) is converted from the page by apps/web, too.
       handleHttpError: ({ path, message }) => {
-        if (path.startsWith(`${BASE}/`)) throw new Error(message)
+        if (path.startsWith(`${BASE}/`) && !/\.md\/?$/.test(path)) throw new Error(message)
       },
     },
   },

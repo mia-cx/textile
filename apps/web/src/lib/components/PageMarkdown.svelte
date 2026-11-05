@@ -30,7 +30,8 @@ async function copy() {
       <span class="label" class:shown={failed}>Couldn’t copy</span>
     </span>
   </button>
-  <a class="control" {href}>View as Markdown</a>
+  <!-- A full load: the client router would map the `.md` path back to the page and render its HTML. -->
+  <a class="control" {href} data-sveltekit-reload>View as Markdown</a>
 </div>
 
 <style>
