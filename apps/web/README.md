@@ -14,8 +14,8 @@ pnpm --filter @discord-mcp/web preview  # wrangler dev on the build, at http://l
 pnpm site:check                         # build, svelte-check both apps, and this app's tests
 ```
 
-`pnpm --filter @discord-mcp/web dev` runs Vite for quick edits to the site's own pages; it serves the docs and signs
-in only under `preview`.
+`pnpm --filter @discord-mcp/web dev` runs Vite with hot reload for the site's own pages, using `.dev.vars` and the docs
+from the last `pnpm site:build`.
 
 ## Markdown for agents
 

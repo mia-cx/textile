@@ -59,4 +59,4 @@ execFileSync(
   ],
   { stdio: 'ignore', timeout: 60_000 },
 )
-console.log('Wrote static/og.png')
+process.stdout.write('Wrote static/og.png\n')
