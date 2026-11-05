@@ -24,6 +24,13 @@ export interface FakeConnection {
   acknowledge: boolean
   readonly send: (payload: GatewayPayload) => void
   readonly close: (code: number) => void
+  /**
+   * Resolves once the client has handled every payload sent to it so far, such as the READY or
+   * heartbeat ACK the fake answers with. A WebSocket ping's pong comes back only after them. A
+   * test moving the clock waits for this first; seeing what the client sent proves nothing about
+   * what it has read since. Resolves at once on a closed connection.
+   */
+  readonly delivered: () => Promise<void>
 }
 
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 41_250
@@ -55,6 +62,7 @@ export const fakeGateway = async (
   const voiceChannels = new Map<string, string | null>()
   const rest: Array<{ readonly method: string; readonly path: string; readonly body: unknown }> = []
   server.on('connection', (socket, request) => {
+    let pings = 0
     const connection: FakeConnection = {
       path: request.url ?? '/',
       received: [],
@@ -73,6 +81,24 @@ export const fakeGateway = async (
         socket.send(JSON.stringify(payload))
       },
       close: (code) => socket.close(code),
+      delivered: () =>
+        new Promise((resolve) => {
+          if (socket.readyState !== socket.OPEN) return resolve()
+          // Each ping carries its own ID, so overlapping waits each get their own pong.
+          const id = String(++pings)
+          const done = () => {
+            socket.off('pong', pong)
+            socket.off('close', done)
+            resolve()
+          }
+          const pong = (data: Buffer) => {
+            if (String(data) === id) done()
+          }
+          socket.on('pong', pong)
+          // A connection that closes first has nothing left to deliver.
+          socket.on('close', done)
+          socket.ping(id)
+        }),
     }
     connections.push(connection)
     let sequence = 1

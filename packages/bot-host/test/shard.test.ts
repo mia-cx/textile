@@ -45,12 +45,12 @@ const start = async (saved?: { sessionId: string; sequence: number }) => {
   return { gateway, clock, onFatal, onSession, shard }
 }
 
-const identified = (gateway: Awaited<ReturnType<typeof fakeGateway>>, count: number) =>
-  vi.waitFor(() =>
-    expect(gateway.connections.filter((c) => c.received.some((p) => p.op === 2))).toHaveLength(
-      count,
-    ),
-  )
+/** Wait until `count` connections have identified and the shard has read the READY each got. */
+const identified = async (gateway: Awaited<ReturnType<typeof fakeGateway>>, count: number) => {
+  const identifying = () => gateway.connections.filter((c) => c.received.some((p) => p.op === 2))
+  await vi.waitFor(() => expect(identifying()).toHaveLength(count))
+  await Promise.all(identifying().map((c) => c.delivered()))
+}
 
 describe('the shard supervisor', () => {
   it('identifies with an online presence and heartbeats the last sequence number', async () => {
@@ -70,6 +70,8 @@ describe('the shard supervisor', () => {
     // The first beat is jittered: random() is 0.5, so half an interval.
     clock.advance(INTERVAL / 2)
     await vi.waitFor(() => expect(connection?.received[1]).toEqual({ op: 1, d: 1 }))
+    // Unread, the ACK would leave the next beat thinking the connection a zombie.
+    await connection?.delivered()
     clock.advance(INTERVAL)
     await vi.waitFor(() => expect(connection?.received[2]).toEqual({ op: 1, d: 1 }))
     expect(gateway.connections).toHaveLength(1)

@@ -14,9 +14,10 @@ import {
   routeDispatches,
 } from '../src/tiers.ts'
 import { botToken, config, discordOAuth, executor, login } from './login-fixture.ts'
+import { reservedPort } from './support/ports.ts'
 
-const BIN = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
-const TSX = fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url))
+/** The built binary: `pnpm check` builds before testing, and transpiling at startup is slow under load. */
+const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const NETWORK = fileURLToPath(new URL('./support/discord-network.ts', import.meta.url))
 const SECRET = 'test-bot-host-secret-0123456789abcdef'
 const GUILD_ID = '123456789012345678'
@@ -90,19 +91,11 @@ const fakeDiscord = async (tokens: ReadonlyMap<string, string>) => {
   }
 }
 
-const freePort = async () => {
-  const server = createServer().listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  const { port } = server.address() as AddressInfo
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-  return port
-}
-
 /** Start the real server binary as `name` and resolve with its port once it listens. */
 const startTier = (name: string, discordUrl: string, env: Record<string, string>) =>
   new Promise<{ readonly url: string; readonly stop: () => void }>((resolve, reject) => {
     const { DISCORD_OAUTH_ALLOWED_USER_IDS: _, DATABASE_URL: __, ...inherited } = process.env
-    const child = spawn(TSX, ['--import', NETWORK, BIN], {
+    const child = spawn(process.execPath, ['--import', NETWORK, BIN], {
       env: {
         ...inherited,
         MCP_TRANSPORT: 'http',
@@ -168,7 +161,7 @@ describe('central and bot-host tiers', () => {
   const bots: Array<{ id: string; token: string; host: string }> = []
 
   beforeAll(async () => {
-    const ports = [await freePort(), await freePort()]
+    const ports = [await reservedPort(), await reservedPort()]
     hosts = ports.map((port) => `http://127.0.0.1:${port}`)
     for (const [index, host] of hosts.entries()) {
       const id = botOwnedBy(hosts, host)
@@ -431,7 +424,7 @@ describe('workflow events across bot hosts', () => {
   }
 
   it("runs a bot's events on its REST owner, in order, once the owner holds the bot", async () => {
-    const ports = [await freePort(), await freePort()]
+    const ports = [await reservedPort(), await reservedPort()]
     const hosts = ports.map((port) => `http://127.0.0.1:${port}`)
     const [owner = '', other = ''] = hosts
     const botId = botOwnedBy(hosts, owner)
@@ -460,7 +453,7 @@ describe('workflow events across bot hosts', () => {
     )
     for (const n of [1, 2, 3]) route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n } } })
 
-    await vi.waitFor(() => expect(ran).toHaveLength(3), { timeout: 5_000 })
+    await vi.waitFor(() => expect(ran).toHaveLength(3))
     expect(ran).toEqual(
       [1, 2, 3].map((n) => ({
         self: owner,
@@ -496,12 +489,12 @@ describe('workflow events across bot hosts', () => {
     route({ botId, token: botToken(botId), dispatch: { t: 'MESSAGE_CREATE', d: { n: 1 } } })
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(ran).toEqual([])
-    await vi.waitFor(() => expect(ran).toEqual([{ n: 1 }]), { timeout: 3_000 })
+    await vi.waitFor(() => expect(ran).toEqual([{ n: 1 }]))
     expect(own).toHaveBeenCalledTimes(2)
   })
 
   it('drops the events a down owner missed once they are too old, rather than queueing them', async () => {
-    const [port = 0] = [await freePort()]
+    const [port = 0] = [await reservedPort()]
     const owner = `http://127.0.0.1:${port}`
     const other = 'http://127.0.0.1:1'
     const botId = botOwnedBy([owner, other], owner)
@@ -516,7 +509,11 @@ describe('workflow events across bot hosts', () => {
     )
     for (let n = 0; n < 50; n += 1)
       route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n } } })
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    // The first is dropped at its retry, a second on, or untried if the worker reaches it past its
+    // deadline; the rest, already too old, right after it.
+    await vi.waitFor(() =>
+      expect(log).toHaveBeenCalledWith(expect.stringContaining(`Dropped bot ${botId}'s`)),
+    )
 
     // The owner comes back: the next event goes straight through.
     const ran: unknown[] = []
@@ -528,8 +525,11 @@ describe('workflow events across bot hosts', () => {
       port,
     )
     route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n: 50 } } })
-    await vi.waitFor(() => expect(ran).toEqual([{ n: 50 }]), { timeout: 3_000 })
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('50 events were dropped'))
+    await vi.waitFor(() => expect(ran).toEqual([{ n: 50 }]))
+    // The router logs once the owner's answer is back, which can be after the owner ran it.
+    await vi.waitFor(() =>
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('50 events were dropped')),
+    )
     server.close()
   })
 
