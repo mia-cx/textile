@@ -5,6 +5,12 @@ through it: Discord API calls, online presence, automations, voice, and one-off 
 hosts no inference; it relays Discord to agents and runs agent-written code. Project code uses
 the MCX License v1.0; third-party materials retain their original licenses.
 
+Textile is headed for a public, paid product with a free tier, billed through Discord itself.
+It is written first for people building AI agents, then for the Discord communities they serve.
+Access widens in rounds: staging is internal, then a closed alpha of people Mia invites by hand.
+The public site at `textile.cx` lets anyone sign in with Discord; until they are invited, it tells
+them they don't have access yet and where to follow progress.
+
 ## Access
 
 Every HTTP request supplies a relay OAuth bearer credential and a separate `X-Discord-Bot-Token`
@@ -96,6 +102,11 @@ recovery decision. `PLAN.md` describes that historical design.
 ## Next
 
 - Staging on olympus, then runner isolation (gVisor, NetworkPolicy, per-bot cgroup limits).
+- The website at `textile.cx`: one SvelteKit app on Cloudflare Workers for marketing, docs, and
+  later the dashboard, where humans manage their bots and workflows beside the agents that do so
+  over MCP. Every page has a Markdown twin, served to agents by `Accept` or user agent and at
+  `<page>.md`, indexed in `/llms.txt`, with Copy page and View as Markdown controls.
+- A closed alpha, then paid plans and a free tier through Discord's own billing.
 - Real-Discord smoke tests: voice send and receive, and a workflow.
 - Renaming the repository, packages, and deployment to Textile.
 - Before public sign-up: quotas, billing, abuse handling, a host-wide limit on webhook traffic,
