@@ -1,0 +1,112 @@
+@import "tailwindcss";
+@import "./lib/tokens.css";
+
+/* Tailwind reads the role tokens, so `bg-paper` and `text-muted` follow the colour mode. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-ink: var(--ink);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-on-accent: var(--on-accent);
+  --color-weft: var(--weft);
+  --font-sans: var(--font-text);
+  --font-mono: var(--font-code);
+  --radius-sm: var(--radius-s);
+  --radius-md: var(--radius-m);
+  --radius-lg: var(--radius-l);
+}
+
+@layer base {
+  html {
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--font-text);
+    font-variation-settings: var(--axes-text);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100dvh;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+  }
+  h1,
+  h2,
+  h3 {
+    color: var(--ink);
+    font-variation-settings: var(--axes-display);
+    text-wrap: balance;
+    line-height: 1.08;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-code);
+    font-variation-settings: var(--axes-code);
+  }
+  a {
+    color: var(--accent-text);
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+  }
+  a:hover {
+    text-decoration-thickness: 2px;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+    border-radius: var(--radius-s);
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--weft) 30%, transparent);
+  }
+}
+
+@layer components {
+  /* The two actions every page offers: a filled indigo button and a ruled one. Both 44px tall. */
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 1.125rem;
+    border-radius: var(--radius-m);
+    font-weight: 600;
+    text-decoration: none;
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+  .button-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .button-primary:hover {
+    background: color-mix(in srgb, var(--accent) 86%, var(--ink));
+  }
+  .button-secondary {
+    border: 1px solid var(--accent);
+    color: var(--accent-text);
+  }
+  .button-secondary:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  /* Inline code in prose. */
+  .prose-code {
+    padding: 0.05em 0.3em;
+    border-radius: var(--radius-s);
+    background: var(--sunken);
+    color: var(--ink);
+    font-size: 0.9em;
+  }
+}

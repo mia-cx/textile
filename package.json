@@ -11,7 +11,9 @@
   "scripts": {
     "login": "node scripts/login.mjs",
     "start": "node apps/server/dist/bin.js",
-    "check": "biome check . && pnpm typecheck && pnpm test",
+    "check": "biome check . && pnpm typecheck && pnpm test && pnpm site:check",
+    "site:build": "pnpm --filter @discord-mcp/docs build && pnpm --filter @discord-mcp/web build",
+    "site:check": "pnpm site:build && pnpm --filter @discord-mcp/docs check && pnpm --filter @discord-mcp/web check && pnpm --filter @discord-mcp/web test",
     "check:fix": "biome check --write .",
     "typecheck": "tsc --build",
     "build": "tsc --build",

@@ -4,12 +4,20 @@
     "includes": [
       "**",
       "!**/dist",
+      "!**/.svelte-kit",
+      "!**/.svartz",
+      "!**/.wrangler",
       "!**/*.tsbuildinfo",
       "!spike",
       "!packages/discord-catalog/src/generated",
       "!vendor/discord/openapi.json",
       "!packages/storage/drizzle"
     ]
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   },
   "formatter": {
     "enabled": true,
@@ -62,6 +70,20 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.svelte"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          },
+          "style": {
+            "useConst": "off"
           }
         }
       }
