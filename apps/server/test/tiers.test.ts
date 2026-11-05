@@ -509,9 +509,10 @@ describe('workflow events across bot hosts', () => {
     )
     for (let n = 0; n < 50; n += 1)
       route({ botId, token, dispatch: { t: 'MESSAGE_CREATE', d: { n } } })
-    // The first is dropped at its retry, a second on; the rest, already too old, right after it.
+    // The first is dropped at its retry, a second on, or untried if the worker reaches it past its
+    // deadline; the rest, already too old, right after it.
     await vi.waitFor(() =>
-      expect(log).toHaveBeenCalledWith(expect.stringContaining('its REST owner fetch failed')),
+      expect(log).toHaveBeenCalledWith(expect.stringContaining(`Dropped bot ${botId}'s`)),
     )
 
     // The owner comes back: the next event goes straight through.
