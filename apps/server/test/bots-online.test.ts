@@ -107,15 +107,15 @@ describe('bot hosting', () => {
   })
 })
 
-const BIN = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
-const TSX = fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url))
+/** The built binary: `pnpm check` builds before testing, and transpiling at startup is slow under load. */
+const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const UNREACHABLE_DATABASE = 'postgres://discord-mcp@127.0.0.1:1/unreachable'
 
 /** Start the real HTTP server and resolve with its stderr once it listens or exits. */
 const startServer = (env: Record<string, string>) =>
   new Promise<{ stderr: string; port: number | undefined; stop: () => void }>((resolve) => {
     const { DISCORD_OAUTH_ALLOWED_USER_IDS: _, ...inherited } = process.env
-    const child = spawn(TSX, [BIN], {
+    const child = spawn(process.execPath, [BIN], {
       env: {
         ...inherited,
         MCP_TRANSPORT: 'http',

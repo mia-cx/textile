@@ -16,8 +16,8 @@ import {
 import { botToken, config, discordOAuth, executor, login } from './login-fixture.ts'
 import { reservedPort } from './support/ports.ts'
 
-const BIN = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
-const TSX = fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url))
+/** The built binary: `pnpm check` builds before testing, and transpiling at startup is slow under load. */
+const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const NETWORK = fileURLToPath(new URL('./support/discord-network.ts', import.meta.url))
 const SECRET = 'test-bot-host-secret-0123456789abcdef'
 const GUILD_ID = '123456789012345678'
@@ -95,7 +95,7 @@ const fakeDiscord = async (tokens: ReadonlyMap<string, string>) => {
 const startTier = (name: string, discordUrl: string, env: Record<string, string>) =>
   new Promise<{ readonly url: string; readonly stop: () => void }>((resolve, reject) => {
     const { DISCORD_OAUTH_ALLOWED_USER_IDS: _, DATABASE_URL: __, ...inherited } = process.env
-    const child = spawn(TSX, ['--import', NETWORK, BIN], {
+    const child = spawn(process.execPath, ['--import', NETWORK, BIN], {
       env: {
         ...inherited,
         MCP_TRANSPORT: 'http',

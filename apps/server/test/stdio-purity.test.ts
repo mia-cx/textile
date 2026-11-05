@@ -2,8 +2,11 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const BIN = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
-const TSX = fileURLToPath(new URL('../../../node_modules/.bin/tsx', import.meta.url))
+/**
+ * The built binary, which is also what ships: `pnpm check` builds before testing. Through tsx,
+ * transpiling the server on a loaded machine took most of the test's timeout before it said a word.
+ */
+const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 
 interface Captured {
   readonly stdoutLines: ReadonlyArray<string>
@@ -25,7 +28,7 @@ const runServer = (
   done: (output: { readonly stdout: string; readonly stderr: string }) => boolean = () => false,
 ): Promise<Captured> =>
   new Promise((resolve) => {
-    const child = spawn(TSX, [BIN], {
+    const child = spawn(process.execPath, [BIN], {
       env: { ...process.env, ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
