@@ -24,7 +24,7 @@ async function copy() {
 <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
   <button type="button" class="control" onclick={copy} aria-live="polite">
     <!-- Both labels share one cell, so the button keeps its width as the label changes. -->
-    <span class="grid">
+    <span class="grid justify-items-start">
       <span class="label" class:shown={!copied && !failed}>Copy page</span>
       <span class="label" class:shown={copied}>Copied</span>
       <span class="label" class:shown={failed}>Couldn’t copy</span>
