@@ -303,6 +303,10 @@ describe('the isolate host', () => {
     expect(await host.run(third)).toMatchObject({ outcome: 'completed' })
     a.release()
     b.release()
-    await Promise.all(running)
+    // Held to the end: had either reached its deadline, its freed slot could have run the third.
+    expect(await Promise.all(running)).toMatchObject([
+      { outcome: 'completed' },
+      { outcome: 'completed' },
+    ])
   })
 })
