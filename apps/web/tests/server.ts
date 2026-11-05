@@ -21,7 +21,10 @@ const TYPES: Record<string, string> = {
   txt: 'text/plain',
 }
 
-/** Cloudflare's static assets, as they serve the docs build: a folder answers at its slash, `/404` is `404.html`. */
+/**
+ * Cloudflare's static assets, as the Worker's binding serves the docs build: a folder answers with its `index.html`,
+ * with or without its slash (the binding follows its own redirect), and `/404` is `404.html`.
+ */
 const ASSETS = {
   async fetch(input: Request | URL | string) {
     const url = new URL(input instanceof Request ? input.url : input)
@@ -29,8 +32,6 @@ const ASSETS = {
     const file = new URL(relative, DOCS)
     const stat = statSync(file, { throwIfNoEntry: false })
     if (stat?.isDirectory()) {
-      if (!url.pathname.endsWith('/'))
-        return new Response(null, { status: 307, headers: { location: `${url.pathname}/` } })
       return new Response(readFileSync(new URL('index.html', `${file.href}/`)), {
         headers: { 'content-type': HTML },
       })

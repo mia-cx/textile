@@ -3,8 +3,11 @@ import { pageOf } from '$lib/markdown-paths'
 import { DOCS_BASE } from '$lib/server/docs'
 import type { RequestHandler } from './$types'
 
-/** Svartz writes each docs page at `<path>/index.html`, and the assets redirect to the slash; keep URLs as they come. */
+/** Svartz writes each docs page at `<path>/index.html`; this route adds the slash itself, below. */
 export const trailingSlash = 'ignore'
+
+/** A path with a file extension: an asset, not a page. */
+const FILE = /\.[a-z0-9]+$/i
 
 /**
  * The docs site: apps/docs builds it and the web build copies it into the Worker's assets under /docs. Its files come
@@ -13,8 +16,10 @@ export const trailingSlash = 'ignore'
  */
 export const GET: RequestHandler = async ({ url, locals }) => {
   const assets = locals.env.ASSETS
-  // The home page's relative links need the slash.
-  if (url.pathname === DOCS_BASE) redirect(308, `${DOCS_BASE}/`)
+  // A page's relative links and assets need the slash. `ASSETS.fetch` follows the assets' own redirect to it, so the
+  // browser would never see one: a page without its slash would load and then miss its styles and scripts.
+  if (!url.pathname.endsWith('/') && !FILE.test(url.pathname))
+    redirect(308, `${url.pathname}/${url.search}`)
   // A `.md` request lands here only for a page without a note (a listing such as /docs/feed); the hook converts its HTML.
   const page = pageOf(url.pathname)
   const asset = await assets.fetch(new URL(page === null ? url.pathname : `${page}/`, url))

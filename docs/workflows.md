@@ -129,9 +129,14 @@ listeners, but calls Discord through a client created at the top level:
 import { Client } from 'discord.js'
 
 const client = new Client({ intents: [] })
+// The secret you give the service that calls this route.
+const SECRET = 'replace-with-a-long-random-string'
 
 export default {
   async fetch(request: Request) {
+    if (request.headers.get('authorization') !== `Bearer ${SECRET}`) {
+      return new Response('unauthorized', { status: 401 })
+    }
     const { text } = await request.json()
     await client.rest.post('/channels/123456789012345678/messages', { body: { content: text } })
     return new Response('ok')
@@ -142,7 +147,8 @@ export default {
 Once enabled, any request to `/workflows/<bot ID>/<name>` on the relay, or to a path below it,
 runs the handler in a fresh workerd process for at most 10 seconds. Built-in endpoints never
 live under `/workflows/`, so a route can't shadow one. Routes need no login, so a handler
-should verify its sender, for example by a signature over the exact body bytes it receives.
+verifies its sender, as above with a shared secret, or by a signature over the exact body bytes
+it receives.
 Request bodies are limited to 1 MiB, and a response body over about 700 KiB fails. The
 response keeps only its status, body, and `Content-Type`, and is served with a sandbox
 content security policy, since routes share the relay's origin. A disabled or deleted

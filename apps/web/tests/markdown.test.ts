@@ -98,6 +98,15 @@ describe('Markdown for agents', () => {
     expect(markdown).toContain('Opt out of all Textile bots')
   })
 
+  it('sends a docs page typed without its slash to the slash, where its relative assets resolve', async () => {
+    const response = await get('/docs/workflows?from=chat', {
+      'user-agent': CHROME,
+      accept: BROWSER_ACCEPT,
+    })
+    expect(response.status).toBe(308)
+    expect(response.headers.get('location')).toBe('/docs/workflows/?from=chat')
+  })
+
   it('serves a docs page’s twin from the docs build, with its links made absolute', async () => {
     const response = await get('/docs/security.md', { 'user-agent': CHROME })
     expect(response.headers.get('content-type')).toBe(MARKDOWN)
