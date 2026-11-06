@@ -1,6 +1,7 @@
 <script lang="ts">
 import { standupReply } from '$lib/landing'
 import Message from '../discord/Message.svelte'
+import { today } from '../discord/time'
 import Window from '../discord/Window.svelte'
 
 /**
@@ -26,9 +27,9 @@ function onsubmit(event: SubmitEvent) {
 }
 </script>
 
-<Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window">
+<Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window" live>
   {#each replies as reply (reply.id)}
-    <Message author="Weaver" bot time="Today at 9:{String(10 + reply.id).padStart(2, '0')} AM" used={{ by: 'you', command: '/standup' }}>
+    <Message author="Weaver" bot time={today(9 * 60 + 10 + reply.id)} used={{ by: 'you', command: '/standup' }}>
       {standupReply(reply.shipped, reply.last)}
     </Message>
   {/each}

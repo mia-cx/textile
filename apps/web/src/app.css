@@ -154,7 +154,8 @@
     text-decoration: underline;
   }
   .next-link::after {
-    content: "→";
+    /* Decoration: the link text names the destination, so screen readers skip the arrow. */
+    content: "→" / "";
     transition: translate var(--duration-quick) var(--ease-out);
   }
   .next-link:hover::after {

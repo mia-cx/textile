@@ -3,13 +3,15 @@ import type { Snippet } from 'svelte'
 
 /**
  * A Discord channel as the bot's server sees it: the server rail, the channel's name, and its messages. Real DOM, so it
- * reads, scales, and translates; the rail is decoration. `footer` holds a composer where the demo takes input.
+ * reads, scales, and translates; the rail is decoration. `footer` holds a composer where the demo takes input, and
+ * `live` announces new messages to screen readers, for a demo whose messages answer what the visitor did.
  */
 let {
   channel,
   label,
   children,
   footer,
+  live = false,
   class: className = '',
   window = $bindable(),
 }: {
@@ -17,6 +19,7 @@ let {
   label: string
   children: Snippet
   footer?: Snippet
+  live?: boolean
   class?: string
   window?: HTMLElement
 } = $props()
@@ -30,7 +33,7 @@ let {
   </div>
   <div class="channel">
     <p class="channel-name"><span class="hash" aria-hidden="true">#</span>{channel}</p>
-    <div class="messages">
+    <div class="messages" aria-live={live ? 'polite' : undefined}>
       {@render children()}
     </div>
     {#if footer}

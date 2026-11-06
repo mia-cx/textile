@@ -9,7 +9,7 @@ let { source, label, title }: { source: string; label: string; title?: string } 
   {#if title}<p class="title">{title}</p>{/if}
   <!-- A sample wider than its panel scrolls sideways, so keyboard users can focus it to scroll. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <pre tabindex="0" aria-label={label}><code>{@html highlight(source)}</code></pre>
+  <pre tabindex="0" role="region" aria-label={label}><code>{@html highlight(source)}</code></pre>
 </div>
 
 <style>

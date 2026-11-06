@@ -1,6 +1,7 @@
 <script lang="ts">
 import { ROUTE, SECRET } from '$lib/landing'
 import Message from '../discord/Message.svelte'
+import { today } from '../discord/time'
 import Window from '../discord/Window.svelte'
 
 /**
@@ -20,17 +21,16 @@ function send(withSecret: boolean) {
     return
   }
   const id = (posts.at(-1)?.id ?? 0) + 1
-  posts = [
-    ...posts,
-    { id, text: TEXT, time: `Today at 4:${String(20 + id).padStart(2, '0')} PM` },
-  ].slice(-SHOWN)
+  posts = [...posts, { id, text: TEXT, time: today(16 * 60 + 20 + id) }].slice(-SHOWN)
   response = { status: 200, body: 'ok' }
 }
 </script>
 
 <div class="webhook">
   <div class="request">
-    <pre class="http" aria-label="The request"><span class="method">POST</span> {ROUTE}
+    <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <pre class="http" tabindex="0" role="region" aria-label="The request"><span class="method">POST</span> {ROUTE}
 <span class="header">Authorization:</span> Bearer {SECRET}
 <span class="header">Content-Type:</span> application/json
 
