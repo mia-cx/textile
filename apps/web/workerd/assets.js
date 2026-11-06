@@ -60,16 +60,19 @@ let headerRules
 
 /** Characters a decoded path may hold that a URL would read as an escape, a query, or a fragment. */
 const URL_SYNTAX = /[%?#]/g
-const toUrl = (path, base) => new URL(path.replace(URL_SYNTAX, encodeURIComponent), base)
+/** A URL on `base`'s origin whose pathname is `path`, never an authority, even when `path` starts with `//`. */
+const toUrl = (path, base) =>
+  new URL(`${base.origin}${path.replace(URL_SYNTAX, encodeURIComponent)}`)
 
 /**
- * The file path a request names: percent-decoded once, then with `.` and `..` segments resolved, so `/%64ocs/` is
- * `/docs/` and `/a%2f..%2f_headers` is `/_headers`. Routing and lookups both use it, so an encoding can't route a
- * request one way and serve it another. Undefined when the encoding is malformed.
+ * The file path a request names: percent-decoded once, with `.` and `..` segments resolved and repeated slashes
+ * collapsed, so `/%64ocs/` is `/docs/` and `/a%2f..%2f%2fx` is `/x`. Routing and lookups both use it, so an encoding
+ * can't route a request one way and serve it another. Undefined when the encoding is malformed.
  */
 const pathOf = (url) => {
   try {
-    return decodeURIComponent(toUrl(decodeURIComponent(url.pathname), url).pathname)
+    const resolved = decodeURIComponent(toUrl(decodeURIComponent(url.pathname), url).pathname)
+    return resolved.replace(/\/{2,}/g, '/')
   } catch {
     return undefined
   }
