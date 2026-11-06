@@ -34,6 +34,19 @@ let signIn = $state<HTMLElement>()
 const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
+/**
+ * The hero's event labels: two above the headline, two below the actions (at 80% and 85% of the height), all left of
+ * the window. They are placed as fractions of the hero while the copy scales on its own, so they clear it only from
+ * LABELLED pixels wide; narrower, the hero shows its threads without them.
+ */
+const LABELS = [
+  { text: 'messageCreate', at: 0.455, lane: -0.63 },
+  { text: 'interactionCreate', at: 0.665, lane: -1.3 },
+  { text: 'voiceStateUpdate', at: 0.45, lane: 0.77 },
+  { text: `cron ${CRON}`, at: 0.665, lane: 2.6 },
+]
+const LABELLED = 1360
+
 /** The hero: hundreds of threads streaming in from the left, braiding into the Discord window's left edge. */
 function hero(
   { width, height }: { width: number; height: number },
@@ -52,14 +65,7 @@ function hero(
       braid: 0.8,
       count: width > 1600 ? 820 : 640,
       intensity: 0.6,
-      // Two above the headline, two below the actions (at 80% and 85% of the height, where the copy never reaches),
-      // both left of the window. Positions scale with the box.
-      labels: [
-        { text: 'messageCreate', at: 0.455, lane: -0.63 },
-        { text: 'interactionCreate', at: 0.665, lane: -1.3 },
-        { text: 'voiceStateUpdate', at: 0.45, lane: 0.77 },
-        { text: `cron ${CRON}`, at: 0.665, lane: 2.6 },
-      ],
+      labels: width >= LABELLED ? LABELS : [],
     }
   }
   const end: Point = target
