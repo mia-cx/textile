@@ -247,7 +247,10 @@ function close(
     background: radial-gradient(closest-side, rgb(7 6 12 / 0.72), rgb(7 6 12 / 0.4) 60%, transparent);
     pointer-events: none;
   }
+  /* Two lines at every width: "Discord bots" fits in 6em and "Discord bots for" doesn't, so on the widest screens the
+     headline stays a block beside the braid instead of one line it runs through. */
   h1 {
+    max-width: 6em;
     font-size: clamp(3.25rem, 1.2rem + 5.6vw, 8.75rem);
     font-weight: 600;
     line-height: 0.98;
