@@ -42,10 +42,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   const key = \`shipped:\${interaction.user.id}\`
   const last = await kv.get(key)
   await kv.set(key, shipped)
-  const reply = \`Logged: \${shipped}.\`
-  await interaction.reply(
-    last ? \`\${reply} Last time: \${last}.\` : reply,
-  )
+  const logged = \`Logged: \${shipped}.\`
+  const reply = last ? \`\${logged} Last time: \${last}.\` : logged
+  // A Discord message holds at most 2,000 characters
+  await interaction.reply(reply.slice(0, 2000))
 })
 
 // POST /workflows/<bot ID>/${WORKFLOW_NAME}
