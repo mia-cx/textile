@@ -75,14 +75,22 @@ rail.
 `src/lib/threads/`. One geometry (`geometry.ts`) runs everywhere: in WGSL for WebGPU, in GLSL for WebGL2, and on the CPU
 for event labels, the 2D fallback, the section strands, and the social card.
 
-- Threads follow a quadratic curve from off-screen left to the target's edge. They travel in nine ribbons that share a
-  lane, a sway, and mostly a colour, so the fan reads as a current; then they twist into three strands, each taking its
-  strand's colour, so the cord reads as a braid.
-- Each thread is one instance: a triangle strip of 201 point pairs, widened 3.2px for a soft halo. Threads add their light
-  into a half-float target; a second pass tone-maps it (`1 − e^(−1.25x)`) over the ink, dithered.
-- Labelled threads are pinned where their label sits, so labels are placed once per resize, never per frame. Labels are
-  placed as fractions of the hero while its copy scales on its own, so they show from a 1280px-wide hero, where they
-  clear it.
+- Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel that narrows
+  the whole way, so there is no pinch and no straight run. They travel in eleven ribbons that share a lane, a sway, and
+  a colour (golden-ratio steps, so neighbours differ), so the funnel reads as a current.
+- From `braid` on, threads keep leaving the funnel for a three-strand braid inside it, innermost first, outermost last,
+  each taking its strand's colour. The braid narrows with the funnel and keeps one helix angle, so it twists tighter as
+  it goes and meets the target at its thinnest, `cord`, and brightest.
+- The threads emit light. Each is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the
+  braid twists tightest) widened 2px for its own halo, with pulses of light running along it toward the target. Threads
+  add their light into a half-float target. The bloom shrinks that to a quarter of the CSS size and blurs it both ways;
+  the tone pass adds it back, with a near-white flare where the cord ends, and tone-maps it all (`1 − e^(−1.25x)`) over
+  the ink, dithered.
+- Labelled threads run at the edge of the current and join the braid only after their label. They are pinned where the
+  label sits, so labels are placed once per resize, never per frame. Labels are placed as fractions of the hero while
+  its copy scales on its own, so they show from a 1280px-wide hero, where they clear it.
+- The field passes behind the hero's copy dimmed by a soft radial shade, and the subline carries its own text shadow, so
+  the copy reads cleanly with no visible box.
 - Renderers, in order: WebGPU, WebGL2 (with `EXT_color_buffer_float`, else straight additive), then one still canvas 2D
   frame. Asking for a context claims the canvas, so a failed renderer leaves a fresh one. A lost GPU device is replaced
   once; after a second loss the field uses WebGL2 or 2D.

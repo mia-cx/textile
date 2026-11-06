@@ -1,5 +1,5 @@
 <script lang="ts">
-import { type Field, position, tint } from './geometry'
+import { along, type Field, position, tint } from './geometry'
 
 /**
  * A few threads that braid into one point: the hero's field, small enough for SVG. The parent positions the band so
@@ -26,7 +26,9 @@ const field: Field = {
 }
 const COLOURS = ['var(--thread-violet)', 'var(--thread-amber)', 'var(--thread-silver)']
 const paths = Array.from({ length: field.count }, (_, i) => {
-  const points = Array.from({ length: POINTS + 1 }, (_, s) => position(field, i, s / POINTS, 0))
+  const points = Array.from({ length: POINTS + 1 }, (_, s) =>
+    position(field, i, along(s / POINTS), 0),
+  )
   const d = points
     .map(([x, y], s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
     .join('')

@@ -35,16 +35,16 @@ const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
- * The hero's event labels, all in the bands the copy never reaches: two above the headline (at 21% and 22% of the
- * height), two below the actions (at 80% and 85%), all left of the window. They are placed as fractions of the hero
- * while the copy scales on its own, so they clear it only from LABELLED pixels wide (the box, without a scrollbar);
- * narrower, the hero shows its threads without them.
+ * The hero's event labels, each on a thread at the edge of the current, in the bands the copy never reaches: two above
+ * the headline (at about 20% and 26% of the height), two below the actions (at about 80%), all left of the window.
+ * They are placed as fractions of the hero while the copy scales on its own, so they clear it only from LABELLED
+ * pixels wide (the box, without a scrollbar); narrower, the hero shows its threads without them.
  */
 const LABELS = [
-  { text: 'messageCreate', at: 0.455, lane: -0.63 },
-  { text: 'interactionCreate', at: 0.655, lane: -2.31 },
-  { text: 'voiceStateUpdate', at: 0.45, lane: 0.77 },
-  { text: `cron ${CRON}`, at: 0.665, lane: 2.6 },
+  { text: 'messageCreate', at: 0.43, lane: -0.82 },
+  { text: 'interactionCreate', at: 0.585, lane: -1.02 },
+  { text: 'voiceStateUpdate', at: 0.335, lane: 0.75 },
+  { text: `cron ${CRON}`, at: 0.57, lane: 1.13 },
 ]
 const LABELLED = 1280
 
@@ -61,9 +61,9 @@ function hero(
       start: [-width * 0.06, height * 0.5],
       control: [end[0] * 0.5, height * 0.5],
       end,
-      spread: height * 0.6,
-      cord: clamp(width * 0.012, 12, 24),
-      braid: 0.8,
+      spread: height * 0.56,
+      cord: clamp(width * 0.004, 5, 9),
+      braid: 0.35,
       count: width > 1600 ? 820 : 640,
       intensity: 0.6,
       labels: width >= LABELLED ? LABELS : [],
@@ -77,8 +77,8 @@ function hero(
     control: [end[0], end[1] - height * 0.32],
     end,
     spread: height * 0.2,
-    cord: 8,
-    braid: 0.72,
+    cord: 4,
+    braid: 0.4,
     count: 280,
     intensity: 0.7,
     labels: [],
@@ -97,9 +97,9 @@ function close(
     start: [-width * 0.08, height * 0.5],
     control: [end[0] * 0.55, end[1]],
     end,
-    spread: height * 0.55,
-    cord: 10,
-    braid: 0.74,
+    spread: height * 0.5,
+    cord: 5,
+    braid: 0.4,
     count: 520,
     intensity: 0.85,
     labels: [],
@@ -238,14 +238,30 @@ function close(
     position: relative;
     z-index: 1;
   }
-  /* The threads pass behind the copy dimmed, so the headline reads first. */
+  /* The copy's box hugs its text, so the shade behind it covers the text and no more. */
+  .hero-copy {
+    justify-self: start;
+  }
+  /* The threads pass behind the copy dimmed, so the headline reads first, and the subline and buttons read cleanly
+     where the current is brightest; each line of the subline also carries its own soft shade. */
   .hero-copy::before {
     content: '';
     position: absolute;
-    inset: -12% -8% -12% -40%;
+    inset: -22% -6% -22% -45%;
     z-index: -1;
-    background: radial-gradient(closest-side, rgb(7 6 12 / 0.72), rgb(7 6 12 / 0.4) 60%, transparent);
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--paper) 82%, transparent),
+      color-mix(in srgb, var(--paper) 64%, transparent) 55%,
+      color-mix(in srgb, var(--paper) 28%, transparent) 80%,
+      transparent
+    );
     pointer-events: none;
+  }
+  .hero .lede {
+    text-shadow:
+      0 0 1.5rem var(--paper),
+      0 0 0.5rem var(--paper);
   }
   /* Never one line: "Discord bots" fits in 6em and "Discord bots for" doesn't, so on the widest screens the headline
      stays a block beside the braid instead of one line it runs through. Columns narrower than 6em wrap it further. */
