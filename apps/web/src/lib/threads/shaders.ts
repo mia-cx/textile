@@ -39,6 +39,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('CLOSE', float(SHAPE.close)),
     declare('WAVE', float(SHAPE.wave)),
     declare('FRAY', float(SHAPE.fray)),
+    declare('FIBRES', float(SHAPE.fibres)),
     declare('RIBBONS', float(SHAPE.ribbons)),
     declare('RIBBON', float(SHAPE.ribbon)),
     declare('JOIN', float(SHAPE.join)),
@@ -109,7 +110,7 @@ fn place(i: f32, u: f32) -> vec4f {
   if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
   let strand = i - 3.0 * floor(i / 3.0);
   let phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
-  let jitter = hash(i + 5.9) * 2.0 - 1.0;
+  let jitter = (floor(hash(i + 5.9) * FIBRES) + 0.5) / FIBRES * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * 0.12;
 
   let a = 1.0 - u;
   let p = a * a * p0 + 2.0 * a * u * p1 + u * u * p2;
@@ -325,7 +326,7 @@ vec4 place(float i, float u) {
   if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
   float strand = mod(i, 3.0);
   float phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
-  float jitter = hash(i + 5.9) * 2.0 - 1.0;
+  float jitter = (floor(hash(i + 5.9) * FIBRES) + 0.5) / FIBRES * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * 0.12;
 
   float a = 1.0 - u;
   vec2 p = a * a * p0 + 2.0 * a * u * p1 + u * u * p2;

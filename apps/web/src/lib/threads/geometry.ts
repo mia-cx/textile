@@ -63,8 +63,9 @@ export const SHAPE = {
   close: 0.92,
   /** How far the current sways, as a fraction of the funnel's width. */
   wave: 0.14,
-  /** How far a thread strays from its strand in the braid, in braid radii. */
+  /** How far a thread strays from its strand in the braid, in braid radii, and how many fibre bundles it gathers in. */
   fray: 0.4,
+  fibres: 8,
   /**
    * How many ribbons the threads travel in, and how wide each is, as a fraction of the whole funnel: narrower than the
    * gaps between them, so the current reads as separate strands of fibre on the dark.
@@ -120,7 +121,11 @@ export const thread = (field: Field, i: number) => {
     joins: label ? Math.max(joins, Math.min(SHAPE.joined, label.at + SHAPE.join * 1.5)) : joins,
     strand: i % 3,
     phase: hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6,
-    jitter: hash(i + 5.9) * 2 - 1,
+    // Where in its strand the thread runs, -1 to 1: one of a few fibre bundles, so each strand reads as fibres.
+    jitter:
+      ((Math.floor(hash(i + 5.9) * SHAPE.fibres) + 0.5) / SHAPE.fibres) * 2 -
+      1 +
+      (hash(i + 8.3) - 0.5) * 0.12,
     ribbon,
   }
 }
