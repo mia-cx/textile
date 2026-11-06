@@ -404,13 +404,13 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       context.fillRect(0, 0, canvas.width, canvas.height)
       context.globalCompositeOperation = 'lighter'
       const [violet, amber, silver] = palette.threads
-      const [ar, ag, ab] = amber
+      const [vr, vg, vb] = violet
       const [sr, sg, sb] = silver
-      // The braid's strands, as the shaders' `strandColour`: violet, amber, and amber toward silver.
+      // The braid's strands, as the shaders' `strandColour`: violet, amber, and violet toward silver.
       const strands: ReadonlyArray<RGB> = [
         violet,
         amber,
-        [ar + (sr - ar) * 0.4, ag + (sg - ag) * 0.4, ab + (sb - ab) * 0.4],
+        [vr + (sr - vr) * 0.6, vg + (sg - vg) * 0.6, vb + (sb - vb) * 0.6],
       ]
       /** One thread's points from `from` to `to` (of STILL_SEGMENTS), stroked with a faint halo under a fine core. */
       const stroke = (i: number, from: number, to: number, rgb: RGB, alpha: number) => {

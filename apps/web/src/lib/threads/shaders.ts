@@ -50,7 +50,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
-    declare('BRAID_LIGHT', float(0.5)),
+    declare('BRAID_LIGHT', float(0.75)),
     // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak: less in the
     // braid, where hundreds of threads pulse in step and would otherwise burn it flat white.
     declare('PULSES', float(2.5)),
@@ -73,10 +73,10 @@ fn paint(pick: f32) -> vec3f {
   if (pick < 0.8) { return U[9].rgb; }
   return U[10].rgb;
 }
-// The braid's strands: violet, amber, and amber toward silver, so it stays coloured rather than turning white, and
-// glows as warm as violet.
+// The braid's strands: violet, amber, and violet toward silver, so it stays coloured rather than turning white, with
+// one warm strand among two cool ones.
 fn strandColour(strand: u32) -> vec3f {
-  if (strand == 2u) { return mix(U[9].rgb, U[10].rgb, 0.4); }
+  if (strand == 2u) { return mix(U[8].rgb, U[10].rgb, 0.6); }
   return U[8u + strand].rgb;
 }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
@@ -299,7 +299,7 @@ float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
 float ribbonOf(float i) { return floor(hash(i + 1.3) * RIBBONS); }
 float along(float fraction) { return 1.0 - pow(1.0 - fraction, CROWD); }
 vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb : U[10].rgb; }
-vec3 strandColour(int strand) { return strand == 2 ? mix(U[9].rgb, U[10].rgb, 0.4) : U[8 + strand].rgb; }
+vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.6) : U[8 + strand].rgb; }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
   return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(2.0, 5.0, peak) * 0.85);

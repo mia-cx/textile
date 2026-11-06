@@ -78,11 +78,11 @@ for event labels, the 2D fallback, the section strands, and the social card.
 - Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel whose
   nearly straight edges close in steadily until they meet the braid, tangent to it, so there is no knee, no pinch, and
   no straight run. They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a
-  colour (golden-ratio steps, so neighbours differ, with amber in the middle where they converge first), so the funnel
+  colour (golden-ratio steps, so neighbours differ: silver at the edges, amber among violet toward the middle), so the funnel
   reads as separate strands of fibre on the dark.
 - From `braid`, past the hero's headline, threads keep leaving the funnel for a three-strand braid inside it, inner
   lanes mostly first and the outermost last, all by `joined`, so the braid is full as soon as it forms. Its strands are
-  violet, amber, and amber toward silver. The braid narrows linearly to `cord` and keeps one helix angle (about 40°,
+  violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one helix angle (about 40°,
   like rope), so it twists tighter as it goes and meets the target at its thinnest and brightest. The hero's cord stops
   just short of the window; the window drops its black shadow there, so the cord's end stays bright, and a frame
   around it, which the window's clipping can't cut, lights its rim with a narrow flare where the cord arrives.
