@@ -4,6 +4,7 @@ import { pageToMarkdown } from '$lib/server/convert'
 import { docsMarkdown } from '$lib/server/docs'
 import { wantsMarkdown } from '$lib/server/negotiate'
 import { readSession } from '$lib/server/session'
+import { ORIGIN } from '$lib/site'
 
 const MARKDOWN = 'text/markdown; charset=utf-8'
 /** What decides between a page's HTML and its Markdown, so caches keep both. */
@@ -18,7 +19,7 @@ const isHtml = (response: Response) =>
  * twin is the copy the docs build wrote; any other page renders as usual and its content is converted. HTML pages
  * advertise their twin.
  */
-export const handle: Handle = async ({ event, resolve }) => {
+const respond: Handle = async ({ event, resolve }) => {
   const { url, request, platform } = event
   if (!platform)
     throw new Error('The site runs as a Cloudflare Worker, and its bindings are missing.')
@@ -67,4 +68,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     status: response.status,
     headers: { ...headers, 'cache-control': response.headers.get('cache-control') ?? 'no-cache' },
   })
+}
+
+/** Only textile.cx is for search engines: every other origin (staging, a preview, a local run) asks them to stay out. */
+export const handle: Handle = async (input) => {
+  const response = await respond(input)
+  if (input.event.url.origin !== ORIGIN) response.headers.set('x-robots-tag', 'noindex')
+  return response
 }
