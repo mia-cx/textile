@@ -52,10 +52,14 @@ onMount(() => {
   let time = STILL_TIME
   let last = 0
   let destroyed = false
+  /** The canvas no longer shows the current frame: it was resized, or the still frame changed. */
+  let dirty = false
   const motion = matchMedia('(prefers-reduced-motion: no-preference)')
 
   const draw = () => {
-    if (renderer && field && palette) renderer.draw(field, palette, time)
+    if (!renderer || !field || !palette) return
+    renderer.draw(field, palette, time)
+    dirty = false
   }
   const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
   const tick = (now: number) => {
@@ -70,6 +74,12 @@ onMount(() => {
     if (frame !== 0 || !visible || document.hidden || !animates()) return
     last = performance.now()
     frame = requestAnimationFrame(tick)
+  }
+  /** Brings the canvas up to date, but only while someone can see it; off screen or hidden, it waits. */
+  const refresh = () => {
+    if (!visible || document.hidden) return
+    if (dirty) draw()
+    wake()
   }
 
   const measure = () => {
@@ -97,29 +107,42 @@ onMount(() => {
       const [x, y] = position(placed, i, label.at, 0)
       return { text: label.text, x, y }
     })
-    // Resizing clears the canvas, so draw now rather than on the next frame.
-    draw()
+    // Resizing clears the canvas: draw now if it shows, rather than leave a blank frame.
+    dirty = true
+    refresh()
   }
 
-  /** WebGPU, then WebGL2, then canvas 2D. A canvas keeps its first context, so a failed one leaves a fresh canvas. */
+  /** A canvas keeps its first context, so starting over, or past a failed renderer, needs a fresh one. */
+  const replaceCanvas = () => {
+    const fresh = canvas.cloneNode() as HTMLCanvasElement
+    canvas.replaceWith(fresh)
+    canvas = fresh
+  }
+
+  /** WebGPU, then WebGL2, then canvas 2D. A lost GPU device starts the field over, on a new device or a fallback. */
   const start = async () => {
-    const attempts = [webgpu, webgl2, still]
-    for (const attempt of attempts) {
+    renderer = undefined
+    for (const attempt of [webgpu, webgl2, still]) {
       try {
         renderer = await attempt(canvas)
       } catch (error) {
         // biome-ignore lint/suspicious/noConsole: the field still draws with the next renderer; the console is where the failure gets reported.
         console.warn('The thread field fell back to a simpler renderer.', error)
-        const fresh = canvas.cloneNode() as HTMLCanvasElement
-        canvas.replaceWith(fresh)
-        canvas = fresh
+        replaceCanvas()
       }
       if (renderer) break
     }
     if (destroyed) return renderer?.destroy()
     kind = renderer?.kind
+    renderer?.lost?.then(() => {
+      if (destroyed) return
+      cancelAnimationFrame(frame)
+      frame = 0
+      replaceCanvas()
+      void start()
+    })
     measure()
-    wake()
+    refresh()
   }
 
   const resize = new ResizeObserver(measure)
@@ -127,15 +150,17 @@ onMount(() => {
   if (target) resize.observe(target)
   const seen = new IntersectionObserver(([entry]) => {
     visible = entry?.isIntersecting ?? false
-    wake()
+    refresh()
   })
   seen.observe(box)
-  const onVisibility = () => wake()
+  const onVisibility = () => refresh()
   /** Motion back on resumes the current; motion off settles it into the still frame. */
   const onMotion = () => {
-    if (motion.matches) return wake()
-    time = STILL_TIME
-    draw()
+    if (!motion.matches) {
+      time = STILL_TIME
+      dirty = true
+    }
+    refresh()
   }
   document.addEventListener('visibilitychange', onVisibility)
   motion.addEventListener('change', onMotion)

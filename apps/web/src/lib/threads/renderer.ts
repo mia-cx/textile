@@ -22,6 +22,8 @@ export interface Renderer {
   readonly kind: 'webgpu' | 'webgl2' | '2d'
   draw(field: Field, palette: Palette, time: number): void
   destroy(): void
+  /** Settles when the renderer can no longer draw, as when the browser resets the GPU; the field then starts over. */
+  readonly lost?: Promise<unknown>
 }
 
 /** How much light the tone map lets through: higher is brighter, saturating sooner. */
@@ -44,9 +46,13 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
 
 let gpuDevice: Promise<GPUDevice | undefined> | undefined
 
-/** One device for every field on the page. Undefined when the browser has no WebGPU or no adapter. */
+/**
+ * One device for every field on the page, until it is lost; the next field to start asks for a new one. Undefined when
+ * the browser has no WebGPU or no adapter.
+ */
 const device = () => {
-  gpuDevice ??= (async () => {
+  if (gpuDevice) return gpuDevice
+  const requested = (async () => {
     if (!('gpu' in navigator)) return undefined
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
     const gpu = await adapter?.requestDevice()
@@ -54,9 +60,13 @@ const device = () => {
       // biome-ignore lint/suspicious/noConsole: the page keeps working without the field; the console is where a failed effect gets reported.
       console.error('The thread field’s GPU work failed.', event.error.message),
     )
+    void gpu?.lost.then(() => {
+      if (gpuDevice === requested) gpuDevice = undefined
+    })
     return gpu
   })().catch(() => undefined)
-  return gpuDevice
+  gpuDevice = requested
+  return requested
 }
 
 const HDR: GPUTextureFormat = 'rgba16float'
@@ -133,6 +143,7 @@ export async function webgpu(canvas: HTMLCanvasElement): Promise<Renderer | unde
 
   return {
     kind: 'webgpu',
+    lost: gpu.lost,
     draw(field, palette, time) {
       const { view, tone: toneBindings } = target()
       gpu.queue.writeBuffer(uniforms, 0, pack(canvas, field, palette, time))
