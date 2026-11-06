@@ -58,10 +58,28 @@ const parseHeaders = (text) => {
 
 let headerRules
 
+/** Characters a decoded path may hold that a URL would read as an escape, a query, or a fragment. */
+const URL_SYNTAX = /[%?#]/g
+const toUrl = (path, base) => new URL(path.replace(URL_SYNTAX, encodeURIComponent), base)
+
+/**
+ * The file path a request names: percent-decoded once, then with `.` and `..` segments resolved, so `/%64ocs/` is
+ * `/docs/` and `/a%2f..%2f_headers` is `/_headers`. Routing and lookups both use it, so an encoding can't route a
+ * request one way and serve it another. Undefined when the encoding is malformed.
+ */
+const pathOf = (url) => {
+  try {
+    return decodeURIComponent(toUrl(decodeURIComponent(url.pathname), url).pathname)
+  } catch {
+    return undefined
+  }
+}
+
 const readFile = async (disk, url, path) => {
-  const response = await disk.fetch(new URL(path, url))
-  // The disk service answers a directory with a listing of it, which is not an asset.
-  return response.ok && !path.endsWith('/') ? response : undefined
+  const response = await disk.fetch(toUrl(path, url))
+  // The disk service sends every file as application/octet-stream, and a directory's listing as JSON.
+  const directory = response.headers.get('content-type') === 'application/json'
+  return response.ok && !directory ? response : undefined
 }
 
 /**
@@ -73,13 +91,8 @@ async function serveAsset(disk, request) {
   if (request.method !== 'GET' && request.method !== 'HEAD')
     return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } })
   const url = new URL(request.url)
-  let path
-  try {
-    path = decodeURIComponent(url.pathname)
-  } catch {
-    return NOT_FOUND()
-  }
-  if (CONFIG_FILES.has(path)) return NOT_FOUND()
+  const path = pathOf(url)
+  if (path === undefined || CONFIG_FILES.has(path)) return NOT_FOUND()
   const candidates = path.endsWith('/')
     ? [`${path}index.html`]
     : [path, `${path}.html`, `${path}/index.html`]
@@ -96,7 +109,7 @@ async function serveAsset(disk, request) {
     'content-type': TYPES[file.split('.').pop()] ?? 'application/octet-stream',
   })
   for (const { pattern, set, drop } of headerRules) {
-    if (!pattern.test(url.pathname)) continue
+    if (!pattern.test(path)) continue
     for (const name of drop) headers.delete(name)
     for (const [name, value] of set) headers.append(name, value)
   }
@@ -113,7 +126,8 @@ export class Assets extends WorkerEntrypoint {
 /** Every request: a static asset when one matches, as Cloudflare serves them, and otherwise the Worker. */
 export default {
   async fetch(request, env) {
-    if (workerFirst(new URL(request.url).pathname)) return env.SITE.fetch(request)
+    const path = pathOf(new URL(request.url))
+    if (path === undefined || workerFirst(path)) return env.SITE.fetch(request)
     const asset = await serveAsset(env.DISK, request)
     return asset.status === 404 || asset.status === 405 ? env.SITE.fetch(request) : asset
   },
