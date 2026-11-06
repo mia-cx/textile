@@ -16,9 +16,17 @@ const SPEAKERS = [
   { name: 'you', you: true },
 ] as const
 
+/** The latest click, which the reply answers. */
 let choice = $state<{ scope: Scope; undone: boolean }>()
+/** Each scope's opt-out, kept apart as Textile stores them: either one keeps your voice from being relayed. */
+let opted = $state<Record<Scope, boolean>>({ here: false, all: false })
 let answer = $state<HTMLParagraphElement>()
-const optedOut = $derived(choice !== undefined && !choice.undone)
+const optedOut = $derived(opted.here || opted.all)
+
+function optOut(scope: Scope) {
+  choice = { scope, undone: false }
+  opted[scope] = true
+}
 
 const reply = (scope: Scope, undone: boolean) =>
   scope === 'here'
@@ -33,6 +41,7 @@ const reply = (scope: Scope, undone: boolean) =>
 async function undo() {
   if (!choice) return
   choice = { ...choice, undone: true }
+  opted[choice.scope] = false
   await tick()
   answer?.focus()
 }
@@ -61,10 +70,10 @@ async function undo() {
       <Message author="Weaver" bot time="Today at 8:30 PM">
         <p>{VOICE_NOTICE.notice}</p>
         <div class="actions">
-          <button type="button" class="discord-button" onclick={() => (choice = { scope: 'here', undone: false })}>
+          <button type="button" class="discord-button" onclick={() => optOut('here')}>
             {VOICE_NOTICE.optOutHere}
           </button>
-          <button type="button" class="discord-button" onclick={() => (choice = { scope: 'all', undone: false })}>
+          <button type="button" class="discord-button" onclick={() => optOut('all')}>
             {VOICE_NOTICE.optOutAll}
           </button>
         </div>
