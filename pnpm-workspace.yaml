@@ -17,6 +17,9 @@ allowBuilds:
   msgpackr-extract: true
   # workerd resolves its platform binary package without its postinstall check.
   workerd: false
+  # Svartz's dependencies (apps/docs): sharp loads its prebuilt @img/sharp-* binary, and core-js's script only prints an ad.
+  core-js: false
+  sharp: false
 
 # Opus disables NEON in its Linux config; do not compile the unused NEON sources there.
 patchedDependencies:

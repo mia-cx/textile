@@ -1,0 +1,6 @@
+# Copy to .dev.vars for `pnpm preview`. Never commit .dev.vars.
+DISCORD_CLIENT_SECRET=
+# openssl rand -base64 32
+SESSION_KEY=
+# Comma-separated Discord user IDs who have access.
+ACCESS_LIST=

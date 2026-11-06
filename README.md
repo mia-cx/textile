@@ -93,169 +93,21 @@ the supported operation and its input schema.
 
 Arguments are validated locally before execution. Destructive and admin calls act
 directly under the supplied bot's Discord permissions, with no preview-token
-sessions; only [scripts](#scripts) and [workflows](#workflows) carry server-side grants. Voice
+sessions; only [scripts and workflows](#scripts-and-workflows) carry server-side grants. Voice
 is relayed, never stored, and the relay runs no agent conversations.
 
 Calls currently accept JSON payloads. Multipart file upload is not implemented.
 Discord rate limits and API errors are returned to the caller; the HTTP relay
 disables automatic retries and rate-limit waits.
 
-## Scripts
+## Scripts and workflows
 
-`discord_script_run` batches many Discord calls into one tool call. The source is a
-module whose default export receives a discord.js `Client`:
-
-```ts
-import { EmbedBuilder } from 'discord.js'
-
-export default async ({ client }) => {
-  const channel = await client.channels.fetch('123456789012345678')
-  for (const title of ['One', 'Two', 'Three']) {
-    await channel.send({ embeds: [new EmbedBuilder().setTitle(title)] })
-  }
-  return 'sent'
-}
-```
-
-Pass `grants` with the call: `operations` lists catalog operation IDs, `families`
-grants a family's read and write operations, and `hosts` lists hostnames the script
-may `fetch()`. Destructive and admin operations must be named in `operations`. A
-refused call fails inside the script with HTTP 403 and is listed in the result's `denied`.
-
-Each script runs once in a fresh [workerd](https://github.com/cloudflare/workerd)
-process with no Gateway connection and no bot token. Every request it makes, whatever
-its URL, reaches a broker in the relay. The broker matches Discord calls to catalog
-operations, checks the grants, and replays them with the request's bot token.
-Outbound HTTP reaches granted hosts on public addresses only: the broker checks every
-address a hostname resolves to and every redirect target, refuses private, loopback,
-link-local, cloud metadata, and IPv4-mapped addresses, and connects to the address it
-checked. One bot's scripts run one at a time.
-A script is killed after `timeoutSeconds` (30 by default, 120 at most).
-
-The HTTP relay offers the tool only when `DISCORD_OAUTH_ALLOWED_USER_IDS` is set.
-Local stdio always offers it. workerd ships as an npm dependency for glibc Linux,
-macOS, and Windows.
-
-## Workflows
-
-A workflow is discord.js code that runs as the bot on Gateway events, cron schedules, and
-inbound HTTP requests, while no agent is connected. It is written like an ordinary bot:
-
-```ts
-import { Client, Events, GatewayIntentBits } from 'discord.js'
-
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-})
-
-client.on(Events.MessageCreate, async (message) => {
-  if (message.content === 'ping') await message.reply('pong')
-})
-
-client.login(process.env.DISCORD_TOKEN)
-```
-
-`discord_workflow_publish` bundles the source with esbuild and loads it once in workerd to
-find the events its clients listen for and the intents and schedules they declare, then stores
-the bundle as the workflow's next immutable revision.
-
-A workflow may import npm packages listed in `dependencies`, with a version, range, or tag;
-pass a `package-lock.json` as `lockfile` to pin every version. npm installs them from the
-public registry with install scripts off, through a proxy that reaches only the registry.
-Each revision records every package version it was built with. Publishing fails, before any
-revision is stored, on a package that can't be bundled or loaded in workerd, such as a native
-addon, and on code that can't work when each event runs in a fresh isolate: collectors,
-`awaitMessages`, and URL attachments. These checks read the workflow's own syntax, so a call
-built at runtime, or made inside a dependency, gets past them. Installs are capped at 256 MB
-and two at a time per bot host. discord.js and `textile` always come from the platform, even
-for a package that installs its own.
-
-`discord_workflow_enable` runs a revision and returns its grants, intents, and schedules;
-Discord's privileged intents must be on in the Developer Portal first. While any workflow is
-enabled, the bot stays online without agent calls. After a restart, workflows also run the
-events Discord replays.
-
-Workflows listen for `messageCreate`, `messageUpdate`, `messageDelete`,
-`messageReactionAdd`, `messageReactionRemove`, `guildMemberAdd`, `guildMemberRemove`, and
-`interactionCreate`. Each event runs each listening workflow in its own fresh workerd
-process for at most 30 seconds, so nothing in memory lasts between events, and listeners
-may receive partial objects. Each workflow receives only the events its own intents cover.
-A guild's events run in order; interactions run at once. The bot's own messages are not delivered. Grants work as for scripts. A
-workflow may also answer the interaction it is handling (`reply`, `deferReply`, `editReply`,
-`followUp`) with the `interaction` and `webhook` families, and set the bot's presence.
-
-To run on a schedule, a client lists five-field cron expressions, in UTC, in a `schedules`
-option and listens for `schedule`:
-
-```ts
-const client = new Client({ intents: [], schedules: ['0 9 * * *'] })
-
-client.on('schedule', async ({ cron, scheduledAt }) => {
-  const channel = await client.channels.fetch('123456789012345678')
-  await channel.send(`Digest for ${scheduledAt.toISOString().slice(0, 10)}`)
-})
-```
-
-A workflow declares at most ten schedules, which together fire at most every five minutes, and
-each client hears only its own schedules. Each tick
-runs once, however many bot hosts there are, and schedules start when the workflow is enabled.
-A tick missed while the bot's host was down, or the bot was offline, runs once, late, when the
-bot is back online: each schedule runs its most recent missed tick and skips the earlier ones,
-and `scheduledAt` says when it was due.
-
-A workflow answers webhooks when it default-exports a fetch handler. It needs no Gateway
-listeners, but calls Discord through a client created at the top level:
-
-```ts
-import { Client } from 'discord.js'
-
-const client = new Client({ intents: [] })
-
-export default {
-  async fetch(request: Request) {
-    const { text } = await request.json()
-    await client.rest.post('/channels/123456789012345678/messages', { body: { content: text } })
-    return new Response('ok')
-  },
-}
-```
-
-Once enabled, any request to `/workflows/<bot ID>/<name>` on the relay, or to a path below it,
-runs the handler in a fresh workerd process for at most 10 seconds. Built-in endpoints never
-live under `/workflows/`, so a route can't shadow one. Routes need no login, so a handler
-should verify its sender, for example by a signature over the exact body bytes it receives.
-Request bodies are limited to 1 MiB, and a response body over about 700 KiB fails. The
-response keeps only its status, body, and `Content-Type`, and is served with a sandbox
-content security policy, since routes share the relay's origin. A disabled or deleted
-workflow's route answers 404. While Discord has the bot offline, its routes answer 503 with
-`Retry-After: 1`. Each bot may have eight route requests waiting or running; more get 503
-too.
-
-A workflow keeps state between runs in its own key-value store:
-
-```ts
-import { kv } from 'textile'
-
-const count = ((await kv.get('count')) ?? 0) + 1
-await kv.set('count', count)
-```
-
-Values are anything JSON can hold. State belongs to the workflow, not a revision: it lasts
-across runs, revisions, and restarts, and goes when the workflow is deleted. A workflow's
-keys and values take at most 1 MiB together, and a key at most 512 bytes; a `set` past
-either throws and stores nothing. Only one guild's non-interaction events run in order:
-interactions, route requests, direct messages from different channels, and other guilds'
-events run at the same time, so their writes to one key can interleave, and the last one wins.
-
-`discord_workflow_logs` shows the bot's recent runs, newest first: each run's event
-(`schedule <cron>` for a tick, `HTTP` and the method for a route request), outcome, error, and console output, filtered by workflow or to failures only. A run keeps up
-to 16,384 characters of output; one that timed out or crashed keeps none. Bot and interaction tokens in
-logs and errors read `[redacted]`. Runs stay readable for 7 days, up to the newest 1,000 per
-workflow. Bot hosts delete expired runs at startup, and at most hourly while workflows run.
-
-Anyone with relay access and the bot's token manages its workflows. Every publish, enable,
-disable, and delete is recorded with the acting human's Discord user ID, and
-`discord_workflow_list` shows the latest changes. Workflow tools need [bot hosting](#bot-hosting).
+`discord_script_run` runs discord.js once in a sandboxed [workerd](https://github.com/cloudflare/workerd)
+isolate, so many Discord calls cost one tool call. Workflows are published discord.js code that
+runs as the bot on Gateway events, slash commands, cron schedules, and inbound HTTP requests while
+no agent is connected. Both declare grants: the catalog operations they may call and the hosts
+they may reach. Read [Scripts and workflows](./docs/workflows.md) for triggers, dependencies,
+state, logs, and limits. Workflow tools need [bot hosting](#bot-hosting).
 
 ## Permission metadata
 
@@ -370,7 +222,7 @@ resource, issuer, browser state, and one-time codes. Registrations expire after
 Bot hosting keeps agents' bots online. An agent's first call for a bot stores its token,
 encrypted, in Postgres and connects the bot to Discord's Gateway with an online presence.
 Each later call restarts a 24-hour timer; when it runs out, the bot disconnects and shows
-offline, unless it has enabled [workflows](#workflows). Startup applies pending database
+offline, unless it has enabled [workflows](#scripts-and-workflows). Startup applies pending database
 migrations and brings every bot with enabled workflows online.
 
 A bot runs as many shards as Discord recommends. Shards identify as fast as Discord's
@@ -397,66 +249,9 @@ Publishing a workflow with dependencies runs `npm` from `PATH` and needs HTTPS a
 #### Voice
 
 With bot hosting on, an agent can play audio in a voice channel, as music bots do, and hear
-each person speaking. Discord encrypts the audio end to end with DAVE. Sending needs no notice to
-the channel; receiving always posts one first.
-
-1. Call `discord_voice_join` with `guildId` and `channelId`, and `receive: true` to hear the
-   channel. The bot needs View Channel, Connect, and Speak. It returns the voice socket's path,
-   `/voice?guild_id=…`, and whether it is `receiving`.
-2. Open a WebSocket to that path on the relay's host (`wss:` for `https:`) with the same
-   `Authorization` and `X-Discord-Bot-Token` headers as `/mcp`, adding the codec to the query:
-   - `codec=opus`: each binary message is one Opus packet of 20 ms, 48 kHz stereo audio.
-   - `codec=pcm16&sample_rate=R&channels=C`: little-endian 16-bit PCM, interleaved when stereo,
-     at `R` of 8000, 12000, 16000, 24000, or 48000 Hz and `C` of 1 (default) or 2. Messages may
-     split frames but not samples.
-3. Send audio as binary messages. The bot speaks while audio arrives and stops when it pauses for
-   more than 100 ms. Audio sent faster than real time waits: once a second of it is queued, the
-   bot host stops reading the socket until it plays.
-
-##### Receiving
-
-With `receive: true`, the bot joins deafened and posts a notice in the voice channel's chat, which
-needs Send Messages there. Its buttons let anyone opt out: **Opt out here** of this bot in this
-server, or **Opt out of all Textile bots** of every bot Textile hosts. Each reply is visible only to the person who clicked, and offers an undo. Once
-the notice is up the bot undeafens, and the socket sends:
-
-- A binary message per packet: the speaker's user ID as 8 bytes, big-endian, then one packet in
-  the socket's codec. `pcm16` decodes each speaker separately.
-- JSON text events: `{"type":"join","user_id":"…"}` and `{"type":"leave","user_id":"…"}` as
-  people come and go, and `{"type":"speaking","user_id":"…","speaking":true}` (or `false`).
-
-When the notice can't be posted, `receiving` is false, `reason` says why, and the session only
-sends audio. The same happens when the bot's application has an Interactions Endpoint URL, since
-Discord would send the buttons' clicks there instead of to Textile. Joining the same channel again switches receiving on or off. If the bot is moved to
-another channel, it stops receiving until it joins with `receive: true` there.
-
-People who opted out never appear: their audio is dropped before it is decrypted. Opt-outs and
-undos apply at once on every bot host, which Postgres notifies of each one. While a bot host's
-notification connection is down, it relays nobody, and it checks everyone again once it reconnects.
-Opt-outs are stored as user IDs only, with the bot and server for a per-bot opt-out. The buttons
-answer while the bot is online.
-
-Discord neither documents nor supports bots receiving voice, so receiving is best-effort and may
-break without notice. A speaker is heard only once Discord names their audio stream, so their
-first packets may be dropped. Packets carry no sequence numbers, so the agent can't detect loss or
-reordering. Audio a slow agent hasn't read past about 1 MiB is dropped.
-
-Before upgrading, the relay answers 401 or 403 for bad credentials, 400 for a bad query, and
-409 when the bot is not in a voice channel in that server. The socket closes with:
-
-| Code | Meaning |
-| --- | --- |
-| 1000 | The bot left the channel, through `discord_voice_leave` or because Discord disconnected it. |
-| 1001 | The bot went offline, or the server is shutting down. |
-| 1003 | A text message arrived; send audio as binary messages. |
-| 1007 | A message was not valid audio for the codec. |
-| 1009 | A message was larger than 256 KiB. |
-| 4000 | A newer socket for the same server replaced this one. |
-
-Closing the socket stops playback after any queued audio; the bot stays in the channel until it
-leaves. Joining another channel in the same server moves the bot and closes its socket. An open
-socket keeps the bot online past its 24-hour idle timeout. Voice outlasts a resumed Gateway
-connection, but not a new Gateway session or a server restart: join again after a 1001 close.
+each person speaking, over one WebSocket in Opus or PCM16. Sending needs no notice to the
+channel; receiving always posts one first, whose buttons let anyone opt out. Read
+[Voice](./docs/voice.md) for the socket protocol, the notice, and close codes.
 
 ### Tiers
 
@@ -533,7 +328,7 @@ Stateless HTTP was already possible before that revision.
 Its libraries and tests remain in the workspace, but the server executable no
 longer starts that application. Persistent templates/blueprints and PAT/OIDC
 administration are outside the relay. Its Docker sandbox supervisor has been
-removed; [workflows](#workflows) now run in workerd.
+removed; [workflows](#scripts-and-workflows) now run in workerd.
 
 ## License
 
