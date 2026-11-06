@@ -41,15 +41,17 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
  * The hero's event labels, each on a bright thread at the current's outer edge: two above the headline and two below
  * the buttons, out in clear dark, all left of the window. Each pair steps toward the braid along its edge, so the lower
  * pair mirrors the upper: the edge rises as the current narrows, so its label nearer the braid sits higher. (The
- * concept puts cron lower; there, its thread would leave the current.) They are placed as fractions of the hero while
+ * concept puts cron lower; there, its thread would leave the current.) Within a pair, one thread rides a tenth of the
+ * current further in than the other, so each label has a strand of its own, and none rides past 1.05, where a thread
+ * leaves the current to run alone. They are placed as fractions of the hero while
  * the copy scales on its own, so they show only from LABELLED pixels wide (the box, without a scrollbar) and
  * LABELLED_HEIGHT tall, and each only where it keeps clear of the copy (`clearOfCopy`).
  */
 const LABELS: ReadonlyArray<Label> = [
-  { text: 'messageCreate', at: 0.45, lane: -1.05 },
-  { text: 'interactionCreate', at: 0.55, lane: -1 },
-  { text: 'voiceStateUpdate', at: 0.35, lane: 1.02 },
-  { text: `cron ${CRON}`, at: 0.43, lane: 1.03 },
+  { text: 'messageCreate', at: 0.45, lane: -0.93 },
+  { text: 'interactionCreate', at: 0.55, lane: -1.03 },
+  { text: 'voiceStateUpdate', at: 0.35, lane: 1.05 },
+  { text: `cron ${CRON}`, at: 0.39, lane: 0.95 },
 ]
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
