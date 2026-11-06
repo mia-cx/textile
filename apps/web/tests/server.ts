@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 
 /**
  * The built site, answering requests as the Worker does: SvelteKit's server from `pnpm build`, with the docs build
- * standing in for the Worker's static assets. Discord is whatever `fetch` the test stubs.
+ * standing in for the Worker's static assets. Central is whatever `fetch` the test stubs.
  */
 const OUTPUT = new URL('../.svelte-kit/output/server/', import.meta.url)
 const DOCS = new URL('../../docs/.svartz/vaults/docs/dist/', import.meta.url)
@@ -12,7 +12,8 @@ if (!existsSync(new URL('index.js', OUTPUT)) || !existsSync(DOCS)) {
 
 export const ORIGIN = 'https://textile.cx'
 export const SESSION_KEY = Buffer.alloc(32, 7).toString('base64')
-export const MEMBER = '111111111111111111'
+/** Central's origin. In production it is not the site's own, so the tests keep them apart. */
+export const CENTRAL = 'https://central.test'
 
 const HTML = 'text/html; charset=utf-8'
 const TYPES: Record<string, string> = {
@@ -50,11 +51,8 @@ const ASSETS = {
 
 const env = {
   ASSETS,
-  DISCORD_CLIENT_ID: '1162037890742759424',
-  DISCORD_URL: 'https://discord.test',
-  DISCORD_CLIENT_SECRET: 'client-secret',
+  CENTRAL_URL: CENTRAL,
   SESSION_KEY,
-  ACCESS_LIST: `${MEMBER}, 333333333333333333`,
 }
 
 const { Server } = await import(new URL('index.js', OUTPUT).href)

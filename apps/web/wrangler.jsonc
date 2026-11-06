@@ -16,24 +16,16 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
-  "vars": {
-    // Textile's Discord application. Sign-in uses it with the `identify` scope.
-    "DISCORD_CLIENT_ID": "1162037890742759424",
-    "DISCORD_URL": "https://discord.com"
-  },
   // Locally from .dev.vars (see .dev.vars.example); on Cloudflare, with `wrangler secret put`.
-  "secrets": { "required": ["DISCORD_CLIENT_SECRET", "SESSION_KEY", "ACCESS_LIST"] },
+  "secrets": { "required": ["SESSION_KEY"] },
   "env": {
-    // textile.cx. Going live adds its route: `"routes": [{ "pattern": "textile.cx", "custom_domain": true }]`.
-    // Environments don't inherit vars or secrets, so they repeat here.
+    // textile.cx. Going live adds its route, `"routes": [{ "pattern": "textile.cx", "custom_domain": true }]`, and
+    // central's origin, `"vars": { "CENTRAL_URL": "https://<central>" }`. Environments don't inherit secrets, so they
+    // repeat here.
     "production": {
       "workers_dev": false,
       "preview_urls": false,
-      "vars": {
-        "DISCORD_CLIENT_ID": "1162037890742759424",
-        "DISCORD_URL": "https://discord.com"
-      },
-      "secrets": { "required": ["DISCORD_CLIENT_SECRET", "SESSION_KEY", "ACCESS_LIST"] }
+      "secrets": { "required": ["SESSION_KEY"] }
     }
   }
 }

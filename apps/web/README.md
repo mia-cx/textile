@@ -1,6 +1,6 @@
 # @discord-mcp/web
 
-`textile.cx`: the landing page, the docs, sign-in with Discord, and the terms and privacy policy, as one SvelteKit app on
+`textile.cx`: the landing page, the docs, sign-in, and the terms and privacy policy, as one SvelteKit app on
 Cloudflare Workers. [DESIGN.md](./DESIGN.md) covers the look.
 
 ## Run it
@@ -28,22 +28,20 @@ and `/llms-full.txt` holds them all.
 
 ## Sign-in and access
 
-`/login` sends people to Discord with Textile's application (`identify` scope). Discord returns to `/auth/callback`,
-which keeps the person's Discord ID and username in an AES-GCM encrypted, HttpOnly cookie for seven days; there is no
-database. `/access` checks that ID against `ACCESS_LIST` on every visit: listed people are told they're in and pointed
-at the connect docs, everyone else that they don't have access yet and where to follow progress (`COMMUNITY` in
-`src/lib/site.ts`).
+People sign in through central, the relay's OAuth issuer at `CENTRAL_URL`, as `scripts/login.mjs` does
+(`src/lib/server/central.ts`). `/login` registers a client for this origin's `/auth/callback` and sends the browser to
+central's `/authorize` with S256 PKCE and the `mcp` scope and resource. Central signs the person in with Discord and
+checks its allowlist. `/auth/callback` redeems the code at central's `/token` and keeps central's access token in an
+AES-GCM encrypted, HttpOnly cookie, for seven days or until the token expires; there is no database. `/access` points
+people central let in at the connect docs. When central answers `access_denied`, it tells them they don't have access
+yet and where to follow progress (`COMMUNITY` in `src/lib/site.ts`).
 
-Add each origin's callback to the Discord application's OAuth2 redirects: `https://textile.cx/auth/callback`,
-staging's, and `http://localhost:8787/auth/callback` for `preview`.
+The site has no Discord application of its own. The only Discord redirect is central's `/auth/discord/callback`.
 
 | Setting | Kind | Purpose |
 | --- | --- | --- |
-| `DISCORD_CLIENT_ID` | var | Textile's Discord application. |
-| `DISCORD_URL` | var | Discord's origin; tests fake it. |
-| `DISCORD_CLIENT_SECRET` | secret | The application's OAuth2 client secret. |
+| `CENTRAL_URL` | var | Central's origin. Unset turns sign-in off. |
 | `SESSION_KEY` | secret | `openssl rand -base64 32`. Rotating it signs everyone out. |
-| `ACCESS_LIST` | secret | Comma-separated Discord user IDs with access. Unset or empty lets nobody in. |
 
 On Cloudflare, set secrets with `pnpm --filter @discord-mcp/web exec wrangler secret put <NAME> --env production`. In
 the container, every setting is an environment variable of the same name.
@@ -60,5 +58,7 @@ Staging runs the same build in self-hosted workerd: `docker/web.Dockerfile` bund
 `wrangler deploy --dry-run --env production` and serves it with `workerd/site.capnp` on port 8080, as a non-root user
 that needs no writable filesystem. `workerd/assets.js` stands in for Cloudflare's static assets: it routes requests the
 way Cloudflare does, serves `.html` and `index.html` files by their page paths, and applies `_headers`. Behind a proxy
-that terminates TLS, the proxy's `X-Forwarded-Proto` makes the site's own URLs `https://`. CI publishes the image as
+that terminates TLS, the proxy's `X-Forwarded-Proto` makes the site's own URLs `https://`. Requests to central go
+through the `central` service, under `CENTRAL_URL`'s host; point it at central's own address with
+`--external-addr central=<host:port>`, so they skip the ingress. CI publishes the image as
 `ghcr.io/mia-cx/textile/web`.

@@ -1,17 +1,27 @@
-import { error, redirect } from '@sveltejs/kit'
-import { STATE_COOKIE, signedInUser } from '$lib/server/discord'
-import { cookieOptions, writeSession } from '$lib/server/session'
+import { redirect } from '@sveltejs/kit'
+import { FLOW_COOKIE, type Flow, issuerOf, redeem } from '$lib/server/central'
+import { cookieOptions, unseal, writeSession } from '$lib/server/session'
 import type { RequestHandler } from './$types'
 
-/** Discord sends the person back here. A matching state proves this browser started the sign-in. */
+/**
+ * Central sends the person back here. A matching state proves this browser started the sign-in, and `iss` that
+ * central answered. `access_denied` means central's allowlist doesn't name them, or they cancelled.
+ */
 export const GET: RequestHandler = async ({ url, cookies, locals }) => {
-  const env = locals.env
-  const state = cookies.get(STATE_COOKIE)
-  cookies.delete(STATE_COOKIE, { ...cookieOptions(url), path: '/auth' })
-  const code = url.searchParams.get('code')
-  // Declined on Discord's page, or a stale or forged callback: back to where signing in starts.
-  if (!code || !state || url.searchParams.get('state') !== state) redirect(303, '/access')
-  if (!env.SESSION_KEY) error(503, 'Sign-in isn’t set up here yet.')
-  await writeSession(cookies, url, env.SESSION_KEY, await signedInUser(env, url.origin, code))
+  const { issuer, sessionKey } = issuerOf(locals.env)
+  const flow = await unseal<Flow>(sessionKey, FLOW_COOKIE, cookies.get(FLOW_COOKIE))
+  cookies.delete(FLOW_COOKIE, { ...cookieOptions(url), path: '/auth' })
+  const params = url.searchParams
+  // A stale or forged callback: back to where signing in starts.
+  if (!flow || params.get('state') !== flow.state || params.get('iss') !== issuer)
+    redirect(303, '/access')
+  if (params.get('error') === 'access_denied') {
+    await writeSession(cookies, url, sessionKey, { access: false })
+    redirect(303, '/access')
+  }
+  const code = params.get('code')
+  if (!code) redirect(303, '/access')
+  const { token, seconds } = await redeem(locals.env, issuer, url.origin, flow, code)
+  await writeSession(cookies, url, sessionKey, { access: true, token }, seconds)
   redirect(303, '/access')
 }

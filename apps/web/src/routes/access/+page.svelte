@@ -9,7 +9,7 @@ let { data }: PageProps = $props()
 <Seo path="/access" noindex />
 
 <section class="mx-auto max-w-2xl px-4 pt-16 sm:px-8 sm:pt-24">
-  {#if data.username === undefined}
+  {#if !data.signedIn}
     <h1 class="text-4xl font-extrabold sm:text-5xl">Sign in to Textile</h1>
     <p class="mt-5 text-lg">Sign in with Discord to see whether you have access to the alpha.</p>
     <div class="mt-8">
@@ -32,9 +32,8 @@ let { data }: PageProps = $props()
     </div>
   {/if}
 
-  {#if data.username !== undefined}
-    <form method="POST" action="/logout" class="mt-12 flex flex-wrap items-center gap-x-4 border-t border-rule pt-4 text-muted">
-      <span>Signed in as <strong class="font-semibold text-ink">{data.username}</strong></span>
+  {#if data.signedIn}
+    <form method="POST" action="/logout" class="mt-12 border-t border-rule pt-4">
       <button class="sign-out" type="submit">Sign out</button>
     </form>
   {/if}

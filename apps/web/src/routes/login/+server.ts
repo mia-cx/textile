@@ -1,12 +1,17 @@
 import { redirect } from '@sveltejs/kit'
-import { authorizeUrl, STATE_COOKIE, STATE_SECONDS } from '$lib/server/discord'
-import { cookieOptions } from '$lib/server/session'
+import { authorizeUrl, FLOW_COOKIE, FLOW_SECONDS, issuerOf, startFlow } from '$lib/server/central'
+import { cookieOptions, seal } from '$lib/server/session'
 import type { RequestHandler } from './$types'
 
-/** Sends the person to Discord to sign in, unless they already are. The state waits in a short cookie for the callback. */
-export const GET: RequestHandler = ({ url, cookies, locals }) => {
+/** Sends the person to central to sign in, unless they already are. The flow waits in a short sealed cookie. */
+export const GET: RequestHandler = async ({ url, cookies, locals }) => {
   if (locals.session) redirect(303, '/access')
-  const state = crypto.randomUUID()
-  cookies.set(STATE_COOKIE, state, { ...cookieOptions(url), path: '/auth', maxAge: STATE_SECONDS })
-  redirect(303, authorizeUrl(locals.env, url.origin, state))
+  const { issuer, sessionKey } = issuerOf(locals.env)
+  const flow = await startFlow(locals.env, issuer, url.origin)
+  cookies.set(FLOW_COOKIE, await seal(sessionKey, FLOW_COOKIE, flow, FLOW_SECONDS), {
+    ...cookieOptions(url),
+    path: '/auth',
+    maxAge: FLOW_SECONDS,
+  })
+  redirect(303, await authorizeUrl(issuer, url.origin, flow))
 }

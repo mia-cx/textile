@@ -39,7 +39,4 @@ USER nonroot:nonroot
 WORKDIR /srv/site
 EXPOSE 8080
 
-# Discord's origin, as wrangler.jsonc sets it; the deployment sets the rest.
-ENV DISCORD_URL=https://discord.com
-
 ENTRYPOINT ["/srv/site/workerd", "serve", "site.capnp"]

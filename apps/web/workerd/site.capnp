@@ -10,6 +10,9 @@ const config :Workerd.Config = (
     (name = "site", worker = .site),
     (name = "disk", disk = (path = "assets")),
     (name = "no-cache", worker = .noCache),
+    # Central, reached directly rather than through the ingress the browser uses. Requests keep `CENTRAL_URL`'s host.
+    # Point it at central's address with `--external-addr central=<host:port>`.
+    (name = "central", external = (address = "localhost:3000", http = ())),
   ],
   sockets = [
     # Behind the ingress, which terminates TLS: X-Forwarded-Proto gives the Worker its https:// URLs, so the origin,
@@ -33,11 +36,9 @@ const site :Workerd.Worker = (
   compatibilityDate = "2026-10-01",
   bindings = [
     (name = "ASSETS", service = (name = "front", entrypoint = "Assets")),
-    (name = "DISCORD_CLIENT_ID", fromEnvironment = "DISCORD_CLIENT_ID"),
-    (name = "DISCORD_URL", fromEnvironment = "DISCORD_URL"),
-    (name = "DISCORD_CLIENT_SECRET", fromEnvironment = "DISCORD_CLIENT_SECRET"),
+    (name = "CENTRAL", service = "central"),
+    (name = "CENTRAL_URL", fromEnvironment = "CENTRAL_URL"),
     (name = "SESSION_KEY", fromEnvironment = "SESSION_KEY"),
-    (name = "ACCESS_LIST", fromEnvironment = "ACCESS_LIST"),
   ],
   cacheApiOutbound = "no-cache",
 );
