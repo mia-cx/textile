@@ -77,7 +77,7 @@ function hero(
   }
 }
 
-/** The close: threads braiding into the sign-in button. */
+/** The close: threads braiding into the sign-in button. Only side by side; stacked, the close shows no field. */
 function close(
   { width, height }: { width: number; height: number },
   target: DOMRect | undefined,
@@ -85,16 +85,15 @@ function close(
   const end: Point = target
     ? [target.x + 2, target.y + target.height / 2]
     : [width * 0.6, height * 0.6]
-  const wide = width >= SIDE_BY_SIDE
   return {
     start: [-width * 0.08, height * 0.5],
     control: [end[0] * 0.55, end[1]],
     end,
-    spread: height * (wide ? 0.55 : 0.3),
-    cord: wide ? 10 : 7,
+    spread: height * 0.55,
+    cord: 10,
     braid: 0.74,
-    count: wide ? 520 : 220,
-    intensity: wide ? 0.85 : 0.6,
+    count: 520,
+    intensity: 0.85,
     labels: [],
   }
 }
@@ -220,6 +219,12 @@ function close(
   }
   .close :global(.field) {
     mask-image: linear-gradient(transparent, #000 16%, #000 84%, transparent);
+  }
+  /* Stacked, the close has no room beside its copy for threads, so it has none; the hero carries them on a phone. */
+  @media (max-width: 59.99rem) {
+    .close :global(.field) {
+      display: none;
+    }
   }
   .hero-copy,
   .hero :global(.hero-window) {

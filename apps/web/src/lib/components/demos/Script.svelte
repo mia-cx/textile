@@ -27,6 +27,7 @@ const TITLES = ['One', 'Two', 'Three']
   }
   .script {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
   }
   @container (min-width: 50rem) {

@@ -34,6 +34,7 @@ const NINE = 9 / 24
 <style>
   .schedule {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
   }
   .week {

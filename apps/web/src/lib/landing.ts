@@ -165,7 +165,7 @@ Then \`${CALLS[1].tool}\` runs it. From then on, the bot stays online without th
 runs the workflow in a fresh sandbox that never holds the bot's token: a broker checks every call against the
 workflow's grants and adds the token itself. [Read about workflows](${origin}/docs/workflows.md).
 
-## Slash commands and buttons
+## Slash commands answer from your code
 
 When someone runs \`/standup shipped:the onboarding flow\`, the workflow answers in its own isolate, and keeps its
 count in the workflow's key-value store:
@@ -208,5 +208,5 @@ Anyone who opts out is never relayed: their audio is dropped before it is decryp
 ## Access opens in rounds
 
 Textile starts with a closed alpha. [Sign in with Discord](${origin}/login) to check your access, and to find where to
-follow progress until you're in. Every MCP tool is listed in the [docs](${origin}/docs/tools.md).
+follow progress until you're in. [MCP tools](${origin}/docs/tools.md) lists every tool your agent gets.
 `

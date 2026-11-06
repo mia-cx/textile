@@ -1,91 +1,128 @@
 # textile.cx design
 
-The site is cloth. Textile weaves Discord's events (the warp) together with the code an agent writes (the weft) into a
-bot that runs, so the identity is plain weave: undyed linen, indigo dye, and red and yellow threads. No stock imagery;
-the mark, the hero, and the section dividers are all woven in SVG from the same rule.
+Textile takes the events Discord sends and the code an agent writes and turns them into one bot that stays online. The
+site draws exactly that: hundreds of fine luminous threads, some named for real Discord events, stream in from the left
+and braid into one cord that ends in a Discord window, where the bot answers. No stock imagery and no icon cards; every
+part of the page is either a thread or the product.
 
 ## Audience and journey
 
-People building AI agents arrive from a link or a search, decide whether Textile does what their agent needs, then
-either sign in with Discord or read the docs. The landing page answers in the order they ask: what it is (hero), how an
-agent talks to it (MCP tools), what the bot does unattended (workflows, scripts, voice), whether it is safe (security),
-and how to get in (closed alpha). Every section shows the real product: the tool names from the MCP server, workflow
-code that runs on Textile, and the voice notice's own copy and buttons.
+People building AI agents arrive from a link or a search, decide whether Textile does what their agent needs, then sign
+in with Discord or read the docs. The landing page answers in the order they ask, each part beside the product doing it:
 
-Sign-in is one action, not a page: `/login` goes straight to Discord, and Discord returns to `/access`, which shows one
-of three states (signed out, no access yet, you're in) in the same column, so each reads as the next step.
+1. **Hero.** What it is, and the two ways forward: Sign in with Discord, Read the docs.
+2. **Publish.** One real workflow, `standup.ts`, beside the `discord_workflow_publish` and `discord_workflow_enable`
+   calls and what Textile answers. It runs on Textile: published in workerd, it reports exactly the events, schedules,
+   route, and grants shown.
+3. **Slash commands, schedules, webhooks.** The same workflow's three triggers, each working: run `/standup`, see the
+   cron week, call the route with and without its secret.
+4. **Scripts.** One `discord_script_run` beside the messages it sends.
+5. **Voice.** Speakers as separate streams, beside the real opt-out notice (`packages/bot-host/src/consent.ts`); opting
+   out takes your stream away.
+6. **Access.** Access opens in rounds; threads braid into the sign-in button.
+
+Demos that look like actions say they are simulations. The MCP tool table lives in the docs, at `/docs/tools/`.
+
+Sign-in is one action, not a page: `/login` goes to central, which returns to `/access`, which shows one of three states
+(signed out, no access yet, you're in) in the same place.
 
 ## Type
 
-Recursive, self-hosted, one variable file for everything. Its axes carry the system:
+Geist for everything, Geist Mono for code and event names, both self-hosted from Fontsource. One family keeps the page
+quiet enough for the threads.
 
-| Role | Axes | Use |
-| --- | --- | --- |
-| Display | `CASL 1`, weight 750–800 | Headings and the wordmark. The casual axis reads hand-lettered, like a woven label. |
-| Text | `CASL 0`, weight 400–600 | Body, navigation, buttons. |
-| Code | `MONO 1` | Code samples, tool names, inline code. |
+| Role | Setting |
+| --- | --- |
+| Hero headline | 600, `clamp(3.25rem, …, 8.75rem)`, leading 0.98, tracking −0.045em |
+| Section headings | 600, `clamp(2.375rem, …, 4.5rem)`, leading 1.04, tracking −0.035em |
+| Body | 400, 18px at 1.6; section prose up to 21px |
+| Code, events | Geist Mono, 13–15px |
 
-The tokens are `--font-text`, `--font-code`, and `--axes-text`, `--axes-display`, `--axes-code`. Body text is 17px at
-1.6; headings are balanced and tight (1.02–1.08).
+Tokens: `--font-text`, `--font-code`.
 
 ## Colour
 
-Role tokens in `src/lib/tokens.css`, shared with the docs through `apps/docs/svartz.config.ts`.
+Role tokens in `src/lib/tokens.css`, shared with the docs through `apps/docs/svartz.config.ts`. Each is a `light-dark()`
+pair, so `color-scheme` picks the side, as in Svartz.
 
 | Token | Light | Dark | Role |
 | --- | --- | --- | --- |
-| `--paper` | linen `#f5f0e6` | indigo night `#0d1130` | Page |
-| `--surface` | `#fbf8f1` | `#141a3e` | Raised panels: the tool list, the voice notice |
-| `--sunken` | `#ebe4d5` | `#090c24` | Wells: the tab bar, inline code, notice buttons |
-| `--rule`, `--rule-strong` | `#d8cdb8`, `#a99c81` | `#283062`, `#4a5390` | Lines between things |
-| `--ink`, `--text`, `--muted` | `#141b45`, `#262d58`, `#555a7c` | `#f4eee2`, `#ddd7c9`, `#a7a9c6` | Headings, body, secondary text |
-| `--accent`, `--accent-text`, `--on-accent` | indigo `#2c3b94` | periwinkle `#aab8ff` | Actions and links |
-| `--warp`, `--weft`, `--weft-alt` | `#8f97c4`, madder `#b5432c`, weld `#c9952d` | `#3b4589`, `#e8735a`, `#e9b44c` | The threads. Decoration only, never text |
-| `--code-*` | indigo swatch `#182050` | `#070a1f` | Code panels stay dyed indigo in both modes |
-| `--focus` | madder | coral | Focus rings |
+| `--paper` | `#f8f7fb` | ink `#07060c` | Page |
+| `--surface`, `--sunken` | `#ffffff`, `#efedf4` | `#110f19`, `#0b0a12` | Raised panels, wells |
+| `--rule`, `--rule-strong` | `#e2dfea`, `#c4bfd2` | `#221f2e`, `#3a3549` | Lines between things |
+| `--ink`, `--text`, `--muted` | `#110e1a`, `#2a2636`, `#615c70` | `#f4f2fa`, `#d9d6e4`, `#9f9bb0` | Headings, body, secondary |
+| `--accent`, `--accent-text` | `#6d3df0`, `#5c35d6` | `#7a45f0`, `#b9a2ff` | Violet: actions and links |
+| `--thread-violet`, `-amber`, `-silver` | | `#9a6bff`, `#ffad5a`, `#d4d7ea` | The threads only, never text |
+| `--code-*` | ink `#0c0a14` | ink | Code panels are ink in both modes |
 
-Every text pairing passes WCAG AA in both modes; the lowest is muted on sunken at 5.3:1 (light). Colour never carries
-meaning alone: links are underlined, the selected tab is raised, and the current policy page is bold.
+White on the violet button is 5.3:1; muted on ink is 7.5:1; muted on light paper is 6.0:1. Colour never carries meaning
+alone: the selected tab is ringed, a refused request says 401, an opted-out stream says "not relayed".
 
-The system picks the mode. The docs have a colour toggle that stores its choice (`svartz:color-mode`); the site reads it
-before first paint, so both always match. The site itself adds no toggle.
+**The landing page and the access page are always dark** (`data-scheme="dark"`, which `tokens.css` turns into
+`color-scheme: dark` for the whole document). The threads are light added to darkness; on paper they would read as
+pencil marks, and the hero would be a different product. Access is the next step after the landing page's sign-in, so it
+keeps the same ground. The legal pages, errors, and docs follow the reader's mode and the docs' colour toggle.
 
 ## Shape and space
 
-Radii are small (`--radius-s` 4px, `--radius-m` 8px, `--radius-l` 14px): soft like folded cloth, never pills. Buttons
-are 44px tall, filled indigo for the primary action and outlined for the secondary one. Content sits in one 72rem column;
-two-column sections (`.split`) put the explanation beside the product, and the explanation sticks beside a long list.
-Below 56rem every section is one column.
+Pills for actions (52px tall) and tabs; `--radius-l` 16px for panels and the Discord windows. The page fills the screen:
+a `--gutter` of `clamp(1.25rem, 4vw, 4.5rem)` and no content column. Sections split 4:8 between prose and product from
+64rem, prose sticking beside long products; below that they stack, and below 30rem the Discord window drops its server
+rail.
+
+## The thread field
+
+`src/lib/threads/`. One geometry (`geometry.ts`) runs everywhere: in WGSL for WebGPU, in GLSL for WebGL2, and on the CPU
+for event labels, the 2D fallback, the section strands, and the social card.
+
+- Threads follow a quadratic curve from off-screen left to the target's edge. They travel in nine ribbons that share a
+  lane, a sway, and mostly a colour, so the fan reads as a current; then they twist into three strands, each taking its
+  strand's colour, so the cord reads as a braid.
+- Each thread is one instance: a triangle strip of 201 point pairs, widened 3.2px for a soft halo. Threads add their light
+  into a half-float target; a second pass tone-maps it (`1 − e^(−1.25x)`) over the ink, dithered.
+- Labelled threads are pinned where their label sits, so labels are placed once per resize, never per frame.
+- Renderers, in order: WebGPU, WebGL2 (with `EXT_color_buffer_float`, else straight additive), then one still canvas 2D
+  frame. Asking for a context claims the canvas, so a failed renderer leaves a fresh one.
+- It renders only while on screen (IntersectionObserver) and the tab is visible. With reduced motion it draws one still
+  frame and redraws only on resize.
+- The hero carries 820 threads above 1600px, 640 below, and 280 on phones, where they come down into the top of the
+  window. The close carries 520 and shows only side by side, where it has room beside its copy.
+
+Between, each section's event runs as a small SVG bundle of the same geometry across the page above its heading, braiding
+into a knot beside the event's name. A CSS view timeline draws the threads in as the section rises; the cron knots light
+the same way. Without scroll timelines, or with reduced motion, everything is simply drawn.
+
+Measured in Chromium 156 on an RTX 3070 (Vulkan), hero on screen at 2000×1100:
+
+| | GPU time per frame (timestamp queries) | Script per frame |
+| --- | --- | --- |
+| WebGPU, DPR 1 (2000×1100 canvas) | p50 1.53 ms, p95 1.67 ms | 0.35 ms |
+| WebGPU, DPR 2 (4000×2200 canvas) | p50 1.52 ms, p95 1.53 ms | 0.38 ms |
+
+The pass is vertex-bound, so doubling the density costs no GPU time. Scrolling the whole page in 40px steps does no
+layout; with both fields off screen, and with the tab hidden, the page submits no GPU work. The page is about 1,750 DOM
+nodes.
 
 ## Motion
 
-Motion tells one story: the cloth being woven.
-
-- **Hero loom.** The warp threads are labelled with the triggers a bot listens for (`messageCreate`,
-  `interactionCreate`, `guildMemberAdd`, `schedule`, `fetch`). On load, 13 weft rows pass across from the bottom up, the shuttle
-  turning at each edge, in about 2.4 s. CSS keyframes on `stroke-dashoffset`; no script.
-- **Woven bands.** Between sections, a strip of plain weave whose three rows pass across as it scrolls into view, driven
-  by a CSS view timeline. Scrolling back unweaves it. Browsers without scroll timelines show it woven.
-- **Small state changes** use the transitions-dev tokens: 150 ms ease-out for hovers, 250 ms smooth-out for tabs.
-
-With reduced motion, the loom and bands render fully woven and nothing moves. Every control is a native element that
-works without the effects.
-
-Measured in headless Chromium at 1440×900, scrolling the whole landing page in 40px steps: 127 frames, p50 16.6 ms,
-p95 17.1 ms, 0 ms of layout, 16.6 ms of style recalculation in total, 3.1 ms of script. Each woven strip is a handful of
-SVG paths (a path per row, not per thread), so the page is about 2,100 DOM nodes and 48 KB of HTML.
+Small state changes use the transitions-dev tokens in `tokens.css`: 150ms ease-out for hovers, 250ms smooth-out for tabs.
+The voice streams flow on a CSS loop; reduced motion stops them. Every control is a native element
+that works without any effect.
 
 ## Components
 
 | Component | What it is |
 | --- | --- |
-| `Mark` | The plain-weave mark, 3×3, as in the favicon. |
-| `Loom` | The hero's labelled loom. |
-| `WeaveBand` | The scroll-woven section divider. |
-| `Tabs` | Workflow samples behind WAI-ARIA tabs; unselected panels are inert, not removed, so the Markdown twin has them all. |
-| `Code` | A TypeScript sample on an indigo swatch, highlighted by `src/lib/highlight.ts`. Focusable, so it scrolls by keyboard. |
-| `VoiceNotice` | The real voice notice with working buttons, opt-out and undo; labelled a preview. Its reply space is reserved. |
+| `threads/ThreadField` | The live field, braiding into `target`; `layout` places it per size. |
+| `threads/Strands` | A section's small SVG bundle. |
+| `Section` | Heading and prose beside the product, with its event above. |
+| `discord/Window`, `discord/Message` | A Discord channel and its messages, as real DOM. |
+| `demos/*` | Publish, Slash, Schedule, Webhook, Script, Voice. |
+| `Tabs` | WAI-ARIA tabs; unselected panels are inert, not removed. |
+| `Code` | A code sample on ink, highlighted by `src/lib/highlight.ts`. |
 | `PageMarkdown` | Copy page and View as Markdown, in every page's footer. |
-| `Seo` | Title, description, canonical, Open Graph and Twitter cards, and the Markdown alternate link. |
+| `Seo` | Title, description, canonical, social cards, and the Markdown alternate link. |
 
-The social card, `static/og.png`, is rendered from the same mark and palette by `pnpm og`.
+The landing page's Markdown twin is written, not converted: `landingMarkdown` in `src/lib/landing.ts` tells the same story
+in prose, with the same workflow and calls. The social card, `static/og.png`, is drawn from the same geometry by
+`pnpm og`; the favicon is three braided strands.

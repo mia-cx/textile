@@ -91,6 +91,7 @@ async function undo() {
 <style>
   .voice {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
   }
   .speakers {
