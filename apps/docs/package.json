@@ -1,0 +1,30 @@
+{
+  "name": "@discord-mcp/docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Textile's docs: a static Svartz site built from the repository's docs/ folder, served by apps/web at /docs",
+  "scripts": {
+    "dev": "svartz dev --vault docs --port 5179",
+    "build": "svartz build --vault docs",
+    "preview": "svartz preview --vault docs --port 4179",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --threshold warning"
+  },
+  "devDependencies": {
+    "@discord-mcp/web": "workspace:*",
+    "@svartz/config": "2.2.0",
+    "@svartz/theme-api-docs": "2.2.0",
+    "@svartz/ui": "2.2.0",
+    "@svartz/vite": "2.2.0",
+    "@sveltejs/adapter-static": "3.0.10",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "@tailwindcss/vite": "4.3.3",
+    "svartz": "2.2.0",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vite": "7.3.7"
+  }
+}

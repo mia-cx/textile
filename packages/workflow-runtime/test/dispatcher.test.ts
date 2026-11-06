@@ -10,7 +10,7 @@ import {
 import { Database, PersistenceLayer } from '@discord-mcp/persistence'
 import { type CompiledManifest, DEFAULT_GRANT, type WorkflowGrant } from '@discord-mcp/workflow-sdk'
 import { Effect, Layer, ManagedRuntime } from 'effect'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CapabilityBroker } from '../src/broker.ts'
 import { CapabilityServer } from '../src/capability-server.ts'
 import { CapabilitySockets } from '../src/capability-socket.ts'
@@ -149,9 +149,6 @@ const seed = (input: {
 const dispatcher = <A>(f: (d: WorkflowDispatcher['Service']) => Effect.Effect<A>) =>
   runtime.runPromise(Effect.flatMap(WorkflowDispatcher, f))
 
-/** Let the forked handler finish; the pump detaches it deliberately. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
-
 describe('restart recovery', () => {
   it('brings back every workflow an operator had enabled', async () => {
     await seed({ manifest: manifest(), grant: grantWith() })
@@ -207,10 +204,10 @@ describe('gateway dispatch', () => {
     const offered = await dispatcher((d) => d.onGatewayEvent(event()))
     expect(offered).toEqual([{ slug: 'dispatch', accepted: true }])
 
-    await dispatcher((d) => d.pump())
-    await settle()
+    expect(await dispatcher((d) => d.pump())).toBe(1)
 
-    expect(runs).toHaveLength(1)
+    // The pump detaches the handler it starts.
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
     expect(runs[0]?.payload).toEqual({ index: 0, input: { content: 'hello' } })
   })
 
@@ -221,9 +218,7 @@ describe('gateway dispatch', () => {
     const offered = await dispatcher((d) => d.onGatewayEvent(event()))
     expect(offered).toEqual([{ slug: 'dispatch', accepted: false }])
 
-    await dispatcher((d) => d.pump())
-    await settle()
-    expect(runs).toEqual([])
+    expect(await dispatcher((d) => d.pump())).toBe(0)
   })
 
   it('ignores the bot’s own events by default', async () => {
@@ -277,9 +272,8 @@ describe('schedules', () => {
 
     expect(await dispatcher((d) => d.tick(new Date(NOW)))).toBe(1)
 
-    await dispatcher((d) => d.pump())
-    await settle()
-    expect(runs).toHaveLength(1)
+    expect(await dispatcher((d) => d.pump())).toBe(1)
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
   })
 
   it('does nothing at a minute the schedule does not name', async () => {
@@ -331,10 +325,9 @@ describe('the pump', () => {
 
     // One slot, so one start per pump — the rest stay queued rather than all starting at once.
     expect(await dispatcher((d) => d.pump())).toBe(1)
-    await settle()
-    expect(await dispatcher((d) => d.pump())).toBe(1)
-    await settle()
-    expect(runs).toHaveLength(2)
+    // The next starts once that run frees the slot.
+    await vi.waitFor(async () => expect(await dispatcher((d) => d.pump())).toBe(1))
+    await vi.waitFor(() => expect(runs).toHaveLength(2))
   })
 
   it('records every execution it starts', async () => {
@@ -351,14 +344,14 @@ describe('the pump', () => {
       }),
     )
     await dispatcher((d) => d.pump())
-    await settle()
 
-    const executions = await runtime.runPromise(
-      Effect.flatMap(WorkflowRepository, (repository) => repository.executions({ limit: 10 })),
-    )
-
-    expect(executions).toHaveLength(1)
-    expect(executions[0]).toMatchObject({ trigger_kind: 'gateway', status: 'succeeded' })
+    await vi.waitFor(async () => {
+      const executions = await runtime.runPromise(
+        Effect.flatMap(WorkflowRepository, (repository) => repository.executions({ limit: 10 })),
+      )
+      expect(executions).toHaveLength(1)
+      expect(executions[0]).toMatchObject({ trigger_kind: 'gateway', status: 'succeeded' })
+    })
   })
 
   it('does nothing when there is nothing queued', async () => {

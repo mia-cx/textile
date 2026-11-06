@@ -1,0 +1,95 @@
+/*
+ * Textile's design tokens, shared by the site (apps/web) and the docs (apps/docs, through svartz.config.ts).
+ * DESIGN.md explains each role. Undyed linen and indigo dye: the page is cloth, the ink is indigo, and the threads
+ * woven through it are madder red and weld yellow.
+ *
+ * Colour mode: the system decides, unless <html> has `.light` or `.dark`, which the docs' colour toggle sets and
+ * stores (`svartz:color-mode`). The site applies the stored choice too, so the two always match.
+ */
+@import "@fontsource-variable/recursive/full.css";
+
+:root {
+  color-scheme: light;
+
+  /* Recursive's axes carry the whole type system: CASL 1 is the hand-lettered display, MONO 1 the code. */
+  --font-text: "Recursive Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-code: "Recursive Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --axes-text: "CASL" 0, "MONO" 0;
+  --axes-display: "CASL" 1, "MONO" 0;
+  --axes-code: "CASL" 0, "MONO" 1;
+
+  --radius-s: 0.25rem;
+  --radius-m: 0.5rem;
+  --radius-l: 0.875rem;
+
+  /* Linen: page, raised panel, recessed well, and the lines between them. */
+  --paper: #f5f0e6;
+  --surface: #fbf8f1;
+  --sunken: #ebe4d5;
+  --rule: #d8cdb8;
+  --rule-strong: #a99c81;
+  /* Indigo ink: headings, body, secondary text. */
+  --ink: #141b45;
+  --text: #262d58;
+  --muted: #555a7c;
+  /* Indigo dye, for actions and links. */
+  --accent: #2c3b94;
+  --accent-text: #2c3b94;
+  --on-accent: #f8f4ec;
+  /* The threads. Decorative marks only, never text. */
+  --warp: #8f97c4;
+  --weft: #b5432c;
+  --weft-alt: #c9952d;
+  /* Code panels stay indigo in both modes, like a dyed swatch on the cloth. */
+  --code-bg: #182050;
+  --code-text: #e9e4f6;
+  --code-muted: #a6acd6;
+  --code-key: #f0b46a;
+  --code-string: #9fd8b4;
+  --code-prop: #c9d1ff;
+  --focus: #b5432c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    color-scheme: dark;
+    --paper: #0d1130;
+    --surface: #141a3e;
+    --sunken: #090c24;
+    --rule: #283062;
+    --rule-strong: #4a5390;
+    --ink: #f4eee2;
+    --text: #ddd7c9;
+    --muted: #a7a9c6;
+    --accent: #aab8ff;
+    --accent-text: #b4c0ff;
+    --on-accent: #0d1130;
+    --warp: #3b4589;
+    --weft: #e8735a;
+    --weft-alt: #e9b44c;
+    --code-bg: #070a1f;
+    --code-muted: #9ea4cf;
+    --focus: #e8735a;
+  }
+}
+
+:root.dark {
+  color-scheme: dark;
+  --paper: #0d1130;
+  --surface: #141a3e;
+  --sunken: #090c24;
+  --rule: #283062;
+  --rule-strong: #4a5390;
+  --ink: #f4eee2;
+  --text: #ddd7c9;
+  --muted: #a7a9c6;
+  --accent: #aab8ff;
+  --accent-text: #b4c0ff;
+  --on-accent: #0d1130;
+  --warp: #3b4589;
+  --weft: #e8735a;
+  --weft-alt: #e9b44c;
+  --code-bg: #070a1f;
+  --code-muted: #9ea4cf;
+  --focus: #e8735a;
+}

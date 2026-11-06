@@ -1,0 +1,33 @@
+{
+  "name": "@discord-mcp/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "textile.cx: the landing page, legal pages, sign-in, and the docs from apps/docs, on Cloudflare Workers",
+  "exports": {
+    "./tokens.css": "./src/lib/tokens.css"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build && rm -rf .svelte-kit/cloudflare/docs && cp -R ../docs/.svartz/vaults/docs/dist .svelte-kit/cloudflare/docs",
+    "preview": "wrangler dev",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --threshold warning",
+    "test": "vitest run",
+    "og": "node scripts/og.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/recursive": "5.3.0",
+    "@mdream/js": "1.7.2",
+    "@sveltejs/adapter-cloudflare": "7.2.9",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "@tailwindcss/vite": "4.3.3",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vite": "7.3.7",
+    "vitest": "3.2.6",
+    "wrangler": "4.147.0"
+  }
+}
