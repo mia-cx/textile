@@ -170,7 +170,10 @@ export interface Stop {
   readonly bottom: number
   /** Where strands peel off: a panel's right edge, or, with none, the entry, where the cord comes apart and ends. */
   readonly split: Point | undefined
-  /** The points the strands reach, each level with what it enters. */
+  /**
+   * The points the strands reach, each level with what it enters. From a split, only the ends to its right get one: a
+   * demo stacked into one column puts its end below the split, where the cord itself already runs behind both panels.
+   */
   readonly ends: ReadonlyArray<Point>
 }
 
@@ -200,10 +203,15 @@ export function weave(start: Point, stops: ReadonlyArray<Stop>, { cord, corner, 
     else waypoints.push(enter)
     knots.push({ text: stop.label, x: enter[0], y: enter[1], side })
 
-    const from = stop.split ?? enter
-    const lead: Point = stop.split ? [1, 0] : [0, 1]
-    for (const [k, end] of stop.ends.entries()) peels.push(...peel(from, end, lead, k % 3, cord))
-    if (!stop.split && stop.ends.length > 0) break
+    const { split } = stop
+    if (!split) {
+      for (const [k, end] of stop.ends.entries())
+        peels.push(...peel(enter, end, [0, 1], k % 3, cord))
+      if (stop.ends.length > 0) break
+    } else {
+      const beside = stop.ends.filter(([x]) => x > split[0])
+      for (const [k, end] of beside.entries()) peels.push(...peel(split, end, [1, 0], k % 3, cord))
+    }
 
     exit = [waypoints.at(-1)?.[0] ?? enter[0], stop.bottom]
     waypoints.push(exit)
