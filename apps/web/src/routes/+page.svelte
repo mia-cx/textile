@@ -58,8 +58,12 @@ const LABELLED_HEIGHT = 760
 const LABEL_CHAR = 9
 const LABEL_HEIGHT = 20
 const LABEL_INSET = 12
-/** The least room a label keeps from the copy. */
+/**
+ * The least room a label keeps from the copy, and more below it: a label just under the buttons reads as their
+ * caption, so one below the copy sits out in open dark or not at all.
+ */
 const LABEL_ROOM = 16
+const LABEL_BELOW = 48
 
 /**
  * Whether `label`, on `field`, keeps LABEL_ROOM from the hero's copy, measured in the field's pixels. The copy is one
@@ -75,7 +79,7 @@ function clearOfCopy(field: Field, label: Label) {
     x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM < copy.left - origin.left ||
     x - LABEL_ROOM > copy.right - origin.left ||
     y + LABEL_ROOM < copy.top - origin.top ||
-    y - LABEL_HEIGHT - LABEL_ROOM > copy.bottom - origin.top
+    y - LABEL_HEIGHT - LABEL_BELOW > copy.bottom - origin.top
   )
 }
 /** How far short of the window's edge the cord ends, in CSS pixels. */
