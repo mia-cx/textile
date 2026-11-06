@@ -38,7 +38,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return
   if (interaction.commandName !== 'standup') return
   const shipped = interaction.options.getString('shipped')
-  // A key per person: interactions run at once
+  // One key per person, so answers sent at once never collide
   const key = \`shipped:\${interaction.user.id}\`
   const last = await kv.get(key)
   await kv.set(key, shipped)

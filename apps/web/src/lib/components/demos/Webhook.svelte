@@ -30,7 +30,7 @@ function send(withSecret: boolean) {
   <div class="request">
     <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <pre class="http" tabindex="0" role="region" aria-label="The request"><span class="method">POST</span> {ROUTE}
+    <pre class="http" tabindex="0" role="region" aria-label="The webhook request"><span class="method">POST</span> {ROUTE}
 <span class="header">Authorization:</span> Bearer {SECRET}
 <span class="header">Content-Type:</span> application/json
 
