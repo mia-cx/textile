@@ -34,8 +34,8 @@ database. `/access` checks that ID against `ACCESS_LIST` on every visit: listed 
 at the connect docs, everyone else that they don't have access yet and where to follow progress (`COMMUNITY` in
 `src/lib/site.ts`).
 
-Add each origin's callback to the Discord application's OAuth2 redirects: `https://textile.cx/auth/callback`, the
-preview's, and `http://localhost:8787/auth/callback` for `preview`.
+Add each origin's callback to the Discord application's OAuth2 redirects: `https://textile.cx/auth/callback`,
+staging's, and `http://localhost:8787/auth/callback` for `preview`.
 
 | Setting | Kind | Purpose |
 | --- | --- | --- |
@@ -45,9 +45,20 @@ preview's, and `http://localhost:8787/auth/callback` for `preview`.
 | `SESSION_KEY` | secret | `openssl rand -base64 32`. Rotating it signs everyone out. |
 | `ACCESS_LIST` | secret | Comma-separated Discord user IDs with access. Unset or empty lets nobody in. |
 
-Set secrets with `pnpm --filter @discord-mcp/web exec wrangler secret put <NAME>`.
+On Cloudflare, set secrets with `pnpm --filter @discord-mcp/web exec wrangler secret put <NAME> --env production`. In
+the container, every setting is an environment variable of the same name.
+
+Only `https://textile.cx` is indexed. On any other origin, every page and Markdown twin sends `X-Robots-Tag: noindex`
+and `robots.txt` disallows everything.
 
 ## Deploy
 
-`wrangler.jsonc` deploys the `textile-web-preview` Worker to `workers.dev` only. Serving `textile.cx` needs its own
-environment with the route, added when the site goes live.
+Nothing in `wrangler.jsonc` publishes the site: `workers.dev` and preview URLs are off, and no environment has a
+route. `textile.cx` is `env.production`, which gets its route when the site goes live.
+
+Staging runs the same build in self-hosted workerd: `docker/web.Dockerfile` bundles the Worker with
+`wrangler deploy --dry-run --env production` and serves it with `workerd/site.capnp` on port 8080, as a non-root user
+that needs no writable filesystem. `workerd/assets.js` stands in for Cloudflare's static assets: it routes requests the
+way Cloudflare does, serves `.html` and `index.html` files by their page paths, and applies `_headers`. Behind a proxy
+that terminates TLS, the proxy's `X-Forwarded-Proto` makes the site's own URLs `https://`. CI publishes the image as
+`ghcr.io/mia-cx/textile/web`.
