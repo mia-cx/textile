@@ -54,9 +54,12 @@ const LABELS: ReadonlyArray<Label> = [
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
 const LABELLED_HEIGHT = 760
-/** A label's text beside its knot, as ThreadField sets it: about 9px a character, 20px tall, 12px right of the knot. */
+/**
+ * A label's text beside its knot, as ThreadField sets it: about 9px a character, 12px right of the knot, and rising
+ * 31px above it (0.4rem, then one 24px line of 15px text).
+ */
 const LABEL_CHAR = 9
-const LABEL_HEIGHT = 20
+const LABEL_RISE = 31
 const LABEL_INSET = 12
 /**
  * The least room a label keeps from the copy, and more below it: a label just under the buttons reads as their
@@ -66,8 +69,8 @@ const LABEL_ROOM = 16
 const LABEL_BELOW = 48
 
 /**
- * Whether `label`, on `field`, keeps LABEL_ROOM from the hero's copy, measured in the field's pixels. The copy is one
- * block, headline to buttons, so a label never sits between its lines.
+ * Whether `label`, on `field`, keeps LABEL_ROOM from the hero's copy, and LABEL_BELOW under it, measured in the field's
+ * pixels. The copy is one block, headline to buttons, so a label never sits between its lines.
  */
 function clearOfCopy(field: Field, label: Label) {
   if (!heroSection || !heroCopy) return false
@@ -79,7 +82,7 @@ function clearOfCopy(field: Field, label: Label) {
     x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM < copy.left - origin.left ||
     x - LABEL_ROOM > copy.right - origin.left ||
     y + LABEL_ROOM < copy.top - origin.top ||
-    y - LABEL_HEIGHT - LABEL_BELOW > copy.bottom - origin.top
+    y - LABEL_RISE - LABEL_BELOW > copy.bottom - origin.top
   )
 }
 /** How far short of the window's edge the cord ends, in CSS pixels. */
