@@ -14,10 +14,11 @@ const NINE = 9 / 24
 </script>
 
 <div class="schedule">
-  <figure class="week">
+  <!-- The page's cord enters the week on the hour it fires, and burns along it to each tick. -->
+  <figure class="week" data-weave="left">
     <figcaption><code>{CRON}</code> fires at 9:00 UTC, Monday to Friday</figcaption>
     <div class="plot" style:--nine={NINE} aria-hidden="true">
-      <span class="hour">09:00</span>
+      <span class="hour" data-weave-y>09:00</span>
       {#each DAYS as day, i}
         <span class="day" class:fires={i < WEEKDAYS} style:--i={i}>
           <span class="thread"><span class="knot"></span></span>
@@ -73,10 +74,23 @@ const NINE = 9 / 24
     font-family: var(--font-code);
     font-size: 0.75rem;
   }
+  /* The hour, ruled across the week, and the thread that burns along it to each tick. */
   .hour::after {
     content: '';
     flex: 1;
     border-top: 1px dashed var(--rule-strong);
+  }
+  .hour::before {
+    content: '';
+    position: absolute;
+    top: calc(50% - 1px);
+    left: 3.5rem;
+    right: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, var(--thread-violet), var(--thread-amber));
+    box-shadow: 0 0 10px color-mix(in srgb, var(--thread-amber) 70%, transparent);
+    transform-origin: left;
   }
   .day {
     display: grid;
@@ -124,13 +138,28 @@ const NINE = 9 / 24
   .fires .name {
     color: var(--ink);
   }
+  /* As the section rises, the thread burns across the week, and each knot lights as it reaches that day's 9:00: the
+     day's column middle, (i + 0.5) / 7 of the way along the burn. */
   @supports (animation-timeline: view()) {
     @media (prefers-reduced-motion: no-preference) {
+      .hour::before {
+        animation: burn linear both;
+        animation-timeline: --section;
+        animation-range: cover 14% cover 42%;
+      }
       .knot {
         animation: knot linear both;
         animation-timeline: --section;
-        animation-range: cover calc(16% + var(--i) * 2%) cover calc(22% + var(--i) * 2%);
+        animation-range: cover calc(14% + (var(--i) + 0.5) * 4%) cover calc(17% + (var(--i) + 0.5) * 4%);
       }
+    }
+  }
+  @keyframes burn {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: none;
     }
   }
   @keyframes knot {

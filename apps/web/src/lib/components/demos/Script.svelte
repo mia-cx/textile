@@ -8,13 +8,16 @@ import Window from '../discord/Window.svelte'
 const TITLES = ['One', 'Two', 'Three']
 </script>
 
+<!-- The page's cord enters the one tool call, and three strands leave it, one into each message it sends. -->
 <div class="frame">
   <div class="script">
-    <Code source={SCRIPT} title="discord_script_run" label="A script that sends three embeds" />
+    <div data-weave="top" data-weave-at="0.3" data-weave-split>
+      <Code source={SCRIPT} title="discord_script_run" label="A script that sends three embeds" />
+    </div>
     <Window channel="general" label="The three messages the script sends">
       {#each TITLES as title, i}
         <Message author="Weaver" bot time="Today at 2:0{i + 4} PM">
-          <span class="embed">{title}</span>
+          <span class="embed" data-weave-end="window">{title}</span>
         </Message>
       {/each}
     </Window>
@@ -30,10 +33,12 @@ const TITLES = ['One', 'Two', 'Three']
     grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
   }
+  /* Side by side, with room between for the three strands from the call to its messages. */
   @container (min-width: 50rem) {
     .script {
       grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-      align-items: stretch;
+      column-gap: clamp(4rem, 9cqi, 9rem);
+      align-items: center;
     }
   }
   /* An embed: a card with a coloured spine and its title. */

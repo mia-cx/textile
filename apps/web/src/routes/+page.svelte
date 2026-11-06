@@ -12,8 +12,9 @@ import Section from '$lib/components/Section.svelte'
 import Seo from '$lib/components/Seo.svelte'
 import { CRON, ROUTE, STANDUP_POST, standupReply } from '$lib/landing'
 import { GITHUB_URL, ORIGIN, page } from '$lib/site'
-import type { Field, Point } from '$lib/threads/geometry'
+import { type Field, type Label, type Point, position } from '$lib/threads/geometry'
 import ThreadField from '$lib/threads/ThreadField.svelte'
+import Weave from '$lib/threads/Weave.svelte'
 
 /** What the page shows, as schema.org data. No offers or ratings: Textile has neither yet. */
 const structuredData = JSON.stringify({
@@ -27,6 +28,8 @@ const structuredData = JSON.stringify({
   sameAs: [GITHUB_URL],
 })
 
+let heroSection = $state<HTMLElement>()
+let heroCopy = $state<HTMLElement>()
 let heroWindow = $state<HTMLElement>()
 let signIn = $state<HTMLElement>()
 
@@ -35,21 +38,47 @@ const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
- * The hero's event labels, each on a bright thread that leaves the current's outer edge onto clear dark, where the copy
- * never reaches: two above the headline (at about 20% and 31% of the height), two below the actions (at about 80% and
- * 83%, cron further right), all left of the window. They are placed as fractions of the hero while the copy scales on
- * its own, so they clear it only from LABELLED pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall;
- * smaller, the hero shows its threads without them.
+ * The hero's event labels, each on a bright thread at the current's outer edge, as the concept places them: two above
+ * the headline and two below the subline, each pair stepping toward the braid, all left of the window. They are placed
+ * as fractions of the hero while the copy scales on its own, so they show only from LABELLED pixels wide (the box,
+ * without a scrollbar) and LABELLED_HEIGHT tall, and each only where it keeps clear of the copy (`clearOfCopy`).
  */
-const LABELS = [
+const LABELS: ReadonlyArray<Label> = [
   { text: 'messageCreate', at: 0.45, lane: -1.05 },
-  { text: 'interactionCreate', at: 0.6, lane: -1.08 },
+  { text: 'interactionCreate', at: 0.55, lane: -1 },
   { text: 'voiceStateUpdate', at: 0.45, lane: 1.02 },
-  { text: `cron ${CRON}`, at: 0.64, lane: 1.95 },
+  { text: `cron ${CRON}`, at: 0.62, lane: 1 },
 ]
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
 const LABELLED_HEIGHT = 760
+/** A label's text beside its knot, as ThreadField sets it: about 9px a character, 20px tall, 12px right of the knot. */
+const LABEL_CHAR = 9
+const LABEL_HEIGHT = 20
+const LABEL_INSET = 12
+/** The least room a label keeps from the headline, the subline, and the buttons. */
+const LABEL_ROOM = 16
+
+/** Whether `label`, on `field`, keeps LABEL_ROOM from each part of the hero's copy, measured in the field's pixels. */
+function clearOfCopy(field: Field, label: Label) {
+  if (!heroSection || !heroCopy) return false
+  const origin = heroSection.getBoundingClientRect()
+  // The knot is where the label's thread passes its `at`, whatever thread carries it.
+  const [x, y] = position({ ...field, labels: [label] }, 0, label.at, 0)
+  const left = x - LABEL_ROOM
+  const right = x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM
+  const top = y - LABEL_HEIGHT - LABEL_ROOM
+  const bottom = y + LABEL_ROOM
+  return [...heroCopy.querySelectorAll('h1, .lede, .button')].every((part) => {
+    const box = part.getBoundingClientRect()
+    return (
+      right < box.left - origin.left ||
+      left > box.right - origin.left ||
+      bottom < box.top - origin.top ||
+      top > box.bottom - origin.top
+    )
+  })
+}
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 
@@ -63,7 +92,7 @@ function hero(
     const end: Point = target
       ? [target.x - TIP_GAP, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
-    return {
+    const field: Field = {
       start: [-width * 0.06, height * 0.5],
       control: [end[0] * 0.5, height * 0.5],
       end,
@@ -73,8 +102,10 @@ function hero(
       braid: 0.64,
       count: width > 1600 ? 560 : 440,
       intensity: 0.75,
-      labels: width >= LABELLED && height >= LABELLED_HEIGHT ? LABELS : [],
+      labels: [],
     }
+    const labelled = width >= LABELLED && height >= LABELLED_HEIGHT
+    return { ...field, labels: labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : [] }
   }
   const end: Point = target
     ? [target.x + target.width * 0.5, target.y + 2]
@@ -120,9 +151,9 @@ function close(
 </svelte:head>
 
 <div class="landing" data-scheme="dark">
-  <section class="hero" aria-labelledby="title">
+  <section bind:this={heroSection} class="hero" aria-labelledby="title">
     <ThreadField layout={hero} target={heroWindow} />
-    <div class="hero-copy">
+    <div bind:this={heroCopy} class="hero-copy">
       <h1 id="title">Discord bots for AI agents</h1>
       <p class="lede">Your agent writes the code. Textile keeps the bot online.</p>
       <div class="actions">
@@ -131,7 +162,7 @@ function close(
       </div>
     </div>
     <!-- The window clips its contents, so the rim flare where the cord arrives lives on this frame around it. -->
-    <div class="hero-window">
+    <div class="hero-window" data-weave-start>
       <Window bind:window={heroWindow} channel="standup" label="Your bot at work in Discord" class="hero-card">
         <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
         <Message author="Weaver" bot time="Today at 9:12 AM" used={{ by: 'you', command: '/standup' }}>
@@ -141,7 +172,7 @@ function close(
     </div>
   </section>
 
-  <Section id="publish" title="Your agent ships a workflow over MCP" event="discord_workflow_publish">
+  <Section id="publish" title="Your agent ships a workflow over MCP" event="tools/call" layout="wide">
     <p>
       A workflow is plain discord.js, written like any bot. Your agent publishes it over MCP; Textile bundles it, keeps
       the bot online, and runs every event in a fresh sandbox.
@@ -154,7 +185,7 @@ function close(
     {#snippet demo()}<Publish />{/snippet}
   </Section>
 
-  <Section id="slash" title="Slash commands answer from your code" event="interactionCreate">
+  <Section id="slash" title="Slash commands answer from your code" event="interactionCreate" layout="centred">
     <p>
       Each interaction runs the workflow in its own isolate. What should last, like each person’s last answer, lives in
       the workflow’s key-value store.
@@ -162,7 +193,7 @@ function close(
     {#snippet demo()}<Slash />{/snippet}
   </Section>
 
-  <Section id="schedules" title="Cron schedules, one run per tick" event="cron {CRON}">
+  <Section id="schedules" title="Cron schedules, one run per tick" event="cron {CRON}" layout="prose-right">
     <p>
       Each tick runs once, however many hosts there are. A tick missed while the bot was offline runs once, late, when
       it’s back.
@@ -170,7 +201,12 @@ function close(
     {#snippet demo()}<Schedule />{/snippet}
   </Section>
 
-  <Section id="webhooks" title="Webhooks from anywhere" event="POST {ROUTE.replace(/\/\d+\//, '/…/')}">
+  <Section
+    id="webhooks"
+    title="Webhooks from anywhere"
+    event="POST {ROUTE.replace(/\/\d+\//, '/…/')}"
+    layout="prose-left"
+  >
     <p>
       The same workflow answers HTTP at its own route. Routes are public, so the handler checks who’s calling before it
       posts.
@@ -178,7 +214,7 @@ function close(
     {#snippet demo()}<Webhook />{/snippet}
   </Section>
 
-  <Section id="scripts" title="Many Discord calls, one tool call" event="discord_script_run">
+  <Section id="scripts" title="Many Discord calls, one tool call" event="discord_script_run" layout="wide-right">
     <p>
       <code class="prose-code">discord_script_run</code> runs discord.js once, now, under the same grants as workflows,
       so a batch of Discord calls costs your agent one tool call.
@@ -186,7 +222,7 @@ function close(
     {#snippet demo()}<Script />{/snippet}
   </Section>
 
-  <Section id="voice" title="Voice, speaker by speaker" event="voiceStateUpdate">
+  <Section id="voice" title="Voice, speaker by speaker" event="voiceStateUpdate" layout="span">
     <p>
       Join a voice channel and open one WebSocket. Each person’s audio arrives as its own stream, tagged with their
       Discord ID, in Opus or PCM16. Send audio back and the bot speaks.
@@ -215,10 +251,14 @@ function close(
       </div>
     </div>
   </section>
+
+  <Weave />
 </div>
 
 <style>
+  /* The box the page's cord (Weave) spans. */
   .landing {
+    position: relative;
     overflow-x: clip;
   }
   .hero {
@@ -275,9 +315,27 @@ function close(
     pointer-events: none;
   }
   .hero .lede {
+    position: relative;
     text-shadow:
       0 0 1.5rem var(--paper),
       0 0 0.5rem var(--paper);
+  }
+  /* The copy's shade fades out toward its edges, where the subline's last words sit, so the subline carries a band of
+     its own, even to just past its end and fading above and below, so no thread shows through its words. */
+  .hero .lede::before {
+    content: '';
+    position: absolute;
+    inset: -0.5em -2.5em -0.5em -1em;
+    z-index: -1;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--paper) 78%, transparent) 1em,
+      color-mix(in srgb, var(--paper) 78%, transparent) calc(100% - 2.5em),
+      transparent
+    );
+    mask-image: linear-gradient(transparent, #000 35%, #000 65%, transparent);
+    pointer-events: none;
   }
   /* Never one line: "Discord bots" fits in 6em and "Discord bots for" doesn't, so on the widest screens the headline
      stays a block beside the braid instead of one line it runs through. Columns narrower than 6em wrap it further. */

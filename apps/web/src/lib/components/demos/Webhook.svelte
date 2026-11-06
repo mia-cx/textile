@@ -26,39 +26,55 @@ function send(withSecret: boolean) {
 }
 </script>
 
-<div class="webhook">
-  <div class="request">
-    <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <pre class="http" tabindex="0" role="region" aria-label="The webhook request"><span class="method">POST</span> {ROUTE}
+<!-- The page's cord arrives at the request, and a strand carries it on to the window the workflow posts in. -->
+<div class="frame">
+  <div class="webhook">
+    <div class="request" data-weave="top" data-weave-at="0.5" data-weave-split>
+      <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <pre class="http" tabindex="0" role="region" aria-label="The webhook request"><span class="method">POST</span> {ROUTE}
 <span class="header">Authorization:</span> Bearer {SECRET}
 <span class="header">Content-Type:</span> application/json
 
 {BODY}</pre>
-    <div class="actions">
-      <button type="button" class="button button-primary" onclick={() => send(true)}>Send request</button>
-      <button type="button" class="button button-secondary" onclick={() => send(false)}>Send without the secret</button>
+      <div class="actions">
+        <button type="button" class="button button-primary" onclick={() => send(true)}>Send request</button>
+        <button type="button" class="button button-secondary" onclick={() => send(false)}>Send without the secret</button>
+      </div>
+      <p class="response" aria-live="polite">
+        {#if response}
+          <span class="status" class:refused={response.status === 401}>{response.status}</span>
+          <code>{response.body}</code>
+        {/if}
+      </p>
     </div>
-    <p class="response" aria-live="polite">
-      {#if response}
-        <span class="status" class:refused={response.status === 401}>{response.status}</span>
-        <code>{response.body}</code>
-      {/if}
-    </p>
+    <div data-weave-end>
+      <Window channel="deploys" label="Where the workflow posts in Discord" class="webhook-window">
+        {#each posts as post (post.id)}
+          <Message author="Weaver" bot time={post.time}>{post.text}</Message>
+        {/each}
+      </Window>
+    </div>
   </div>
-  <Window channel="deploys" label="Where the workflow posts in Discord" class="webhook-window">
-    {#each posts as post (post.id)}
-      <Message author="Weaver" bot time={post.time}>{post.text}</Message>
-    {/each}
-  </Window>
 </div>
 <p class="note">A simulation: nothing is sent.</p>
 
 <style>
+  .frame {
+    container-type: inline-size;
+  }
   .webhook {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
+  }
+  /* Side by side, with room between for the strand that carries the request to the window. */
+  @container (min-width: 50rem) {
+    .webhook {
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      column-gap: clamp(4rem, 8cqi, 7rem);
+      align-items: center;
+    }
   }
   .request {
     padding: 1.25rem;

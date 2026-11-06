@@ -47,61 +47,86 @@ async function undo() {
 }
 </script>
 
-<div class="voice">
-  <figure class="speakers" aria-label="Who the agent hears">
-    <ul>
-      {#each SPEAKERS as speaker, i}
-        <li class="speaker" class:silent={speaker.you && optedOut} style:--i={i}>
-          <span class="avatar" aria-hidden="true">{speaker.name.slice(0, 1).toUpperCase()}</span>
-          <span class="name">{speaker.name}</span>
-          <svg class="stream" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-            <path class="line" d="M0 20 C 120 20, 260 20, 400 20" />
-            <path class="voice-wave" d="M0 20 C 20 6, 40 34, 60 20 S 100 6, 120 20 S 160 34, 180 20 S 220 4, 240 20 S 280 36, 300 20 S 340 8, 360 20 S 390 30, 400 20" pathLength="1" />
-          </svg>
-          <span class="state">{speaker.you && optedOut ? 'not relayed' : 'relayed'}</span>
-        </li>
-      {/each}
-    </ul>
-    <figcaption><code>/voice</code> socket, one stream per speaker</figcaption>
-  </figure>
+<!-- Side by side, the page's cord comes apart here: its three strands become the three speakers' streams. -->
+<div class="frame">
+  <div class="voice">
+    <figure class="speakers" aria-label="Who the agent hears" data-weave="top" data-weave-at="0.06">
+      <ul>
+        {#each SPEAKERS as speaker, i}
+          <li class="speaker" class:silent={speaker.you && optedOut} style:--i={i}>
+            <span class="avatar" aria-hidden="true" data-weave-end>{speaker.name.slice(0, 1).toUpperCase()}</span>
+            <span class="name">{speaker.name}</span>
+            <svg class="stream" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+              <path class="line" d="M0 20 C 120 20, 260 20, 400 20" />
+              <path class="voice-wave" d="M0 20 C 20 6, 40 34, 60 20 S 100 6, 120 20 S 160 34, 180 20 S 220 4, 240 20 S 280 36, 300 20 S 340 8, 360 20 S 390 30, 400 20" pathLength="1" />
+            </svg>
+            <span class="state">{speaker.you && optedOut ? 'not relayed' : 'relayed'}</span>
+          </li>
+        {/each}
+      </ul>
+      <figcaption><code>/voice</code> socket, one stream per speaker</figcaption>
+    </figure>
 
-  <div>
-    <Window channel="lounge" label="The notice in the voice channel’s chat">
-      <Message author="Weaver" bot time="Today at 8:30 PM">
-        <p>{VOICE_NOTICE.notice}</p>
-        <div class="actions">
-          <button type="button" class="discord-button" onclick={() => optOut('here')}>
-            {VOICE_NOTICE.optOutHere}
-          </button>
-          <button type="button" class="discord-button" onclick={() => optOut('all')}>
-            {VOICE_NOTICE.optOutAll}
-          </button>
+    <div class="notice">
+      <Window channel="lounge" label="The notice in the voice channel’s chat">
+        <Message author="Weaver" bot time="Today at 8:30 PM">
+          <p>{VOICE_NOTICE.notice}</p>
+          <div class="actions">
+            <button type="button" class="discord-button" onclick={() => optOut('here')}>
+              {VOICE_NOTICE.optOutHere}
+            </button>
+            <button type="button" class="discord-button" onclick={() => optOut('all')}>
+              {VOICE_NOTICE.optOutAll}
+            </button>
+          </div>
+        </Message>
+        <!-- The reply's space is kept, so answering never moves the page. -->
+        <div class="reply" aria-live="polite">
+          {#if choice}
+            <Message author="Weaver" bot time="Today at 8:31 PM">
+              <div class="ephemeral">
+                <p bind:this={answer} tabindex="-1">{reply(choice.scope, choice.undone)}</p>
+                {#if !choice.undone}
+                  <button type="button" class="discord-button" onclick={undo}>Undo</button>
+                {/if}
+                <p class="only-you">Only you can see this</p>
+              </div>
+            </Message>
+          {/if}
         </div>
-      </Message>
-      <!-- The reply's space is kept, so answering never moves the page. -->
-      <div class="reply" aria-live="polite">
-        {#if choice}
-          <Message author="Weaver" bot time="Today at 8:31 PM">
-            <div class="ephemeral">
-              <p bind:this={answer} tabindex="-1">{reply(choice.scope, choice.undone)}</p>
-              {#if !choice.undone}
-                <button type="button" class="discord-button" onclick={undo}>Undo</button>
-              {/if}
-              <p class="only-you">Only you can see this</p>
-            </div>
-          </Message>
-        {/if}
-      </div>
-    </Window>
-    <p class="note">A simulation: its buttons change nothing in Discord.</p>
+      </Window>
+      <p class="note">A simulation: its buttons change nothing in Discord.</p>
+    </div>
   </div>
 </div>
 
 <style>
+  .frame {
+    container-type: inline-size;
+  }
   .voice {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
+  }
+  /* Across a wide page, the speakers run the full width on the open page, their streams long threads to the socket,
+     indented by the page's `--indent` so the cord's strands can reach each one; the notice sits below, at the right. */
+  @container (min-width: 60rem) {
+    .frame .voice {
+      row-gap: 3rem;
+    }
+    .frame .speakers {
+      padding: 1.5rem 0 0 var(--indent, 8rem);
+      border: 0;
+      background: none;
+    }
+    .frame ul {
+      gap: 1.5rem;
+    }
+    .notice {
+      justify-self: end;
+      width: min(100%, 40rem);
+    }
   }
   .speakers {
     margin: 0;

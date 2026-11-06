@@ -9,7 +9,7 @@ import Tabs from '../Tabs.svelte'
 <div class="frame">
   <div class="publish">
     <Code source={WORKFLOW} title="{WORKFLOW_NAME}.ts" label="The {WORKFLOW_NAME} workflow" />
-    <div>
+    <div data-weave="top" data-weave-at="0.08">
       <Tabs id="calls" label="The agent’s tool calls" tabs={CALLS.map((call) => call.tool)}>
         {#snippet panel(i)}
           {@const call = CALLS[i]}

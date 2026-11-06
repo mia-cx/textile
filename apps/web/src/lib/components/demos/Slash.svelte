@@ -27,23 +27,26 @@ function onsubmit(event: SubmitEvent) {
 }
 </script>
 
-<Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window" live>
-  {#each replies as reply (reply.id)}
-    <Message author="Weaver" bot time={today(9 * 60 + 10 + reply.id)} used={{ by: 'you', command: '/standup' }}>
-      {standupReply(reply.shipped, reply.last)}
-    </Message>
-  {/each}
-  {#snippet footer()}
-    <form class="composer" {onsubmit}>
-      <label class="command" for="shipped">
-        <span class="name">/standup</span>
-        <span class="option">shipped</span>
-      </label>
-      <input id="shipped" bind:value={shipped} maxlength="80" autocomplete="off" placeholder="what you shipped" />
-      <button type="submit" class="send">Send</button>
-    </form>
-  {/snippet}
-</Window>
+<!-- The page's cord enters the window's left edge, level with the composer, where the interaction starts. -->
+<div data-weave="left">
+  <Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window" live>
+    {#each replies as reply (reply.id)}
+      <Message author="Weaver" bot time={today(9 * 60 + 10 + reply.id)} used={{ by: 'you', command: '/standup' }}>
+        {standupReply(reply.shipped, reply.last)}
+      </Message>
+    {/each}
+    {#snippet footer()}
+      <form class="composer" {onsubmit} data-weave-y>
+        <label class="command" for="shipped">
+          <span class="name">/standup</span>
+          <span class="option">shipped</span>
+        </label>
+        <input id="shipped" bind:value={shipped} maxlength="80" autocomplete="off" placeholder="what you shipped" />
+        <button type="submit" class="send">Send</button>
+      </form>
+    {/snippet}
+  </Window>
+</div>
 <p class="note">A simulation: nothing reaches Discord.</p>
 
 <style>
