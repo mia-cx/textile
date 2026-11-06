@@ -31,6 +31,8 @@ const MAX_DPR = 2
 const STILL_TIME = 12
 /** The longest step between frames, in seconds, so a stalled tab doesn't jump the current forward. */
 const MAX_STEP = 0.1
+/** How many lost GPU devices the field replaces before it stops asking for WebGPU. */
+const MAX_GPU_RECOVERIES = 1
 
 /** `#rrggbb`, as the thread tokens are written. */
 const hex = (value: string): RGB => {
@@ -119,10 +121,15 @@ onMount(() => {
     canvas = fresh
   }
 
-  /** WebGPU, then WebGL2, then canvas 2D. A lost GPU device starts the field over, on a new device or a fallback. */
+  /**
+   * WebGPU, then WebGL2, then canvas 2D. A lost GPU device starts the field over on a new device, once; a device lost
+   * again (a new one can arrive already lost) means WebGPU isn't dependable here, so the field falls back.
+   */
+  let losses = 0
   const start = async () => {
     renderer = undefined
-    for (const attempt of [webgpu, webgl2, still]) {
+    const attempts = losses > MAX_GPU_RECOVERIES ? [webgl2, still] : [webgpu, webgl2, still]
+    for (const attempt of attempts) {
       try {
         renderer = await attempt(canvas)
       } catch (error) {
@@ -136,6 +143,7 @@ onMount(() => {
     kind = renderer?.kind
     renderer?.lost?.then(() => {
       if (destroyed) return
+      losses += 1
       cancelAnimationFrame(frame)
       frame = 0
       replaceCanvas()
