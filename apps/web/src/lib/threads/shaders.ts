@@ -202,15 +202,16 @@ const BLUR = {
 }
 
 /**
- * The most bilinear taps `shrink` takes across each axis: enough for a footprint of twice that many source pixels, past
- * the 8 a quarter-size bloom target needs at the field's highest pixel ratio, 2.
+ * The most source pixels `shrink` reads across each axis: a quarter-size bloom target covers 8 at the field's highest
+ * pixel ratio, 2, and one more when the ratio is fractional.
  */
-const MAX_TAPS = 8
+const MAX_FOOTPRINT = 9
 
 /**
- * `shrink` draws the light into the bloom target, each pixel averaging every source pixel it covers: however many that
- * is at this pixel ratio, in bilinear taps two source pixels apart, each averaging a 2×2 block. Skipping any would let
- * a thin thread's bloom flicker as it crosses the grid. `across` and `down` blur the bloom target one way each.
+ * `shrink` draws the light into the bloom target, each pixel averaging the source pixels whose centres fall inside its
+ * footprint, sampled at those centres. Neighbouring footprints tile the source, so at any pixel ratio, fractional ones
+ * included, every source pixel counts exactly once; skipping any would let a thin thread's bloom flicker as it crosses
+ * the grid. `across` and `down` blur the bloom target one way each.
  */
 export const bloomWgsl = /* wgsl */ `${fullscreenWgsl}
 @group(0) @binding(0) var source: texture_2d<f32>;
@@ -219,17 +220,20 @@ export const bloomWgsl = /* wgsl */ `${fullscreenWgsl}
 @fragment
 fn shrink(v: Screen) -> @location(0) vec4f {
   let size = vec2f(textureDimensions(source));
-  // Source pixels under one bloom pixel, along each axis.
-  let footprint = vec2f(abs(dpdx(v.uv.x)), abs(dpdy(v.uv.y))) * size;
-  let taps = clamp(vec2i(round(footprint * 0.5)), vec2i(1), vec2i(${MAX_TAPS}));
+  // This pixel's footprint runs from pixel * size / cells to (pixel + 1) * size / cells in source pixels, where cells
+  // is the bloom target's size. Neighbours compute their shared edge with the same expression, so it rounds the same
+  // way for both.
+  let cells = round(1.0 / vec2f(abs(dpdx(v.uv.x)), abs(dpdy(v.uv.y))));
+  let pixel = floor(v.at.xy);
+  let first = ceil(pixel * size / cells - 0.5);
+  let count = min(ceil((pixel + 1.0) * size / cells - 0.5) - first, vec2f(${MAX_FOOTPRINT}.0));
   var sum = vec3f(0.0);
-  for (var y = 0; y < taps.y; y++) {
-    for (var x = 0; x < taps.x; x++) {
-      let offset = (2.0 * vec2f(f32(x), f32(y)) - vec2f(taps - 1)) / size;
-      sum += textureSampleLevel(source, filtering, v.uv + offset, 0.0).rgb;
+  for (var y = 0.0; y < count.y; y += 1.0) {
+    for (var x = 0.0; x < count.x; x += 1.0) {
+      sum += textureSampleLevel(source, filtering, (first + vec2f(x, y) + 0.5) / size, 0.0).rgb;
     }
   }
-  return vec4f(sum / f32(taps.x * taps.y), 1.0);
+  return vec4f(sum / max(count.x * count.y, 1.0), 1.0);
 }
 
 fn blur(uv: vec2f, direction: vec2f) -> vec4f {
@@ -393,19 +397,22 @@ in vec2 vUv;
 out vec4 colour;
 void main() {
   vec2 size = vec2(textureSize(source, 0));
-  // Source pixels under one bloom pixel, along each axis.
-  vec2 footprint = vec2(abs(dFdx(vUv.x)), abs(dFdy(vUv.y))) * size;
-  ivec2 taps = clamp(ivec2(round(footprint * 0.5)), ivec2(1), ivec2(${MAX_TAPS}));
+  // This pixel's footprint runs from pixel * size / cells to (pixel + 1) * size / cells in source pixels, where cells
+  // is the bloom target's size. Neighbours compute their shared edge with the same expression, so it rounds the same
+  // way for both.
+  vec2 cells = round(1.0 / vec2(abs(dFdx(vUv.x)), abs(dFdy(vUv.y))));
+  vec2 pixel = floor(gl_FragCoord.xy);
+  vec2 first = ceil(pixel * size / cells - 0.5);
+  vec2 count = min(ceil((pixel + 1.0) * size / cells - 0.5) - first, vec2(${MAX_FOOTPRINT}.0));
   vec3 sum = vec3(0.0);
-  for (int y = 0; y < ${MAX_TAPS}; y++) {
-    if (y >= taps.y) break;
-    for (int x = 0; x < ${MAX_TAPS}; x++) {
-      if (x >= taps.x) break;
-      vec2 offset = (2.0 * vec2(x, y) - vec2(taps - 1)) / size;
-      sum += textureLod(source, vUv + offset, 0.0).rgb;
+  for (int y = 0; y < ${MAX_FOOTPRINT}; y++) {
+    if (float(y) >= count.y) break;
+    for (int x = 0; x < ${MAX_FOOTPRINT}; x++) {
+      if (float(x) >= count.x) break;
+      sum += textureLod(source, (first + vec2(x, y) + 0.5) / size, 0.0).rgb;
     }
   }
-  colour = vec4(sum / float(taps.x * taps.y), 1.0);
+  colour = vec4(sum / max(count.x * count.y, 1.0), 1.0);
 }
 `
 
