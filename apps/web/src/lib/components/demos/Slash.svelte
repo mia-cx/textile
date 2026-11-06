@@ -51,6 +51,7 @@ function onsubmit(event: SubmitEvent) {
   }
   .composer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
     padding: 0.375rem 0.375rem 0.375rem 0.875rem;
@@ -76,8 +77,9 @@ function onsubmit(event: SubmitEvent) {
   .option::after {
     content: ':';
   }
+  /* Never narrower than room for a few words: on a phone, the input and Send wrap below the command instead. */
   input {
-    flex: 1;
+    flex: 1 1 9rem;
     min-width: 0;
     min-height: 2.75rem;
     padding-inline: 0.25rem;
