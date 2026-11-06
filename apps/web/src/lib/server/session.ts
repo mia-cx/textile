@@ -2,12 +2,11 @@ import type { Cookies } from '@sveltejs/kit'
 
 /**
  * The signed-in person, kept in an AES-256-GCM encrypted, HttpOnly cookie under `SESSION_KEY`. There is no database:
- * the cookie is the whole session. Central checked its allowlist when the person signed in, so `access` records its
- * answer, and `token` is the access token central issued, when it let them in.
+ * the cookie is the whole session. Central checked its allowlist when it let the person in, and `token` is the access
+ * token it issued them.
  */
 export interface Session {
-  readonly access: boolean
-  readonly token?: string
+  readonly token: string
 }
 
 export const SESSION_COOKIE = 'textile_session'

@@ -114,7 +114,8 @@ describe('Sign in through central', () => {
     expect(central.calls).toEqual(['/register', '/token'])
   })
 
-  it('tells someone central turned away that they don’t have access yet, and where to follow progress', async () => {
+  // Central answers access_denied for its allowlist and for a cancelled sign-in alike, so neither may stick.
+  it('tells someone central turned away that they don’t have access yet, and lets them sign in again', async () => {
     const central = fakeCentral()
     const { authorize, cookie } = await start(central)
     const response = await callback(cookie, {
@@ -122,11 +123,18 @@ describe('Sign in through central', () => {
       state: authorize.searchParams.get('state') ?? '',
       iss: CENTRAL,
     })
-    const page = await accessPage(cookiesOf(response))
+    expect(response.headers.get('location')).toBe('/access?denied')
+    expect(response.headers.getSetCookie().some((c) => c.startsWith('textile_session='))).toBe(
+      false,
+    )
+    const page = await (await request('/access?denied')).text()
     expect(page).toContain('You don’t have access yet')
     expect(page).toContain('Join the Discord server')
+    expect(page).toContain('href="/login"')
     expect(page).not.toContain('You’re in')
-    expect(central.calls).toEqual(['/register'])
+    const again = await request('/login', { headers: { cookie: cookiesOf(response) } })
+    expect(new URL(again.headers.get('location') ?? '').pathname).toBe('/authorize')
+    expect(central.calls).toEqual(['/register', '/register'])
   })
 
   // Proves a callback this browser didn't start, or that central didn't send, signs nobody in and redeems nothing.
