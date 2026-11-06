@@ -4,30 +4,32 @@ import Message from '../discord/Message.svelte'
 import Window from '../discord/Window.svelte'
 
 /**
- * Run /standup and the bot answers as the workflow would: the reply its code builds, with the count it keeps in KV.
- * Only on this page: nothing reaches Discord. The two newest replies show, so the window never changes size.
+ * Run /standup and the bot answers as the workflow would: the reply its code builds, with your last answer, which it
+ * keeps in KV. Only on this page: nothing reaches Discord. The two newest replies show, so the window never changes
+ * size.
  */
 const SHOWN = 2
 let shipped = $state('')
 let replies = $state([
-  { id: 1, shipped: 'the pricing page', count: 2 },
-  { id: 2, shipped: 'dark mode for the docs', count: 3 },
+  { id: 1, shipped: 'the pricing page', last: undefined as string | undefined },
+  { id: 2, shipped: 'dark mode for the docs', last: 'the pricing page' },
 ])
 
 function onsubmit(event: SubmitEvent) {
   event.preventDefault()
   const text = shipped.trim()
   if (text === '') return
-  const count = (replies.at(-1)?.count ?? 0) + 1
-  replies = [...replies, { id: count, shipped: text, count }].slice(-SHOWN)
+  const previous = replies.at(-1)
+  const id = (previous?.id ?? 0) + 1
+  replies = [...replies, { id, shipped: text, last: previous?.shipped }].slice(-SHOWN)
   shipped = ''
 }
 </script>
 
 <Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window">
   {#each replies as reply (reply.id)}
-    <Message author="Weaver" bot time="Today at 9:{10 + reply.count} AM" used={{ by: 'you', command: '/standup' }}>
-      {standupReply(reply.shipped, reply.count)}
+    <Message author="Weaver" bot time="Today at 9:{String(10 + reply.id).padStart(2, '0')} AM" used={{ by: 'you', command: '/standup' }}>
+      {standupReply(reply.shipped, reply.last)}
     </Message>
   {/each}
   {#snippet footer()}

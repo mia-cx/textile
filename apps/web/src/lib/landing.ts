@@ -38,9 +38,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return
   if (interaction.commandName !== 'standup') return
   const shipped = interaction.options.getString('shipped')
-  const count = ((await kv.get('shipped')) ?? 0) + 1
-  await kv.set('shipped', count)
-  await interaction.reply(\`Logged: \${shipped}. \${count} so far.\`)
+  // One key per person: interactions run at once, so a shared key would lose writes.
+  const key = \`shipped:\${interaction.user.id}\`
+  const last = await kv.get(key)
+  await kv.set(key, shipped)
+  const reply = \`Logged: \${shipped}.\`
+  await interaction.reply(last ? \`\${reply} Last time: \${last}.\` : reply)
 })
 
 // POST /workflows/<bot ID>/${WORKFLOW_NAME}
@@ -104,9 +107,9 @@ export const CALLS = [
   },
 ] as const
 
-/** What the workflow replies to /standup. */
-export const standupReply = (shipped: string, count: number) =>
-  `Logged: ${shipped}. ${count} so far.`
+/** What the workflow replies to /standup: what you shipped, and what you logged before it, if anything. */
+export const standupReply = (shipped: string, last?: string) =>
+  last ? `Logged: ${shipped}. Last time: ${last}.` : `Logged: ${shipped}.`
 
 export const SCRIPT = `import { EmbedBuilder } from 'discord.js'
 
@@ -167,10 +170,10 @@ workflow's grants and adds the token itself. [Read about workflows](${origin}/do
 
 ## Slash commands answer from your code
 
-When someone runs \`/standup shipped:the onboarding flow\`, the workflow answers in its own isolate, and keeps its
-count in the workflow's key-value store:
+When someone runs \`/standup shipped:the onboarding flow\`, the workflow answers in its own isolate, and remembers
+each person's last answer in the workflow's key-value store:
 
-> ${standupReply('the onboarding flow', 4)}
+> ${standupReply('the onboarding flow', 'dark mode for the docs')}
 
 ## Cron schedules that fire once
 

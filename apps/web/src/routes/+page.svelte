@@ -119,7 +119,7 @@ function close(
     <Window bind:window={heroWindow} channel="standup" label="Your bot at work in Discord" class="hero-window">
       <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
       <Message author="Weaver" bot time="Today at 9:12 AM" used={{ by: 'you', command: '/standup' }}>
-        {standupReply('the onboarding flow', 4)}
+        {standupReply('the onboarding flow', 'dark mode for the docs')}
       </Message>
     </Window>
   </section>
@@ -139,8 +139,8 @@ function close(
 
   <Section id="slash" title="Slash commands answer from your code" event="interactionCreate">
     <p>
-      Each interaction runs the workflow in its own isolate. State that should last, like this count, lives in the
-      workflow’s key-value store.
+      Each interaction runs the workflow in its own isolate. What should last, like each person’s last answer, lives in
+      the workflow’s key-value store.
     </p>
     {#snippet demo()}<Slash />{/snippet}
   </Section>
