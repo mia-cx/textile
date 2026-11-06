@@ -38,12 +38,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return
   if (interaction.commandName !== 'standup') return
   const shipped = interaction.options.getString('shipped')
-  // One key per person: interactions run at once, so a shared key would lose writes.
+  // A key per person: interactions run at once
   const key = \`shipped:\${interaction.user.id}\`
   const last = await kv.get(key)
   await kv.set(key, shipped)
   const reply = \`Logged: \${shipped}.\`
-  await interaction.reply(last ? \`\${reply} Last time: \${last}.\` : reply)
+  await interaction.reply(
+    last ? \`\${reply} Last time: \${last}.\` : reply,
+  )
 })
 
 // POST /workflows/<bot ID>/${WORKFLOW_NAME}
@@ -152,7 +154,7 @@ joins voice channels. Textile hosts no models: your agent brings its own.
 
 [Sign in with Discord](${origin}/login) · [Read the docs](${origin}/docs.md)
 
-## Your agent ships a workflow in one call
+## Your agent ships a workflow over MCP
 
 A workflow is plain discord.js, written like any bot. This one posts a standup prompt every weekday, logs answers to a
 \`/standup\` slash command, and posts whatever an outside service sends to its HTTP route:
@@ -175,7 +177,7 @@ each person's last answer in the workflow's key-value store:
 
 > ${standupReply('the onboarding flow', 'dark mode for the docs')}
 
-## Cron schedules that fire once
+## Cron schedules, one run per tick
 
 \`${CRON}\` is 9:00 UTC, Monday to Friday. Each tick runs once, however many hosts there are. A tick missed while the
 bot was offline runs once, late, when it is back.

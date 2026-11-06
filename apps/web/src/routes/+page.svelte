@@ -52,12 +52,13 @@ function hero(
       braid: 0.8,
       count: width > 1600 ? 820 : 640,
       intensity: 0.6,
-      // Placed in the open space above and below the headline, at any size: positions scale with the box.
+      // Two above the headline, two below the actions (at 80% and 85% of the height, where the copy never reaches),
+      // both left of the window. Positions scale with the box.
       labels: [
         { text: 'messageCreate', at: 0.455, lane: -0.63 },
         { text: 'interactionCreate', at: 0.665, lane: -1.3 },
-        { text: 'voiceStateUpdate', at: 0.465, lane: 0.69 },
-        { text: `cron ${CRON}`, at: 0.665, lane: 1.3 },
+        { text: 'voiceStateUpdate', at: 0.45, lane: 0.77 },
+        { text: `cron ${CRON}`, at: 0.665, lane: 2.6 },
       ],
     }
   }
@@ -101,7 +102,6 @@ function close(
 
 <Seo path="/" />
 <svelte:head>
-  <meta name="theme-color" content="#07060c" />
   {@html `<script type="application/ld+json">${structuredData.replace(/</g, '\\u003c')}</script>`}
 </svelte:head>
 
@@ -124,7 +124,7 @@ function close(
     </Window>
   </section>
 
-  <Section id="publish" title="Your agent ships a workflow in one call" event="discord_workflow_publish">
+  <Section id="publish" title="Your agent ships a workflow over MCP" event="discord_workflow_publish">
     <p>
       A workflow is plain discord.js, written like any bot. Your agent publishes it over MCP; Textile bundles it, keeps
       the bot online, and runs every event in a fresh sandbox.
@@ -145,7 +145,7 @@ function close(
     {#snippet demo()}<Slash />{/snippet}
   </Section>
 
-  <Section id="schedules" title="Cron schedules that fire once" event="cron {CRON}">
+  <Section id="schedules" title="Cron schedules, one run per tick" event="cron {CRON}">
     <p>
       Each tick runs once, however many hosts there are. A tick missed while the bot was offline runs once, late, when
       it’s back.
@@ -215,7 +215,7 @@ function close(
   }
   /* Each field fades out at its open edges instead of stopping at its box. */
   .hero :global(.field) {
-    mask-image: linear-gradient(#000 78%, transparent);
+    mask-image: linear-gradient(#000 88%, transparent);
   }
   .close :global(.field) {
     mask-image: linear-gradient(transparent, #000 16%, #000 84%, transparent);

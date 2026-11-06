@@ -1,10 +1,25 @@
 <script lang="ts">
 import '../app.css'
+import { page } from '$app/state'
 import PageMarkdown from '$lib/components/PageMarkdown.svelte'
 import { GITHUB_URL } from '$lib/site'
 
 let { data, children } = $props()
+
+/** Pages that are dark in every colour mode (they mark themselves `data-scheme="dark"`), so the browser's chrome is too. */
+const ALWAYS_DARK = new Set(['/', '/access'])
+/** `--paper` in each mode, for the browser's chrome. */
+const PAPER = { light: '#f8f7fb', dark: '#07060c' }
 </script>
+
+<svelte:head>
+  {#if ALWAYS_DARK.has(page.url.pathname)}
+    <meta name="theme-color" content={PAPER.dark} />
+  {:else}
+    <meta name="theme-color" content={PAPER.light} media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content={PAPER.dark} media="(prefers-color-scheme: dark)" />
+  {/if}
+</svelte:head>
 
 <a href="#content" class="skip">Skip to content</a>
 
