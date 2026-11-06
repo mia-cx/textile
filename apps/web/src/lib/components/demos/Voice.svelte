@@ -32,6 +32,14 @@ function optOut(scope: Scope) {
   opted[scope] = true
 }
 
+/** Every reply the notice can give: opting out of either scope, and undoing it. */
+const REPLIES = [
+  { scope: 'here', undone: false },
+  { scope: 'here', undone: true },
+  { scope: 'all', undone: false },
+  { scope: 'all', undone: true },
+] as const
+
 const reply = (scope: Scope, undone: boolean) =>
   scope === 'here'
     ? undone
@@ -87,19 +95,33 @@ async function undo() {
             </button>
           </div>
         </Message>
-        <!-- The reply's space is kept, so answering never moves the page. -->
-        <div class="reply" aria-live="polite">
-          {#if choice}
-            <Message author="Weaver" bot time="Today at 8:31 PM">
-              <div class="ephemeral">
-                <p bind:this={answer} tabindex="-1">{reply(choice.scope, choice.undone)}</p>
-                {#if !choice.undone}
-                  <button type="button" class="discord-button" onclick={undo}>Undo</button>
-                {/if}
-                <p class="only-you">Only you can see this</p>
-              </div>
-            </Message>
-          {/if}
+        <!-- Every reply sits unseen in the reply's cell, so the cell is as tall as the tallest at any width and answering
+             never moves the page. -->
+        <div class="reply">
+          {#each REPLIES as { scope, undone }}
+            <div class="sizer" aria-hidden="true" inert>
+              <Message author="Weaver" bot time="Today at 8:31 PM">
+                <div class="ephemeral">
+                  <p>{reply(scope, undone)}</p>
+                  {#if !undone}<button type="button" class="discord-button">Undo</button>{/if}
+                  <p class="only-you">Only you can see this</p>
+                </div>
+              </Message>
+            </div>
+          {/each}
+          <div aria-live="polite">
+            {#if choice}
+              <Message author="Weaver" bot time="Today at 8:31 PM">
+                <div class="ephemeral">
+                  <p bind:this={answer} tabindex="-1">{reply(choice.scope, choice.undone)}</p>
+                  {#if !choice.undone}
+                    <button type="button" class="discord-button" onclick={undo}>Undo</button>
+                  {/if}
+                  <p class="only-you">Only you can see this</p>
+                </div>
+              </Message>
+            {/if}
+          </div>
         </div>
       </Window>
       <p class="note">A simulation: its buttons change nothing in Discord.</p>
@@ -252,9 +274,14 @@ async function undo() {
   .discord-button:hover {
     background: #6d6f78;
   }
-  /* Room for the longest reply on two lines, as it wraps in the narrowest notice: answering never moves the page. */
   .reply {
-    min-height: 9.25rem;
+    display: grid;
+  }
+  .reply > * {
+    grid-area: 1 / 1;
+  }
+  .sizer {
+    visibility: hidden;
   }
   .ephemeral {
     display: grid;
