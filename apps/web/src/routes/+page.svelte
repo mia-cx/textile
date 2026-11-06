@@ -38,16 +38,17 @@ const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
- * The hero's event labels, each on a bright thread at the current's outer edge, as the concept places them: two above
- * the headline and two below the subline, each pair stepping toward the braid, all left of the window. They are placed
- * as fractions of the hero while the copy scales on its own, so they show only from LABELLED pixels wide (the box,
- * without a scrollbar) and LABELLED_HEIGHT tall, and each only where it keeps clear of the copy (`clearOfCopy`).
+ * The hero's event labels, each on a bright thread at the current's outer edge: two above the headline and two below
+ * the buttons, out in clear dark as the concept places them, each pair stepping toward the braid, all left of the
+ * window. They are placed as fractions of the hero while the copy scales on its own, so they show only from LABELLED
+ * pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall, and each only where it keeps clear of the copy
+ * (`clearOfCopy`).
  */
 const LABELS: ReadonlyArray<Label> = [
   { text: 'messageCreate', at: 0.45, lane: -1.05 },
   { text: 'interactionCreate', at: 0.55, lane: -1 },
-  { text: 'voiceStateUpdate', at: 0.45, lane: 1.02 },
-  { text: `cron ${CRON}`, at: 0.62, lane: 1 },
+  { text: 'voiceStateUpdate', at: 0.4, lane: 1.02 },
+  { text: `cron ${CRON}`, at: 0.46, lane: 1 },
 ]
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
@@ -56,28 +57,25 @@ const LABELLED_HEIGHT = 760
 const LABEL_CHAR = 9
 const LABEL_HEIGHT = 20
 const LABEL_INSET = 12
-/** The least room a label keeps from the headline, the subline, and the buttons. */
+/** The least room a label keeps from the copy. */
 const LABEL_ROOM = 16
 
-/** Whether `label`, on `field`, keeps LABEL_ROOM from each part of the hero's copy, measured in the field's pixels. */
+/**
+ * Whether `label`, on `field`, keeps LABEL_ROOM from the hero's copy, measured in the field's pixels. The copy is one
+ * block, headline to buttons, so a label never sits between its lines.
+ */
 function clearOfCopy(field: Field, label: Label) {
   if (!heroSection || !heroCopy) return false
   const origin = heroSection.getBoundingClientRect()
+  const copy = heroCopy.getBoundingClientRect()
   // The knot is where the label's thread passes its `at`, whatever thread carries it.
   const [x, y] = position({ ...field, labels: [label] }, 0, label.at, 0)
-  const left = x - LABEL_ROOM
-  const right = x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM
-  const top = y - LABEL_HEIGHT - LABEL_ROOM
-  const bottom = y + LABEL_ROOM
-  return [...heroCopy.querySelectorAll('h1, .lede, .button')].every((part) => {
-    const box = part.getBoundingClientRect()
-    return (
-      right < box.left - origin.left ||
-      left > box.right - origin.left ||
-      bottom < box.top - origin.top ||
-      top > box.bottom - origin.top
-    )
-  })
+  return (
+    x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM < copy.left - origin.left ||
+    x - LABEL_ROOM > copy.right - origin.left ||
+    y + LABEL_ROOM < copy.top - origin.top ||
+    y - LABEL_HEIGHT - LABEL_ROOM > copy.bottom - origin.top
+  )
 }
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
@@ -222,17 +220,20 @@ function close(
     {#snippet demo()}<Script />{/snippet}
   </Section>
 
-  <Section id="voice" title="Voice, speaker by speaker" event="voiceStateUpdate" layout="span">
+  <Section id="voice" title="Voice, speaker by speaker" event="discord_voice_join" layout="span">
     <p>
       Join a voice channel and open one WebSocket. Each person’s audio arrives as its own stream, tagged with their
       Discord ID, in Opus or PCM16. Send audio back and the bot speaks.
     </p>
-    <p>
-      Before the bot hears anyone, it posts a notice. Anyone who opts out is never relayed, and Textile never stores
-      audio.
-    </p>
     <p><a class="next-link" href="/docs/voice/">Read about voice</a></p>
-    {#snippet demo()}<Voice />{/snippet}
+    {#snippet demo()}
+      <Voice>
+        <p>
+          Before the bot hears anyone, it posts a notice. Anyone who opts out is never relayed, and Textile never stores
+          audio.
+        </p>
+      </Voice>
+    {/snippet}
   </Section>
 
   <section class="close" aria-labelledby="access">

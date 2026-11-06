@@ -6,8 +6,9 @@ import { type Stop, weave } from './weave'
  * The hero's cord carried on down the page: it leaves the bottom of `[data-weave-start]`, and for each section that
  * names its event in `data-weave-label`, crosses the gap above it and enters the section's `[data-weave]` element on
  * the side that attribute names (`top` at `data-weave-at` along it, or `left`, level with any `[data-weave-y]` inside),
- * with the event's name on a knot where it enters, then runs on behind the panel and out of the bottom of the section's
- * `[data-weave-demo]`. Panels sit above the cord, so it runs behind them.
+ * with the event's name on a knot where it enters, then comes out of that element's bottom: below the entry, or below
+ * its middle from the side. Mark the whole column of panels the cord should pass behind, so it never shows between
+ * them. Panels sit above the cord.
  *
  * A strand peels off into each `[data-weave-end]` in a section, to its left edge, or with `data-weave-end="window"`, to
  * the left edge of the Discord window around it: from the right edge of the section's `[data-weave-split]`, or, with no
@@ -25,7 +26,12 @@ const CORD = 7
 const CORNER = 90
 /** How far beside a panel the cord runs before it turns into a side entry. */
 const LANE = 110
-const COLOURS = ['var(--thread-violet)', 'var(--thread-amber)', 'var(--thread-silver)']
+/** Violet, amber, and a lavender silver: the hero's braid tints its silver strand toward violet, and so does the cord. */
+const COLOURS = [
+  'var(--thread-violet)',
+  'var(--thread-amber)',
+  'color-mix(in srgb, var(--thread-silver) 55%, var(--thread-violet))',
+]
 
 let box: HTMLDivElement
 let woven = $state<ReturnType<typeof weave>>({ strokes: [], spine: '', knots: [] })
@@ -54,16 +60,14 @@ onMount(() => {
       const level = entry.querySelector('[data-weave-y]')
       const side = entry.dataset.weave === 'left' ? 'left' : 'top'
       const split = section.querySelector('[data-weave-split]')
+      const x =
+        panel.left + panel.width * (side === 'left' ? 0.5 : Number(entry.dataset.weaveAt ?? 0.5))
       return {
         label: section.dataset.weaveLabel ?? '',
         side,
-        enter:
-          side === 'left'
-            ? [panel.left, middle(level ? rect(level) : panel)]
-            : [panel.left + panel.width * Number(entry.dataset.weaveAt ?? 0.5), panel.top],
-        turn: panel.left + panel.width / 2,
+        enter: side === 'left' ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
+        out: [x, panel.bottom],
         top: Math.min(...[...section.children].map((child) => rect(child).top)),
-        bottom: rect(entry.closest('[data-weave-demo]') ?? entry).bottom,
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
           const wall = end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end
@@ -155,16 +159,16 @@ onMount(() => {
   /* A soft violet light around the whole cord, a glow around each fibre, and the fibres themselves. */
   .halo {
     stroke: var(--thread-violet);
-    stroke-width: 34;
-    stroke-opacity: 0.06;
+    stroke-width: 30;
+    stroke-opacity: 0.05;
     stroke-linecap: round;
   }
   .glow {
-    stroke-width: 5;
-    stroke-opacity: 0.08;
+    stroke-width: 6;
+    stroke-opacity: 0.05;
   }
   .cores path {
-    stroke-width: 1.2;
+    stroke-width: 1;
     mix-blend-mode: plus-lighter;
   }
 
@@ -222,6 +226,10 @@ onMount(() => {
       }
       .reveal > * {
         animation-name: hold;
+      }
+      /* The cord fades out toward its tip, as the hero's threads fade at their ends, rather than stopping at an edge. */
+      .threads {
+        mask-image: linear-gradient(#000 calc(100% - 14rem), transparent);
       }
     }
   }

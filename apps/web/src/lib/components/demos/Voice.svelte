@@ -1,5 +1,5 @@
 <script lang="ts">
-import { tick } from 'svelte'
+import { type Snippet, tick } from 'svelte'
 import { VOICE_NOTICE } from '$lib/landing'
 import Message from '../discord/Message.svelte'
 import Window from '../discord/Window.svelte'
@@ -8,7 +8,11 @@ import Window from '../discord/Window.svelte'
  * A voice channel's speakers, each heard as their own thread to the agent's socket, beside the notice the bot posts
  * first (packages/bot-host/src/consent.ts). Its buttons answer as they do in Discord, with a reply only the clicker
  * sees, and opting out takes your thread away, as relay does. Only on this page: nothing changes in Discord.
+ *
+ * `children` is the page's words about the notice: before it, stacked; beside it, side by side.
  */
+let { children }: { children?: Snippet } = $props()
+
 type Scope = 'here' | 'all'
 const SPEAKERS = [
   { name: 'Ana', you: false },
@@ -67,6 +71,9 @@ async function undo() {
       <figcaption><code>/voice</code> socket, one stream per speaker</figcaption>
     </figure>
 
+    {#if children}
+      <div class="aside">{@render children()}</div>
+    {/if}
     <div class="notice">
       <Window channel="lounge" label="The notice in the voice channel’s chat">
         <Message author="Weaver" bot time="Today at 8:30 PM">
@@ -109,14 +116,25 @@ async function undo() {
     grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
   }
+  .aside {
+    font-size: clamp(1.125rem, 1rem + 0.3vw, 1.3125rem);
+  }
+  .aside :global(p + p) {
+    margin-top: 1.25rem;
+  }
   /* Across a wide page, the speakers run the full width on the open page, their streams long threads to the socket,
-     indented by the page's `--indent` so the cord's strands can reach each one; the notice sits below, at the right. */
+     indented two of the page's twelve columns (its `--column-gap` between them), where the heading starts, so the
+     cord's strands can reach each one. Below them, the notice lines up with the speakers, and the words about it sit
+     beside it. */
   @container (min-width: 60rem) {
     .frame .voice {
-      row-gap: 3rem;
+      --indent: calc((100cqi + var(--column-gap, 0px)) / 6);
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+      gap: 3rem clamp(2rem, 5cqi, 6rem);
     }
     .frame .speakers {
-      padding: 1.5rem 0 0 var(--indent, 8rem);
+      grid-column: 1 / -1;
+      padding: 1.5rem 0 0 var(--indent);
       border: 0;
       background: none;
     }
@@ -124,8 +142,16 @@ async function undo() {
       gap: 1.5rem;
     }
     .notice {
-      justify-self: end;
-      width: min(100%, 40rem);
+      grid-row: 2;
+      grid-column: 1;
+      width: min(100% - var(--indent), 40rem);
+      margin-left: var(--indent);
+    }
+    .aside {
+      grid-row: 2;
+      grid-column: 2;
+      align-self: center;
+      max-width: 36rem;
     }
   }
   .speakers {

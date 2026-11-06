@@ -100,6 +100,24 @@ const lane = (f: number) => ((f + 0.5) / FIBRES) * 2 - 1 + (hash(f + 8.3) - 0.5)
 /** The route through `waypoints` itself, its corners rounded by up to `radius`: the line the braid's glow follows. */
 const route = (waypoints: ReadonlyArray<Point>, radius: number) => path(trace(waypoints, radius))
 
+/** Dense points along the cubic from `a` to `d` through controls `b` and `c`. */
+function cubic(a: Point, b: Point, c: Point, d: Point): Point[] {
+  const steps = Math.max(8, Math.ceil(Math.hypot(d[0] - a[0], d[1] - a[1]) / STEP))
+  return Array.from({ length: steps + 1 }, (_, k): Point => {
+    const t = k / steps
+    const u = 1 - t
+    const at = (axis: 0 | 1) =>
+      u ** 3 * a[axis] + 3 * u * u * t * b[axis] + 3 * u * t * t * c[axis] + t ** 3 * d[axis]
+    return [at(0), at(1)]
+  })
+}
+
+/**
+ * How loosely the cord's fibres lie in their strands, in braid radii: looser than the hero's tight cord, so the cord
+ * reads as soft fibre on the dark rather than a chain.
+ */
+const LOOSE = 0.75
+
 /**
  * The braid along the route through `waypoints`: three strands of `FIBRES` fibres each, twisting around the route at
  * the hero cord's pitch for a braid of radius `cord`, so it reads as the same cord carried on down the page.
@@ -114,11 +132,10 @@ function braid(waypoints: ReadonlyArray<Point>, cord: number, radius: number): S
     const points = samples.map(({ x, y, nx, ny, s }): Point => {
       const twist = (s / pitch) * TAU + (strand * TAU) / 3
       const offset =
-        cord *
-        (Math.sin(twist) + (lane(fibre) + SHAPE.drift * Math.sin(s / 90 + drift)) * SHAPE.fray)
+        cord * (Math.sin(twist) + (lane(fibre) + SHAPE.drift * Math.sin(s / 90 + drift)) * LOOSE)
       return [x + nx * offset, y + ny * offset]
     })
-    return { d: path(points), colour: strand, opacity: 0.35 + 0.4 * hash(i + 2.2) }
+    return { d: path(points), colour: strand, opacity: 0.2 + 0.4 * hash(i + 2.2) }
   })
 }
 
@@ -130,19 +147,7 @@ function braid(waypoints: ReadonlyArray<Point>, cord: number, radius: number): S
 function peel(from: Point, to: Point, lead: Point, strand: number, cord: number): Stroke[] {
   const reach = Math.abs(to[0] - from[0]) * 0.55
   const out: Point = [from[0] + lead[0] * reach, from[1] + lead[1] * reach]
-  const back: Point = [to[0] - reach, to[1]]
-  const steps = Math.max(8, Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / STEP))
-  const curve = Array.from({ length: steps + 1 }, (_, k): Point => {
-    const t = k / steps
-    const u = 1 - t
-    const at = (axis: 0 | 1) =>
-      u ** 3 * from[axis] +
-      3 * u * u * t * out[axis] +
-      3 * u * t * t * back[axis] +
-      t ** 3 * to[axis]
-    return [at(0), at(1)]
-  })
-  const samples = sample(curve)
+  const samples = sample(cubic(from, out, [to[0] - reach, to[1]], to))
   const total = samples.at(-1)?.s ?? 1
   return Array.from({ length: FIBRES }, (_, f) => {
     const drift = hash(strand * 7 + f + 4.7) * TAU
@@ -163,11 +168,13 @@ export interface Stop {
   /** The panel edge the cord enters by, and the point on it. */
   readonly side: 'top' | 'left'
   readonly enter: Point
-  /** Behind a panel entered from the side, where the cord turns down: its middle, clear of any note under its left end. */
-  readonly turn: number
-  /** The top of the section's first content, and the bottom of its demo, which the cord leaves by. */
+  /**
+   * Where the cord comes out of the bottom of the panel it entered: below its entry from the top, or below the panel's
+   * middle from the side, clear of any note under the panel's left end.
+   */
+  readonly out: Point
+  /** The top of the section's first content: the cord crosses the gap above it. */
   readonly top: number
-  readonly bottom: number
   /** Where strands peel off: a panel's right edge, or, with none, the entry, where the cord comes apart and ends. */
   readonly split: Point | undefined
   /**
@@ -185,22 +192,25 @@ export interface Weaving {
 }
 
 /**
- * The cord from `start` down through each stop in turn: across the middle of the gap above each section, into its
- * panel, and on out of the bottom of its demo; with the strands that peel off it and the knots where it enters. It stops
- * at the first stop where it comes apart.
+ * The cord from `start` down through each stop in turn: across the gap above each section in one S-curve, level at
+ * the gap's middle so it never crosses the section's text, then into its panel; with the strands that peel off it and
+ * the knots where it enters. Behind a panel it is not drawn, so it shows nowhere between stacked panels; it comes out
+ * again at the panel's `out`. It stops at the first stop where it comes apart.
  */
 export function weave(start: Point, stops: ReadonlyArray<Stop>, { cord, corner, lane }: Weaving) {
-  let exit = start
-  const waypoints: Point[] = [start]
+  const runs: Point[][] = []
+  let run: Point[] = [start]
   const peels: Stroke[] = []
   const knots: Array<{ text: string; x: number; y: number; side: Stop['side'] }> = []
   for (const stop of stops) {
     const { enter, side } = stop
+    const exit = run.at(-1) ?? start
     const gap = (exit[1] + stop.top) / 2
     const beside = side === 'left' ? enter[0] - lane : enter[0]
-    waypoints.push([exit[0], gap], [beside, gap])
-    if (side === 'left') waypoints.push([beside, enter[1]], enter, [stop.turn, enter[1]])
-    else waypoints.push(enter)
+    run.push(...cubic(exit, [exit[0], gap], [beside, gap], [beside, stop.top]))
+    if (side === 'left') run.push([beside, enter[1]])
+    run.push(enter)
+    runs.push(run)
     knots.push({ text: stop.label, x: enter[0], y: enter[1], side })
 
     const { split } = stop
@@ -212,13 +222,11 @@ export function weave(start: Point, stops: ReadonlyArray<Stop>, { cord, corner, 
       const beside = stop.ends.filter(([x]) => x > split[0])
       for (const [k, end] of beside.entries()) peels.push(...peel(split, end, [1, 0], k % 3, cord))
     }
-
-    exit = [waypoints.at(-1)?.[0] ?? enter[0], stop.bottom]
-    waypoints.push(exit)
+    run = [stop.out]
   }
   return {
-    strokes: [...braid(waypoints, cord, corner), ...peels],
-    spine: route(waypoints, corner),
+    strokes: [...runs.flatMap((points) => braid(points, cord, corner)), ...peels],
+    spine: runs.map((points) => route(points, corner)).join(''),
     knots,
   }
 }

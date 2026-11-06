@@ -37,7 +37,7 @@ let {
     <h2 {id}>{title}</h2>
     {@render children()}
   </div>
-  <div class="demo" data-weave-demo>
+  <div class="demo">
     <p class="event" aria-hidden="true">{event}</p>
     {@render demo()}
   </div>
@@ -138,11 +138,8 @@ let {
     [data-layout='wide-right'] .prose {
       grid-column: 7 / -1;
     }
-    /* The heading and its prose side by side, both clear of the first two columns, where the cord comes down; the
-       demo below lines up with the heading through `--indent`. */
-    [data-layout='span'] {
-      --indent: calc((100% + var(--column-gap)) / 6);
-    }
+    /* The heading and its prose side by side, both clear of the first two columns, where the cord comes down; a demo
+       that lines up with the heading reads `--column-gap` to find the third column. */
     [data-layout='span'] .prose {
       grid-column: 1 / -1;
       display: grid;

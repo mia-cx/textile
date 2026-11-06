@@ -13,9 +13,9 @@ const WEEKDAYS = 5
 const NINE = 9 / 24
 </script>
 
-<div class="schedule">
-  <!-- The page's cord enters the week on the hour it fires, and burns along it to each tick. -->
-  <figure class="week" data-weave="left">
+<!-- The page's cord enters the week on the hour it fires, burns along it to each tick, and passes behind the window. -->
+<div class="schedule" data-weave="left">
+  <figure class="week">
     <figcaption><code>{CRON}</code> fires at 9:00 UTC, Monday to Friday</figcaption>
     <div class="plot" style:--nine={NINE} aria-hidden="true">
       <span class="hour" data-weave-y>09:00</span>

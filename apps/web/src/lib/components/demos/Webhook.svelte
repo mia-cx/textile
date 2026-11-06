@@ -26,10 +26,10 @@ function send(withSecret: boolean) {
 }
 </script>
 
-<!-- The page's cord arrives at the request, and a strand carries it on to the window the workflow posts in. -->
+<!-- The page's cord arrives at the request and runs on behind it into the window the workflow posts in, below. -->
 <div class="frame">
-  <div class="webhook">
-    <div class="request" data-weave="top" data-weave-at="0.5" data-weave-split>
+  <div class="webhook" data-weave="top" data-weave-at="0.5">
+    <div class="request">
       <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <pre class="http" tabindex="0" role="region" aria-label="The webhook request"><span class="method">POST</span> {ROUTE}
@@ -48,7 +48,7 @@ function send(withSecret: boolean) {
         {/if}
       </p>
     </div>
-    <div data-weave-end>
+    <div class="posts">
       <Window channel="deploys" label="Where the workflow posts in Discord" class="webhook-window">
         {#each posts as post (post.id)}
           <Message author="Weaver" bot time={post.time}>{post.text}</Message>
@@ -68,12 +68,17 @@ function send(withSecret: boolean) {
     grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
   }
-  /* Side by side, with room between for the strand that carries the request to the window. */
-  @container (min-width: 50rem) {
+  /* With room, the request and the window step down and to the right, from the call to where it lands, overlapping in
+     the middle, where the page's cord runs behind both. */
+  @container (min-width: 44rem) {
     .webhook {
-      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-      column-gap: clamp(4rem, 8cqi, 7rem);
-      align-items: center;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+    }
+    .request {
+      grid-column: 1 / span 6;
+    }
+    .posts {
+      grid-column: 3 / -1;
     }
   }
   .request {
