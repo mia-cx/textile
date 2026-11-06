@@ -49,7 +49,7 @@ const LABELS: ReadonlyArray<Label> = [
   { text: 'messageCreate', at: 0.45, lane: -1.05 },
   { text: 'interactionCreate', at: 0.55, lane: -1 },
   { text: 'voiceStateUpdate', at: 0.35, lane: 1.02 },
-  { text: `cron ${CRON}`, at: 0.47, lane: 1 },
+  { text: `cron ${CRON}`, at: 0.43, lane: 1.03 },
 ]
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
