@@ -55,6 +55,21 @@ const bloomSize = (canvas: HTMLCanvasElement) =>
     Math.max(1, Math.round(canvas.clientHeight * BLOOM_SCALE)),
   ] as const
 
+type Size = { readonly width: number; readonly height: number }
+/**
+ * Whether targets made earlier no longer fit `canvas`: its device size changed, or its CSS size did, which sizes the
+ * bloom. Zooming the page can change the second alone.
+ */
+const resized = (canvas: HTMLCanvasElement, light: Size | undefined, glow: Size | undefined) => {
+  const [width, height] = bloomSize(canvas)
+  return (
+    light?.width !== canvas.width ||
+    light.height !== canvas.height ||
+    glow?.width !== width ||
+    glow.height !== height
+  )
+}
+
 let gpuDevice: Promise<GPUDevice | undefined> | undefined
 
 /**
@@ -179,8 +194,7 @@ export async function webgpu(canvas: HTMLCanvasElement): Promise<Renderer | unde
   }
   let current: Targets | undefined
   const sized = () => {
-    if (current?.light.width === canvas.width && current.light.height === canvas.height)
-      return current
+    if (current && !resized(canvas, current.light, current.glow)) return current
     for (const old of [current?.light, current?.glow, current?.blurred]) old?.destroy()
     current = targets()
     return current
@@ -299,7 +313,7 @@ export function webgl2(canvas: HTMLCanvasElement): Renderer | undefined {
   let glow: Surface | undefined
   let blurred: Surface | undefined
   const resize = () => {
-    if (light?.width === canvas.width && light.height === canvas.height) return
+    if (!resized(canvas, light, glow)) return
     for (const old of [light, glow, blurred]) {
       if (!old) continue
       gl.deleteTexture(old.texture)

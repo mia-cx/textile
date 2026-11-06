@@ -191,8 +191,15 @@ const BLUR = {
 }
 
 /**
- * `shrink` draws the light into the bloom target: four bilinear taps, so each pixel averages the sixteen around it.
- * `across` and `down` blur the bloom target one way each.
+ * The most bilinear taps `shrink` takes across each axis: enough for a footprint of twice that many source pixels, past
+ * the 8 a quarter-size bloom target needs at the field's highest pixel ratio, 2.
+ */
+const MAX_TAPS = 8
+
+/**
+ * `shrink` draws the light into the bloom target, each pixel averaging every source pixel it covers: however many that
+ * is at this pixel ratio, in bilinear taps two source pixels apart, each averaging a 2×2 block. Skipping any would let
+ * a thin thread's bloom flicker as it crosses the grid. `across` and `down` blur the bloom target one way each.
  */
 export const bloomWgsl = /* wgsl */ `${fullscreenWgsl}
 @group(0) @binding(0) var source: texture_2d<f32>;
@@ -200,12 +207,18 @@ export const bloomWgsl = /* wgsl */ `${fullscreenWgsl}
 
 @fragment
 fn shrink(v: Screen) -> @location(0) vec4f {
-  let texel = 1.0 / vec2f(textureDimensions(source));
-  let sum = textureSample(source, filtering, v.uv + texel * vec2f(-1.0, -1.0))
-    + textureSample(source, filtering, v.uv + texel * vec2f(1.0, -1.0))
-    + textureSample(source, filtering, v.uv + texel * vec2f(-1.0, 1.0))
-    + textureSample(source, filtering, v.uv + texel * vec2f(1.0, 1.0));
-  return vec4f(sum.rgb * 0.25, 1.0);
+  let size = vec2f(textureDimensions(source));
+  // Source pixels under one bloom pixel, along each axis.
+  let footprint = vec2f(abs(dpdx(v.uv.x)), abs(dpdy(v.uv.y))) * size;
+  let taps = clamp(vec2i(round(footprint * 0.5)), vec2i(1), vec2i(${MAX_TAPS}));
+  var sum = vec3f(0.0);
+  for (var y = 0; y < taps.y; y++) {
+    for (var x = 0; x < taps.x; x++) {
+      let offset = (2.0 * vec2f(f32(x), f32(y)) - vec2f(taps - 1)) / size;
+      sum += textureSampleLevel(source, filtering, v.uv + offset, 0.0).rgb;
+    }
+  }
+  return vec4f(sum / f32(taps.x * taps.y), 1.0);
 }
 
 fn blur(uv: vec2f, direction: vec2f) -> vec4f {
@@ -363,10 +376,20 @@ uniform sampler2D source;
 in vec2 vUv;
 out vec4 colour;
 void main() {
-  vec2 texel = 1.0 / vec2(textureSize(source, 0));
-  vec3 sum = texture(source, vUv + texel * vec2(-1.0, -1.0)).rgb + texture(source, vUv + texel * vec2(1.0, -1.0)).rgb
-    + texture(source, vUv + texel * vec2(-1.0, 1.0)).rgb + texture(source, vUv + texel * vec2(1.0, 1.0)).rgb;
-  colour = vec4(sum * 0.25, 1.0);
+  vec2 size = vec2(textureSize(source, 0));
+  // Source pixels under one bloom pixel, along each axis.
+  vec2 footprint = vec2(abs(dFdx(vUv.x)), abs(dFdy(vUv.y))) * size;
+  ivec2 taps = clamp(ivec2(round(footprint * 0.5)), ivec2(1), ivec2(${MAX_TAPS}));
+  vec3 sum = vec3(0.0);
+  for (int y = 0; y < ${MAX_TAPS}; y++) {
+    if (y >= taps.y) break;
+    for (int x = 0; x < ${MAX_TAPS}; x++) {
+      if (x >= taps.x) break;
+      vec2 offset = (2.0 * vec2(x, y) - vec2(taps - 1)) / size;
+      sum += textureLod(source, vUv + offset, 0.0).rgb;
+    }
+  }
+  colour = vec4(sum / float(taps.x * taps.y), 1.0);
 }
 `
 
