@@ -55,9 +55,7 @@ const email = 'hello@mia.cx'
     days and live in the client's encrypted registration credential, not a registry database.
   </p>
   <p>
-    When you sign in on this website, it keeps the relay credential in a secure, HTTP-only, encrypted cookie in your
-    browser until the credential expires, or for seven days, whichever comes first. Signing out deletes it. Your MCP
-    client decides how it stores its credentials. The optional command-line login helper saves the relay
+    Your MCP client decides how it stores its credentials. The optional command-line login helper saves the relay
     credential in a local, owner-readable file. It does not save a bot token. Removing that file does not remove
     credentials saved by another client or revoke the Discord grant.
   </p>
