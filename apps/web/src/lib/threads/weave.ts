@@ -173,8 +173,12 @@ export interface Stop {
    * middle from the side, clear of any note under the panel's left end.
    */
   readonly out: Point
-  /** The top of the section's first content: the cord crosses the gap above it. */
+  /**
+   * The top of the section's first content and the bottom of its last: the cord crosses the gap above the section, and
+   * after `out` runs straight down past the bottom before it turns, so it never passes behind a taller panel beside it.
+   */
   readonly top: number
+  readonly bottom: number
   /** Where strands peel off: a panel's right edge, or, with none, the entry, where the cord comes apart and ends. */
   readonly split: Point | undefined
   /**
@@ -222,7 +226,7 @@ export function weave(start: Point, stops: ReadonlyArray<Stop>, { cord, corner, 
       const beside = stop.ends.filter(([x]) => x > split[0])
       for (const [k, end] of beside.entries()) peels.push(...peel(split, end, [1, 0], k % 3, cord))
     }
-    run = [stop.out]
+    run = [stop.out, [stop.out[0], Math.max(stop.out[1], stop.bottom)]]
   }
   return {
     strokes: [...runs.flatMap((points) => braid(points, cord, corner)), ...peels],

@@ -68,6 +68,7 @@ onMount(() => {
         enter: side === 'left' ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
         out: [x, panel.bottom],
         top: Math.min(...[...section.children].map((child) => rect(child).top)),
+        bottom: Math.max(...[...section.children].map((child) => rect(child).bottom)),
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
           const wall = end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end

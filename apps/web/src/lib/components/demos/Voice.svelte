@@ -122,15 +122,16 @@ async function undo() {
   .aside :global(p + p) {
     margin-top: 1.25rem;
   }
-  /* Across a wide page, the speakers run the full width on the open page, their streams long threads to the socket,
-     indented two of the page's twelve columns (its `--column-gap` between them), where the heading starts, so the
-     cord's strands can reach each one. Below them, the notice lines up with the speakers, and the words about it sit
-     beside it. */
+  /* Across a wide page, on the page's twelve columns (`--column-gap` between them): the speakers run the full width on
+     the open page, their streams long threads to the socket, indented two columns, where the heading starts, so the
+     cord's strands can reach each one. Below them, the notice takes the heading's columns, three to seven, and the words
+     about it take the prose's, eight on. */
   @container (min-width: 60rem) {
     .frame .voice {
-      --indent: calc((100cqi + var(--column-gap, 0px)) / 6);
-      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-      gap: 3rem clamp(2rem, 5cqi, 6rem);
+      --column: calc((100cqi + var(--column-gap, 0px)) / 12);
+      --indent: calc(2 * var(--column));
+      grid-template-columns: calc(7 * var(--column) - var(--column-gap, 0px)) minmax(0, 1fr);
+      gap: 3rem var(--column-gap, 0px);
     }
     .frame .speakers {
       grid-column: 1 / -1;
@@ -150,8 +151,8 @@ async function undo() {
     .aside {
       grid-row: 2;
       grid-column: 2;
-      align-self: center;
-      max-width: 36rem;
+      max-width: 38rem;
+      padding-top: 1.5rem;
     }
   }
   .speakers {

@@ -39,16 +39,17 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 /**
  * The hero's event labels, each on a bright thread at the current's outer edge: two above the headline and two below
- * the buttons, out in clear dark as the concept places them, each pair stepping toward the braid, all left of the
- * window. They are placed as fractions of the hero while the copy scales on its own, so they show only from LABELLED
- * pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall, and each only where it keeps clear of the copy
- * (`clearOfCopy`).
+ * the buttons, out in clear dark, all left of the window. Each pair steps toward the braid along its edge, so the lower
+ * pair mirrors the upper: the edge rises as the current narrows, so its label nearer the braid sits higher. (The
+ * concept puts cron lower; there, its thread would leave the current.) They are placed as fractions of the hero while
+ * the copy scales on its own, so they show only from LABELLED pixels wide (the box, without a scrollbar) and
+ * LABELLED_HEIGHT tall, and each only where it keeps clear of the copy (`clearOfCopy`).
  */
 const LABELS: ReadonlyArray<Label> = [
   { text: 'messageCreate', at: 0.45, lane: -1.05 },
   { text: 'interactionCreate', at: 0.55, lane: -1 },
-  { text: 'voiceStateUpdate', at: 0.4, lane: 1.02 },
-  { text: `cron ${CRON}`, at: 0.46, lane: 1 },
+  { text: 'voiceStateUpdate', at: 0.35, lane: 1.02 },
+  { text: `cron ${CRON}`, at: 0.47, lane: 1 },
 ]
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
@@ -225,13 +226,13 @@ function close(
       Join a voice channel and open one WebSocket. Each person’s audio arrives as its own stream, tagged with their
       Discord ID, in Opus or PCM16. Send audio back and the bot speaks.
     </p>
-    <p><a class="next-link" href="/docs/voice/">Read about voice</a></p>
     {#snippet demo()}
       <Voice>
         <p>
           Before the bot hears anyone, it posts a notice. Anyone who opts out is never relayed, and Textile never stores
           audio.
         </p>
+        <p><a class="next-link" href="/docs/voice/">Read about voice</a></p>
       </Voice>
     {/snippet}
   </Section>
