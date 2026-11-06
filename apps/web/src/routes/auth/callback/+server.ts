@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit'
-import { FLOW_COOKIE, type Flow, issuerOf, redeem } from '$lib/server/central'
+import { FLOW_COOKIE, type Flow, redeem, signInConfig } from '$lib/server/central'
 import { cookieOptions, unseal, writeSession } from '$lib/server/session'
 import type { RequestHandler } from './$types'
 
@@ -9,7 +9,7 @@ import type { RequestHandler } from './$types'
  * is signed in, so they can try again.
  */
 export const GET: RequestHandler = async ({ url, cookies, locals }) => {
-  const { issuer, sessionKey } = issuerOf(locals.env)
+  const { issuer, sessionKey } = signInConfig(locals.env)
   const flow = await unseal<Flow>(sessionKey, FLOW_COOKIE, cookies.get(FLOW_COOKIE))
   cookies.delete(FLOW_COOKIE, { ...cookieOptions(url), path: '/auth' })
   const params = url.searchParams

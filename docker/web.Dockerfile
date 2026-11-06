@@ -30,7 +30,7 @@ RUN pnpm exec wrangler deploy --dry-run --env production --outdir /out/worker \
     const w = await import(createRequire(createRequire(import.meta.url).resolve('wrangler/package.json')).resolve('workerd')); \
     console.log(w.default.default)")" /out/workerd
 
-# glibc, the CA bundle workerd needs for outbound TLS, and an unprivileged user; nothing else, not even a shell.
+# glibc, which workerd links against, and an unprivileged user; nothing else, not even a shell.
 FROM gcr.io/distroless/base-debian12:nonroot
 
 COPY --from=build /out /srv/site

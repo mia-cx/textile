@@ -59,6 +59,6 @@ Staging runs the same build in self-hosted workerd: `docker/web.Dockerfile` bund
 that needs no writable filesystem. `workerd/assets.js` stands in for Cloudflare's static assets: it routes requests the
 way Cloudflare does, serves `.html` and `index.html` files by their page paths, and applies `_headers`. Behind a proxy
 that terminates TLS, the proxy's `X-Forwarded-Proto` makes the site's own URLs `https://`. Requests to central go
-through the `central` service, under `CENTRAL_URL`'s host; point it at central's own address with
-`--external-addr central=<host:port>`, so they skip the ingress. CI publishes the image as
-`ghcr.io/mia-cx/textile/web`.
+through the `central` service, under `CENTRAL_URL`'s host, never through the ingress. It points at `localhost:3000`, so
+the container needs `--external-addr central=<host:port>` with central's own address, or sign-in answers 502. CI
+publishes the image as `ghcr.io/mia-cx/textile/web`.

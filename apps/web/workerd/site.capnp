@@ -11,7 +11,8 @@ const config :Workerd.Config = (
     (name = "disk", disk = (path = "assets")),
     (name = "no-cache", worker = .noCache),
     # Central, reached directly rather than through the ingress the browser uses. Requests keep `CENTRAL_URL`'s host.
-    # Point it at central's address with `--external-addr central=<host:port>`.
+    # Sign-in sends every request here, so point it at central with `--external-addr central=<host:port>` unless
+    # central listens on this container's localhost:3000.
     (name = "central", external = (address = "localhost:3000", http = ())),
   ],
   sockets = [

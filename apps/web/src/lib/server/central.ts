@@ -18,8 +18,8 @@ export interface Flow {
 /** Central sends the person back here: `https://textile.cx/auth/callback`, or the same path on another origin. */
 export const callbackUrl = (origin: string) => `${origin}/auth/callback`
 
-/** Central's origin. Sign-in is off until it is set. */
-export function issuerOf(env: Env) {
+/** Central's origin and the key that seals the sign-in cookies. Sign-in is off until both are set. */
+export function signInConfig(env: Env) {
   if (!env.CENTRAL_URL || !env.SESSION_KEY) error(503, 'Sign-in isn’t set up here yet.')
   return { issuer: new URL(env.CENTRAL_URL).origin, sessionKey: env.SESSION_KEY }
 }

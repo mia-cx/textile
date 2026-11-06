@@ -82,7 +82,7 @@ export async function writeSession(
   url: URL,
   key: string,
   session: Session,
-  seconds = MAX_AGE_SECONDS,
+  seconds: number,
 ) {
   const maxAge = Math.min(seconds, MAX_AGE_SECONDS)
   cookies.set(SESSION_COOKIE, await seal(key, SESSION_COOKIE, session, maxAge), {
