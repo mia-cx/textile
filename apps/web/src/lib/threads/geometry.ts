@@ -52,7 +52,7 @@ const TAU = Math.PI * 2
 /** The field's shape, which the shaders read too (shaders.ts writes them into WGSL and GLSL). */
 export const SHAPE = {
   /** Braid radii per full twist: the braid keeps one helix angle, so it twists tighter as it narrows. */
-  pitch: 3.2,
+  pitch: 7.5,
   /** How many cord radii the braid widens by from `end` back to `start`: it narrows linearly to `cord`. */
   swell: 15,
   /**
@@ -76,6 +76,8 @@ export const SHAPE = {
   joined: 0.95,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
+  /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
+  labelled: 2,
 } as const
 
 /** The same hash the shaders use: a thread's index to a stable pseudo-random number in [0, 1). */
@@ -170,6 +172,6 @@ export const tint = (field: Field, i: number) => {
   const { ribbon } = thread(field, i)
   return {
     colour: paint(hash(i + 9.7) < 0.75 ? ribbonPick(ribbon) : hash(i + 4.4)),
-    brightness: i < field.labels.length ? 1 : 0.22 + 0.78 * hash(i + 2.2) ** 3,
+    brightness: i < field.labels.length ? SHAPE.labelled : 0.22 + 0.78 * hash(i + 2.2) ** 3,
   }
 }

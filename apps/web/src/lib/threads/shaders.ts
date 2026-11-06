@@ -44,14 +44,17 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('JOIN', float(SHAPE.join)),
     declare('JOINED', float(SHAPE.joined)),
     declare('SPIN', float(SHAPE.spin)),
+    declare('LABELLED', float(SHAPE.labelled)),
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
     declare('BRAID_LIGHT', float(0.5)),
-    // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak.
+    // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak: less in the
+    // braid, where hundreds of threads pulse in step and would otherwise burn it flat white.
     declare('PULSES', float(2.5)),
     declare('PULSE_SPEED', float(0.16)),
     declare('PULSE_LIGHT', float(2.2)),
+    declare('BRAID_PULSE_LIGHT', float(0.6)),
     // How much of the bloom adds back, and how bright the flare is where the cord ends.
     declare('BLOOM', float(1.1)),
     declare('FLARE_LIGHT', float(2.5)),
@@ -77,7 +80,7 @@ fn strandColour(strand: u32) -> vec3f {
 // of it, so dense light keeps its hue; only the densest, where the cord ends, burns toward white.
 fn tone(hdr: vec3f) -> vec3f {
   let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3f(1.0), smoothstep(1.5, 5.0, peak) * 0.85);
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3f(1.0), smoothstep(2.0, 5.0, peak) * 0.85);
 }
 `
 
@@ -86,7 +89,8 @@ struct Out {
   @builtin(position) clip: vec4f,
   @location(0) colour: vec3f,
   @location(1) across: f32,
-  @location(2) pulse: f32,
+  // x: where the thread is in its pulses. y: how bright their crests are here.
+  @location(2) pulse: vec2f,
 };
 
 // xy: position in CSS px. z: how far into the braid (0 to 1). w: the strand's facing, -1 behind to 1 in front.
@@ -144,7 +148,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let strand = u32(i) % 3u;
   let colour = mix(paint(pick), strandColour(strand), here.z);
   var brightness = 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
-  if (i < U[3].w) { brightness = 1.0; }
+  if (i < U[3].w) { brightness = LABELLED; }
   // Strands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
   // each gives less light there.
   let facing = 0.15 + 0.85 * (0.5 + 0.5 * here.w);
@@ -155,15 +159,19 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   out.clip = vec4f(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   out.colour = colour * brightness * shade * U[3].z;
   out.across = side;
-  out.pulse = u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.z);
+  out.pulse = vec2f(
+    u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.z),
+    mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, here.z),
+  );
   return out;
 }
 
-// A thread's light where it is a phase of the way through its pulses: dim between them, bright at their narrow crests.
-fn pulse(phase: f32) -> f32 {
+// A thread's light where it is a phase of the way through its pulses: dim between them, as bright as light at their
+// narrow crests.
+fn pulse(phase: f32, light: f32) -> f32 {
   let crest = 0.5 + 0.5 * cos(TAU * phase);
   let crest4 = crest * crest * crest * crest;
-  return 0.55 + PULSE_LIGHT * crest4 * crest4 * crest4;
+  return 0.55 + light * crest4 * crest4 * crest4;
 }
 
 @fragment
@@ -171,7 +179,7 @@ fn fs(v: Out) -> @location(0) vec4f {
   let d = abs(v.across) * ${HALF_WIDTH};
   let core = exp(-(d * d) / 0.3);
   let halo = 0.1 * exp(-(d * d) / 1.6);
-  return vec4f(v.colour * (core + halo) * pulse(v.pulse), 1.0);
+  return vec4f(v.colour * (core + halo) * pulse(v.pulse.x, v.pulse.y), 1.0);
 }
 `
 
@@ -291,14 +299,14 @@ vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb :
 vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.4) : U[8 + strand].rgb; }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(1.5, 5.0, peak) * 0.85);
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(2.0, 5.0, peak) * 0.85);
 }
 `
 
 export const threadVertexGlsl = /* glsl */ `${commonGlsl}
 out vec3 vColour;
 out float vAcross;
-out float vPulse;
+out vec2 vPulse;
 
 vec4 place(float i, float u) {
   vec2 p0 = U[1].xy; vec2 p1 = U[1].zw; vec2 p2 = U[2].xy;
@@ -351,7 +359,7 @@ void main() {
 
   float pick = hash(i + 9.7) < 0.75 ? fract(ribbonOf(i) * 0.618034 + 0.05) : hash(i + 4.4);
   vec3 colour = mix(paint(pick), strandColour(int(mod(i, 3.0))), here.z);
-  float brightness = i < U[3].w ? 1.0 : 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
+  float brightness = i < U[3].w ? LABELLED : 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
   float facing = 0.15 + 0.85 * (0.5 + 0.5 * here.w);
   float shade = mix(1.0, facing * BRAID_LIGHT, here.z) * smoothstep(0.0, 0.06, u);
 
@@ -359,7 +367,10 @@ void main() {
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   vColour = colour * brightness * shade * U[3].z;
   vAcross = side;
-  vPulse = u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.z);
+  vPulse = vec2(
+    u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.z),
+    mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, here.z)
+  );
 }
 `
 
@@ -367,17 +378,17 @@ export const threadFragmentGlsl = /* glsl */ `#version 300 es
 precision highp float;
 in vec3 vColour;
 in float vAcross;
-in float vPulse;
+in vec2 vPulse;
 out vec4 colour;
 ${constants((name, value) => `const float ${name} = ${value};`)}
-float pulse(float phase) {
+float pulse(float phase, float light) {
   float crest = 0.5 + 0.5 * cos(TAU * phase);
   float crest4 = crest * crest * crest * crest;
-  return 0.55 + PULSE_LIGHT * crest4 * crest4 * crest4;
+  return 0.55 + light * crest4 * crest4 * crest4;
 }
 void main() {
   float d = abs(vAcross) * ${HALF_WIDTH};
-  colour = vec4(vColour * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)) * pulse(vPulse), 1.0);
+  colour = vec4(vColour * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)) * pulse(vPulse.x, vPulse.y), 1.0);
 }
 `
 

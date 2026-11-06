@@ -35,16 +35,17 @@ const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
- * The hero's event labels, each on a thread along the current's outer edge, on clear dark, where the copy never
- * reaches: two above the headline (at about 20% and 31% of the height), two below the actions (at about 80% and 86%),
- * all left of the window. They are placed as fractions of the hero while the copy scales on its own, so they clear it
- * only from LABELLED pixels wide (the box, without a scrollbar); narrower, the hero shows its threads without them.
+ * The hero's event labels, each on a bright thread that leaves the current's outer edge onto clear dark, where the copy
+ * never reaches: two above the headline (at about 20% and 31% of the height), two below the actions (at about 80% and
+ * 83%, cron further right), all left of the window. They are placed as fractions of the hero while the copy scales on
+ * its own, so they clear it only from LABELLED pixels wide (the box, without a scrollbar); narrower, the hero shows its
+ * threads without them.
  */
 const LABELS = [
   { text: 'messageCreate', at: 0.45, lane: -1.05 },
   { text: 'interactionCreate', at: 0.6, lane: -1.08 },
-  { text: 'voiceStateUpdate', at: 0.36, lane: 1 },
-  { text: `cron ${CRON}`, at: 0.5, lane: 1.16 },
+  { text: 'voiceStateUpdate', at: 0.45, lane: 1.02 },
+  { text: `cron ${CRON}`, at: 0.6, lane: 1.7 },
 ]
 const LABELLED = 1280
 /** How far short of the window's edge the cord ends, in CSS pixels. */
@@ -251,13 +252,13 @@ function close(
   .hero-copy::before {
     content: '';
     position: absolute;
-    inset: -22% -6% -22% -45%;
+    inset: -22% -6% -18% -45%;
     z-index: -1;
     background: radial-gradient(
       closest-side,
       color-mix(in srgb, var(--paper) 82%, transparent),
-      color-mix(in srgb, var(--paper) 64%, transparent) 55%,
-      color-mix(in srgb, var(--paper) 28%, transparent) 80%,
+      color-mix(in srgb, var(--paper) 70%, transparent) 60%,
+      color-mix(in srgb, var(--paper) 40%, transparent) 82%,
       transparent
     );
     pointer-events: none;
@@ -301,13 +302,14 @@ function close(
     position: absolute;
     top: 0;
     left: 50%;
-    width: 6rem;
+    width: 14rem;
     height: 1.5rem;
     translate: -50% -50%;
     background: radial-gradient(
       closest-side,
-      color-mix(in srgb, var(--thread-violet) 85%, white),
-      color-mix(in srgb, var(--thread-violet) 45%, transparent) 40%,
+      white,
+      color-mix(in srgb, var(--thread-violet) 70%, white) 18%,
+      color-mix(in srgb, var(--thread-violet) 50%, transparent) 50%,
       transparent
     );
     mix-blend-mode: screen;
@@ -326,7 +328,7 @@ function close(
       top: 50%;
       left: 0;
       width: 1.5rem;
-      height: 6rem;
+      height: 14rem;
     }
   }
   .close {
