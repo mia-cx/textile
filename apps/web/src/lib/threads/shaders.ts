@@ -43,6 +43,8 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('RIBBON', float(SHAPE.ribbon)),
     declare('JOIN', float(SHAPE.join)),
     declare('JOINED', float(SHAPE.joined)),
+    declare('INWARD', float(SHAPE.inward)),
+    declare('HUE', float(SHAPE.hue)),
     declare('SPIN', float(SHAPE.spin)),
     declare('LABELLED', float(SHAPE.labelled)),
     declare('SEGMENTS', float(SEGMENTS)),
@@ -71,9 +73,10 @@ fn paint(pick: f32) -> vec3f {
   if (pick < 0.8) { return U[9].rgb; }
   return U[10].rgb;
 }
-// The braid's strands: violet, amber, and violet toward silver, so it stays coloured rather than turning white.
+// The braid's strands: violet, amber, and amber toward silver, so it stays coloured rather than turning white, and
+// glows as warm as violet.
 fn strandColour(strand: u32) -> vec3f {
-  if (strand == 2u) { return mix(U[8].rgb, U[10].rgb, 0.4); }
+  if (strand == 2u) { return mix(U[9].rgb, U[10].rgb, 0.4); }
   return U[8u + strand].rgb;
 }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
@@ -102,7 +105,7 @@ fn place(i: f32, u: f32) -> vec4f {
   var lane = centre + (hash(i + 0.5) - 0.5) * RIBBON;
   var pin = -1.0;
   if (i < U[3].w) { let label = U[4u + u32(i)]; pin = label.x; lane = label.y; }
-  var joins = braid + (JOINED - braid) * min(1.0, 0.7 * abs(lane) + 0.3 * hash(i + 7.1));
+  var joins = braid + (JOINED - braid) * min(1.0, INWARD * abs(lane) + (1.0 - INWARD) * hash(i + 7.1));
   if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
   let strand = i - 3.0 * floor(i / 3.0);
   let phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
@@ -144,7 +147,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
 
   // Most threads take their ribbon's colour in the funnel; in the braid, each takes its strand's.
   var pick = hash(i + 4.4);
-  if (hash(i + 9.7) < 0.75) { pick = fract(ribbonOf(i) * 0.618034 + 0.05); }
+  if (hash(i + 9.7) < 0.75) { pick = fract(ribbonOf(i) * 0.618034 + HUE); }
   let strand = u32(i) % 3u;
   let colour = mix(paint(pick), strandColour(strand), here.z);
   var brightness = 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
@@ -296,7 +299,7 @@ float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
 float ribbonOf(float i) { return floor(hash(i + 1.3) * RIBBONS); }
 float along(float fraction) { return 1.0 - pow(1.0 - fraction, CROWD); }
 vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb : U[10].rgb; }
-vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.4) : U[8 + strand].rgb; }
+vec3 strandColour(int strand) { return strand == 2 ? mix(U[9].rgb, U[10].rgb, 0.4) : U[8 + strand].rgb; }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
   return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(2.0, 5.0, peak) * 0.85);
@@ -318,7 +321,7 @@ vec4 place(float i, float u) {
   for (int k = 0; k < ${MAX_LABELS}; k++) {
     if (float(k) < U[3].w && float(k) == i) { pin = U[4 + k].x; lane = U[4 + k].y; }
   }
-  float joins = braid + (JOINED - braid) * min(1.0, 0.7 * abs(lane) + 0.3 * hash(i + 7.1));
+  float joins = braid + (JOINED - braid) * min(1.0, INWARD * abs(lane) + (1.0 - INWARD) * hash(i + 7.1));
   if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
   float strand = mod(i, 3.0);
   float phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
@@ -357,7 +360,7 @@ void main() {
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.xy + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  float pick = hash(i + 9.7) < 0.75 ? fract(ribbonOf(i) * 0.618034 + 0.05) : hash(i + 4.4);
+  float pick = hash(i + 9.7) < 0.75 ? fract(ribbonOf(i) * 0.618034 + HUE) : hash(i + 4.4);
   vec3 colour = mix(paint(pick), strandColour(int(mod(i, 3.0))), here.z);
   float brightness = i < U[3].w ? LABELLED : 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
   float facing = 0.15 + 0.85 * (0.5 + 0.5 * here.w);

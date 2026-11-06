@@ -77,13 +77,15 @@ for event labels, the 2D fallback, the section strands, and the social card.
 
 - Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel whose
   nearly straight edges close in steadily until they meet the braid, tangent to it, so there is no knee, no pinch, and
-  no straight run.
-  They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a colour
-  (golden-ratio steps, so neighbours differ), so the funnel reads as separate strands of fibre on the dark.
-- From `braid`, past the hero's headline, threads keep leaving the funnel for a three-strand braid inside it, innermost
-  first, outermost last. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord`
-  and keeps one helix angle, so it twists tighter as it goes and meets the target at its thinnest and brightest. The
-  hero's cord stops just short of the window, whose rim catches a narrow flare where it arrives.
+  no straight run. They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a
+  colour (golden-ratio steps, so neighbours differ, with amber in the middle where they converge first), so the funnel
+  reads as separate strands of fibre on the dark.
+- From `braid`, past the hero's headline, threads keep leaving the funnel for a three-strand braid inside it, inner
+  lanes mostly first and the outermost last, all by `joined`, so the braid is full as soon as it forms. Its strands are
+  violet, amber, and amber toward silver. The braid narrows linearly to `cord` and keeps one helix angle (about 40°,
+  like rope), so it twists tighter as it goes and meets the target at its thinnest and brightest. The hero's cord stops
+  just short of the window; the window drops its black shadow there, so the cord's end stays bright, and a frame
+  around it, which the window's clipping can't cut, lights its rim with a narrow flare where the cord arrives.
 - The threads emit light. Each is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the
   braid twists tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its
   own phase in the funnel and in step within the braid, so they travel along it. Threads add their light into a
@@ -91,9 +93,10 @@ for event labels, the 2D fallback, the section strands, and the social card.
   both ways; the tone pass adds it back, with a near-white flare where the cord ends. The tone map keeps hue: the
   brightest channel saturates as `1 − e^(−1.25x)`, the others keep their share, and only the densest light burns toward
   white. Dithered, over the ink.
-- Labelled threads run at the edge of the current, where the concept places them, and join the braid only after their
-  label. They are pinned where the label sits, so labels are placed once per resize, never per frame. Labels are placed
-  as fractions of the hero while its copy scales on its own, so they show from a 1280px-wide hero, where they clear it.
+- Labelled threads glow twice as bright as the rest and leave the current's outer edge onto clear dark, where the
+  concept places them; they join the braid only after their label. They are pinned where the label sits, so labels are
+  placed once per resize, never per frame. Labels are placed as fractions of the hero while its copy scales on its own,
+  so they show from a hero 1280px wide and 760px tall, where they clear it.
 - The field passes behind the hero's copy dimmed by a soft radial shade, and the subline carries its own text shadow, so
   the copy reads cleanly with no visible box.
 - Renderers, in order: WebGPU, WebGL2 (with `EXT_color_buffer_float`, else straight additive), then one still canvas 2D

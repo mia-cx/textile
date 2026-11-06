@@ -38,16 +38,18 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
  * The hero's event labels, each on a bright thread that leaves the current's outer edge onto clear dark, where the copy
  * never reaches: two above the headline (at about 20% and 31% of the height), two below the actions (at about 80% and
  * 83%, cron further right), all left of the window. They are placed as fractions of the hero while the copy scales on
- * its own, so they clear it only from LABELLED pixels wide (the box, without a scrollbar); narrower, the hero shows its
- * threads without them.
+ * its own, so they clear it only from LABELLED pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall;
+ * smaller, the hero shows its threads without them.
  */
 const LABELS = [
   { text: 'messageCreate', at: 0.45, lane: -1.05 },
   { text: 'interactionCreate', at: 0.6, lane: -1.08 },
   { text: 'voiceStateUpdate', at: 0.45, lane: 1.02 },
-  { text: `cron ${CRON}`, at: 0.6, lane: 1.7 },
+  { text: `cron ${CRON}`, at: 0.64, lane: 1.95 },
 ]
 const LABELLED = 1280
+/** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
+const LABELLED_HEIGHT = 760
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 
@@ -71,7 +73,7 @@ function hero(
       braid: 0.64,
       count: width > 1600 ? 560 : 440,
       intensity: 0.75,
-      labels: width >= LABELLED ? LABELS : [],
+      labels: width >= LABELLED && height >= LABELLED_HEIGHT ? LABELS : [],
     }
   }
   const end: Point = target
@@ -128,12 +130,15 @@ function close(
         <a class="button button-secondary" href="/docs/">Read the docs</a>
       </div>
     </div>
-    <Window bind:window={heroWindow} channel="standup" label="Your bot at work in Discord" class="hero-window">
-      <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
-      <Message author="Weaver" bot time="Today at 9:12 AM" used={{ by: 'you', command: '/standup' }}>
-        {standupReply('the onboarding flow', 'dark mode for the docs')}
-      </Message>
-    </Window>
+    <!-- The window clips its contents, so the rim flare where the cord arrives lives on this frame around it. -->
+    <div class="hero-window">
+      <Window bind:window={heroWindow} channel="standup" label="Your bot at work in Discord" class="hero-card">
+        <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
+        <Message author="Weaver" bot time="Today at 9:12 AM" used={{ by: 'you', command: '/standup' }}>
+          {standupReply('the onboarding flow', 'dark mode for the docs')}
+        </Message>
+      </Window>
+    </div>
   </section>
 
   <Section id="publish" title="Your agent ships a workflow over MCP" event="discord_workflow_publish">
@@ -239,9 +244,15 @@ function close(
     }
   }
   .hero-copy,
-  .hero :global(.hero-window) {
+  .hero-window {
     position: relative;
     z-index: 1;
+  }
+  /* No black drop shadow: it would dim the cord's end, which should be at its brightest where it meets the window. */
+  .hero-window :global(.hero-card) {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.04),
+      0 0 60px -10px color-mix(in srgb, var(--thread-violet) 35%, transparent);
   }
   /* The copy's box hugs its text, so the shade behind it covers the text and no more. */
   .hero-copy {
@@ -291,13 +302,13 @@ function close(
     gap: 1rem;
     margin-top: 2.5rem;
   }
-  .hero :global(.hero-window) {
+  .hero-window {
     width: min(100%, 36rem);
     justify-self: center;
   }
   /* The cord's light catches the window's rim where it arrives: the top's middle when stacked, the left edge's middle
      side by side, as `hero` ends it. A narrow flare along the rim, not a disc over the window's contents. */
-  .hero :global(.hero-window)::after {
+  .hero-window::after {
     content: '';
     position: absolute;
     top: 0;
@@ -320,11 +331,11 @@ function close(
       grid-template-columns: minmax(0, 1fr) clamp(26rem, 31vw, 40rem);
       gap: clamp(3rem, 8vw, 12rem);
     }
-    .hero :global(.hero-window) {
+    .hero-window {
       width: 100%;
       justify-self: end;
     }
-    .hero :global(.hero-window)::after {
+    .hero-window::after {
       top: 50%;
       left: 0;
       width: 1.5rem;

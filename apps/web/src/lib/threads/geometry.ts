@@ -71,9 +71,19 @@ export const SHAPE = {
    */
   ribbons: 11,
   ribbon: 0.1,
+  /**
+   * Where the ribbons' colours start in their golden-ratio steps: chosen so the middle ribbons, which converge first,
+   * run amber between violet ones.
+   */
+  hue: 0.55,
   /** How much of the way a thread takes to join the braid, and how far along the last thread has joined. */
   join: 0.16,
-  joined: 0.95,
+  joined: 0.85,
+  /**
+   * How strictly threads join in order from the inner lanes out: 1 by lane alone, 0 at random. Between, the braid fills
+   * out as soon as it forms, while the outermost threads still join last.
+   */
+  inward: 0.5,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
@@ -101,7 +111,7 @@ export const thread = (field: Field, i: number) => {
   const ribbon = Math.floor(hash(i + 1.3) * SHAPE.ribbons)
   const centre = ((ribbon + 0.5) / SHAPE.ribbons) * 2 - 1 + (hash(ribbon + 11) - 0.5) * 0.15
   const lane = label ? label.lane : centre + (hash(i + 0.5) - 0.5) * SHAPE.ribbon
-  const order = Math.min(1, 0.7 * Math.abs(lane) + 0.3 * hash(i + 7.1))
+  const order = Math.min(1, SHAPE.inward * Math.abs(lane) + (1 - SHAPE.inward) * hash(i + 7.1))
   const joins = field.braid + (SHAPE.joined - field.braid) * order
   return {
     lane,
@@ -160,7 +170,7 @@ const paint = (pick: number) => (pick < 0.48 ? 0 : pick < 0.8 ? 1 : 2)
  * colours in proportion. Mirrors `ribbonPick` in the shaders.
  */
 const ribbonPick = (ribbon: number) => {
-  const x = ribbon * 0.618034 + 0.05
+  const x = ribbon * 0.618034 + SHAPE.hue
   return x - Math.floor(x)
 }
 
