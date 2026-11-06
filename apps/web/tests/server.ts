@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 /**
  * The built site, answering requests as the Worker does: SvelteKit's server from `pnpm build`, with the docs build
@@ -30,21 +30,25 @@ const ASSETS = {
     const url = new URL(input instanceof Request ? input.url : input)
     const relative = `.${url.pathname.slice('/docs'.length)}`
     const file = new URL(relative, DOCS)
-    const stat = statSync(file, { throwIfNoEntry: false })
-    if (stat?.isDirectory()) {
-      return new Response(readFileSync(new URL('index.html', `${file.href}/`)), {
-        headers: { 'content-type': HTML },
-      })
+    // Read directly: a prior existence or type check can race with a file changing.
+    for (const candidate of [
+      file,
+      new URL('index.html', `${file.href.replace(/\/$/, '')}/`),
+      new URL(`${relative}.html`, DOCS),
+    ]) {
+      try {
+        return new Response(readFileSync(candidate), {
+          headers: {
+            'content-type':
+              TYPES[candidate.pathname.split('.').pop() ?? ''] ?? 'application/octet-stream',
+          },
+        })
+      } catch (error) {
+        if (!['ENOENT', 'ENOTDIR', 'EISDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
+          throw error
+      }
     }
-    const html = new URL(`${relative}.html`, DOCS)
-    if (!stat && existsSync(html))
-      return new Response(readFileSync(html), { headers: { 'content-type': HTML } })
-    if (!stat) return new Response('Not found', { status: 404 })
-    return new Response(readFileSync(file), {
-      headers: {
-        'content-type': TYPES[file.pathname.split('.').pop()!] ?? 'application/octet-stream',
-      },
-    })
+    return new Response('Not found', { status: 404 })
   },
 }
 

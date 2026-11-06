@@ -107,6 +107,13 @@ describe('Markdown for agents', () => {
     expect(response.headers.get('location')).toBe('/docs/workflows/?from=chat')
   })
 
+  it('serves the docs HTML 404 page for a missing asset', async () => {
+    const response = await get('/docs/missing.txt', { 'user-agent': CHROME })
+    expect(response.status).toBe(404)
+    expect(response.headers.get('content-type')).toMatch(/^text\/html/)
+    expect(await response.text()).toContain('<!doctype html>')
+  })
+
   it('serves a docs page’s twin from the docs build, with its links made absolute', async () => {
     const response = await get('/docs/security.md', { 'user-agent': CHROME })
     expect(response.headers.get('content-type')).toBe(MARKDOWN)
