@@ -50,7 +50,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
-    declare('BRAID_LIGHT', float(0.75)),
+    declare('BRAID_LIGHT', float(0.6)),
     // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak: less in the
     // braid, where hundreds of threads pulse in step and would otherwise burn it flat white.
     declare('PULSES', float(2.5)),

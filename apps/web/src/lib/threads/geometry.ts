@@ -72,10 +72,11 @@ export const SHAPE = {
   ribbons: 11,
   ribbon: 0.1,
   /**
-   * Where the ribbons' colours start in their golden-ratio steps: chosen so the outermost ribbons run silver and amber
-   * runs between violet ones toward the middle, where the threads converge first.
+   * Where the ribbons' colours start in their golden-ratio steps: from the top, violet, amber, violet, silver, violet,
+   * violet, amber, violet, silver, amber, violet. Amber runs high, low, and through the middle, among violet, and the
+   * outermost ribbons stay violet, darker than silver where they pass the page's header.
    */
-  hue: 0.8,
+  hue: 0,
   /** How much of the way a thread takes to join the braid, and how far along the last thread has joined. */
   join: 0.16,
   joined: 0.85,
