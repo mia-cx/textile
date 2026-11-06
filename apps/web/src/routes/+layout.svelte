@@ -1,6 +1,5 @@
 <script lang="ts">
 import '../app.css'
-import Mark from '$lib/components/Mark.svelte'
 import PageMarkdown from '$lib/components/PageMarkdown.svelte'
 import { GITHUB_URL } from '$lib/site'
 
@@ -9,18 +8,15 @@ let { data, children } = $props()
 
 <a href="#content" class="skip">Skip to content</a>
 
-<header class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-8">
-  <a href="/" class="flex min-h-11 items-center gap-2.5 text-ink no-underline" aria-label="Textile home">
-    <Mark class="size-8" />
-    <span class="wordmark">textile</span>
-  </a>
-  <nav aria-label="Site" class="flex items-center gap-x-5 text-[0.9375rem] sm:gap-x-7">
+<header class="site-header">
+  <a href="/" class="wordmark" aria-label="Textile home">textile</a>
+  <nav aria-label="Site" class="flex items-center gap-x-1 sm:gap-x-3">
     <a class="nav-link" href="/docs/">Docs</a>
     <a class="nav-link" href={GITHUB_URL}>GitHub</a>
     {#if data.signedIn}
-      <a class="nav-link" href="/access">Access</a>
+      <a class="nav-pill" href="/access">Access</a>
     {:else}
-      <a class="nav-link" href="/login" data-sveltekit-reload>Sign in</a>
+      <a class="nav-pill" href="/login" data-sveltekit-reload>Sign in</a>
     {/if}
   </nav>
 </header>
@@ -29,17 +25,16 @@ let { data, children } = $props()
   {@render children()}
 </main>
 
-<footer class="mx-auto mt-24 max-w-6xl px-4 pb-10 text-[0.9375rem] sm:px-8">
-  <div class="flex flex-wrap items-center justify-between gap-x-10 gap-y-2 border-t border-rule pt-6">
-    <nav aria-label="Footer" class="flex flex-wrap gap-x-5">
-      <a class="nav-link" href="/docs/">Docs</a>
-      <a class="nav-link" href={GITHUB_URL}>GitHub</a>
-      <a class="nav-link" href="/llms.txt">llms.txt</a>
-      <a class="nav-link" href="/terms">Terms</a>
-      <a class="nav-link" href="/privacy">Privacy</a>
-    </nav>
-    <PageMarkdown />
-  </div>
+<footer class="site-footer">
+  <a href="/" class="wordmark" aria-label="Textile home">textile</a>
+  <nav aria-label="Footer" class="flex flex-wrap gap-x-6">
+    <a class="footer-link" href="/docs/">Docs</a>
+    <a class="footer-link" href={GITHUB_URL}>GitHub</a>
+    <a class="footer-link" href="/llms.txt">llms.txt</a>
+    <a class="footer-link" href="/terms">Terms</a>
+    <a class="footer-link" href="/privacy">Privacy</a>
+  </nav>
+  <PageMarkdown />
 </footer>
 
 <style>
@@ -59,21 +54,99 @@ let { data, children } = $props()
   main:focus {
     outline: none;
   }
+  /* Full width, like the page under it: the header sits over the landing page's thread field. */
+  .site-header {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    height: var(--header-height);
+    padding-inline: var(--gutter);
+  }
+  :global(:root) {
+    --header-height: 5.5rem;
+    --gutter: clamp(1.25rem, 4vw, 4.5rem);
+  }
   .wordmark {
-    font-size: 1.5rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    font-variation-settings: var(--axes-display);
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    color: var(--ink);
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.045em;
+    text-decoration: none;
   }
   .nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
+    color: var(--ink);
+    font-size: 1.0625rem;
+    text-decoration: none;
+  }
+  .nav-link:hover {
+    text-decoration: underline;
+  }
+  .nav-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    margin-left: 0.5rem;
+    padding-inline: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--ink) 40%, transparent);
+    border-radius: var(--radius-pill);
+    color: var(--ink);
+    font-size: 1.0625rem;
+    text-decoration: none;
+    transition:
+      border-color var(--duration-quick) var(--ease-out),
+      background-color var(--duration-quick) var(--ease-out);
+  }
+  .nav-pill:hover {
+    border-color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
+  @media (max-width: 30rem) {
+    .wordmark {
+      font-size: 1.625rem;
+    }
+    .nav-link {
+      padding-inline: 0.5rem;
+      font-size: 1rem;
+    }
+    .nav-pill {
+      margin-left: 0.25rem;
+      padding-inline: 1rem;
+      font-size: 1rem;
+    }
+  }
+  .site-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 2.5rem;
+    margin-top: 8rem;
+    padding: 2rem var(--gutter) 2.5rem;
+    border-top: 1px solid var(--rule);
+    font-size: 1rem;
+  }
+  .site-footer .wordmark {
+    font-size: 1.5rem;
+    margin-right: auto;
+  }
+  .footer-link {
     display: inline-flex;
     align-items: center;
     min-height: 2.75rem;
     color: var(--text);
     text-decoration: none;
   }
-  .nav-link:hover {
-    color: var(--accent-text);
+  .footer-link:hover {
+    color: var(--ink);
     text-decoration: underline;
   }
 </style>

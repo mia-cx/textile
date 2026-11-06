@@ -1,4 +1,5 @@
 import type { Handle } from '@sveltejs/kit'
+import { landingMarkdown } from '$lib/landing'
 import { markdownPath, pageOf } from '$lib/markdown-paths'
 import { pageToMarkdown } from '$lib/server/convert'
 import { docsMarkdown } from '$lib/server/docs'
@@ -48,6 +49,8 @@ const respond: Handle = async ({ event, resolve }) => {
   const path = twin ?? (url.pathname.replace(/\/+$/, '') || '/')
   const headers = { 'content-type': MARKDOWN, vary: VARY }
 
+  // The landing page tells its story with demos; its twin tells the same story in prose, written for reading.
+  if (path === '/') return new Response(landingMarkdown(url.origin), { headers })
   const docs = await docsMarkdown(env.ASSETS, path, url)
   if (docs !== undefined) return new Response(docs, { headers })
 

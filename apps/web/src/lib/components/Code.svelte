@@ -1,35 +1,52 @@
 <script lang="ts">
 import { highlight } from '$lib/highlight'
 
-/** A TypeScript sample on an indigo swatch. */
-let { source, label }: { source: string; label?: string } = $props()
+/** A code sample on ink, highlighted by `src/lib/highlight.ts`, with its file or tool name above it when given. */
+let { source, label, title }: { source: string; label: string; title?: string } = $props()
 </script>
 
-<!-- A sample wider than a phone scrolls sideways, so keyboard users can focus it to scroll. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<pre class="code" tabindex="0" aria-label={label}><code class="language-ts">{@html highlight(source)}</code></pre>
+<div class="code">
+  {#if title}<p class="title">{title}</p>{/if}
+  <!-- A sample wider than its panel scrolls sideways, so keyboard users can focus it to scroll. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <pre tabindex="0" aria-label={label}><code>{@html highlight(source)}</code></pre>
+</div>
 
 <style>
   .code {
-    overflow-x: auto;
-    padding: 1.125rem 1.25rem;
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 0.09);
     border-radius: var(--radius-l);
     background: var(--code-bg);
     color: var(--code-text);
+  }
+  .title {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgb(255 255 255 / 0.07);
+    color: var(--code-muted);
+    font-family: var(--font-code);
     font-size: 0.875rem;
-    line-height: 1.65;
+  }
+  pre {
+    overflow-x: auto;
+    padding: 1.125rem 1.25rem 1.25rem;
+    font-size: 0.8125rem;
+    line-height: 1.7;
     tab-size: 2;
   }
-  .code :global(.tok-comment) {
+  pre:focus-visible {
+    outline-offset: -2px;
+  }
+  pre :global(.tok-comment) {
     color: var(--code-muted);
   }
-  .code :global(.tok-string) {
+  pre :global(.tok-string) {
     color: var(--code-string);
   }
-  .code :global(.tok-keyword) {
-    color: var(--code-key);
+  pre :global(.tok-keyword) {
+    color: var(--code-keyword);
   }
-  .code :global(.tok-key) {
-    color: var(--code-prop);
+  pre :global(.tok-key) {
+    color: var(--code-key);
   }
 </style>

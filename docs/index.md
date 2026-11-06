@@ -15,7 +15,7 @@ models.
 | Play and hear audio in a voice channel | [Voice](voice.md) |
 | Know what each credential grants and what agent code can reach | [Security](security.md) |
 | Run your own relay | [Operating the relay](operating.md) |
+| See every tool your agent gets | [MCP tools](tools.md) |
 
-The [README](https://github.com/mia-cx/textile#readme) lists every MCP tool and configuration
-setting. Every page here is also Markdown: add `.md` to its URL, or start from
-[llms.txt](/llms.txt).
+The [README](https://github.com/mia-cx/textile#readme) lists every configuration setting. Every
+page here is also Markdown: add `.md` to its URL, or start from [llms.txt](/llms.txt).

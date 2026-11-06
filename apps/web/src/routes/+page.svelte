@@ -1,12 +1,19 @@
 <script lang="ts">
-import Code from '$lib/components/Code.svelte'
-import Loom from '$lib/components/Loom.svelte'
+import DiscordLogo from '$lib/components/DiscordLogo.svelte'
+import Publish from '$lib/components/demos/Publish.svelte'
+import Schedule from '$lib/components/demos/Schedule.svelte'
+import Script from '$lib/components/demos/Script.svelte'
+import Slash from '$lib/components/demos/Slash.svelte'
+import Voice from '$lib/components/demos/Voice.svelte'
+import Webhook from '$lib/components/demos/Webhook.svelte'
+import Message from '$lib/components/discord/Message.svelte'
+import Window from '$lib/components/discord/Window.svelte'
+import Section from '$lib/components/Section.svelte'
 import Seo from '$lib/components/Seo.svelte'
-import Tabs from '$lib/components/Tabs.svelte'
-import VoiceNotice from '$lib/components/VoiceNotice.svelte'
-import WeaveBand from '$lib/components/WeaveBand.svelte'
-import { SCRIPT, TOOL_GROUPS, WORKFLOWS } from '$lib/landing'
+import { CRON, ROUTE, STANDUP_POST, standupReply } from '$lib/landing'
 import { GITHUB_URL, ORIGIN, page } from '$lib/site'
+import type { Field, Point } from '$lib/threads/geometry'
+import ThreadField from '$lib/threads/ThreadField.svelte'
 
 /** What the page shows, as schema.org data. No offers or ratings: Textile has neither yet. */
 const structuredData = JSON.stringify({
@@ -19,244 +26,268 @@ const structuredData = JSON.stringify({
   operatingSystem: 'Any',
   sameAs: [GITHUB_URL],
 })
+
+let heroWindow = $state<HTMLElement>()
+let signIn = $state<HTMLElement>()
+
+/** Below this width the hero stacks, and its threads come down into the top of the Discord window. */
+const SIDE_BY_SIDE = 960
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+/** The hero: hundreds of threads streaming in from the left, braiding into the Discord window's left edge. */
+function hero(
+  { width, height }: { width: number; height: number },
+  target: DOMRect | undefined,
+): Field {
+  if (width >= SIDE_BY_SIDE) {
+    const end: Point = target
+      ? [target.x + 2, target.y + target.height * 0.5]
+      : [width * 0.66, height * 0.5]
+    return {
+      start: [-width * 0.06, height * 0.5],
+      control: [end[0] * 0.5, height * 0.5],
+      end,
+      spread: height * 0.6,
+      cord: clamp(width * 0.012, 12, 24),
+      braid: 0.8,
+      count: width > 1600 ? 820 : 640,
+      intensity: 0.6,
+      // Placed in the open space above and below the headline, at any size: positions scale with the box.
+      labels: [
+        { text: 'messageCreate', at: 0.455, lane: -0.63 },
+        { text: 'interactionCreate', at: 0.665, lane: -1.3 },
+        { text: 'voiceStateUpdate', at: 0.465, lane: 0.69 },
+        { text: `cron ${CRON}`, at: 0.665, lane: 1.3 },
+      ],
+    }
+  }
+  const end: Point = target
+    ? [target.x + target.width * 0.5, target.y + 2]
+    : [width * 0.5, height * 0.6]
+  return {
+    start: [-width * 0.3, height * 0.08],
+    control: [end[0], end[1] - height * 0.32],
+    end,
+    spread: height * 0.2,
+    cord: 8,
+    braid: 0.72,
+    count: 280,
+    intensity: 0.7,
+    labels: [],
+  }
+}
+
+/** The close: threads braiding into the sign-in button. */
+function close(
+  { width, height }: { width: number; height: number },
+  target: DOMRect | undefined,
+): Field {
+  const end: Point = target
+    ? [target.x + 2, target.y + target.height / 2]
+    : [width * 0.6, height * 0.6]
+  const wide = width >= SIDE_BY_SIDE
+  return {
+    start: [-width * 0.08, height * 0.5],
+    control: [end[0] * 0.55, end[1]],
+    end,
+    spread: height * (wide ? 0.55 : 0.3),
+    cord: wide ? 10 : 7,
+    braid: 0.74,
+    count: wide ? 520 : 220,
+    intensity: wide ? 0.85 : 0.6,
+    labels: [],
+  }
+}
 </script>
 
 <Seo path="/" />
 <svelte:head>
+  <meta name="theme-color" content="#07060c" />
   {@html `<script type="application/ld+json">${structuredData.replace(/</g, '\\u003c')}</script>`}
 </svelte:head>
 
-<div class="mx-auto max-w-6xl px-4 sm:px-8">
-  <section class="hero">
-    <div class="hero-text">
-      <h1 class="text-[2.75rem] leading-[1.02] font-extrabold sm:text-6xl lg:text-7xl">Discord bots for AI agents</h1>
-      <p class="mt-6 max-w-[34rem] text-lg sm:text-xl">
-        Textile gives your agent a Discord bot over MCP. The bot stays online, runs the discord.js workflows your agent
-        writes, and joins voice channels. Textile hosts no models: your agent brings its own.
-      </p>
-      <div class="mt-8 flex flex-wrap gap-3">
-        <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in with Discord</a>
+<div class="landing" data-scheme="dark">
+  <section class="hero" aria-labelledby="title">
+    <ThreadField layout={hero} target={heroWindow} />
+    <div class="hero-copy">
+      <h1 id="title">Discord bots for AI agents</h1>
+      <p class="lede">Your agent writes the code. Textile keeps the bot online.</p>
+      <div class="actions">
+        <a class="button button-primary" href="/login" data-sveltekit-reload><DiscordLogo />Sign in with Discord</a>
         <a class="button button-secondary" href="/docs/">Read the docs</a>
       </div>
-      <p class="mt-4 text-muted">Access opens in rounds, by invitation.</p>
     </div>
-    <div class="hero-loom">
-      <Loom />
-    </div>
+    <Window bind:window={heroWindow} channel="standup" label="Your bot at work in Discord" class="hero-window">
+      <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
+      <Message author="Weaver" bot time="Today at 9:12 AM" used={{ by: 'you', command: '/standup' }}>
+        {standupReply('the onboarding flow', 4)}
+      </Message>
+    </Window>
   </section>
 
-  <WeaveBand />
-
-  <section class="split" aria-labelledby="mcp">
-    <div>
-      <h2 id="mcp" class="section-title">Everything over one MCP connection</h2>
-      <p class="mt-5">
-        Sign in with Discord once, then send your bot’s token with each request. Every call acts as that bot, and
-        Discord checks its permissions as it would for any bot.
-      </p>
-      <p class="mt-4"><a href="/docs/connecting/">Connect an agent</a></p>
-    </div>
-    <div class="tools">
-      {#each TOOL_GROUPS as group}
-        <h3 class="tools-group">{group.name}</h3>
-        <dl>
-          {#each group.tools as [name, purpose]}
-            <div class="tool">
-              <dt class="font-mono">{name}</dt>
-              <dd>{purpose}</dd>
-            </div>
-          {/each}
-        </dl>
-      {/each}
-    </div>
-  </section>
-
-  <WeaveBand />
-
-  <section aria-labelledby="workflows">
-    <div class="max-w-[40rem]">
-      <h2 id="workflows" class="section-title">Workflows run while your agent is away</h2>
-      <p class="mt-5">
-        Your agent publishes plain discord.js. Textile bundles it with pinned npm packages, keeps the bot online, and
-        runs each event in a fresh sandbox.
-      </p>
-    </div>
-    <div class="mt-8 max-w-[52rem]">
-      <Tabs id="workflow" tabs={WORKFLOWS} />
-    </div>
-    <p class="mt-6"><a href="/docs/workflows/">Read about workflows</a></p>
-  </section>
-
-  <WeaveBand />
-
-  <section class="split" aria-labelledby="scripts">
-    <div>
-      <h2 id="scripts" class="section-title">Many Discord calls, one tool call</h2>
-      <p class="mt-5">
-        <code class="prose-code">discord_script_run</code> runs discord.js once, now, under the same grants as workflows,
-        so a batch of Discord calls costs your agent one tool call.
-      </p>
-    </div>
-    <Code source={SCRIPT} label="Script" />
-  </section>
-
-  <WeaveBand />
-
-  <section class="split" aria-labelledby="voice">
-    <div>
-      <h2 id="voice" class="section-title">Voice, speaker by speaker</h2>
-      <p class="mt-5">
-        Join a voice channel and open one WebSocket. Each person’s audio arrives as its own stream, tagged with their
-        Discord ID, in Opus or PCM16. Send audio back and the bot speaks.
-      </p>
-      <p class="mt-4">
-        Before the bot hears anyone, it posts a notice. Anyone in the channel can opt out of this bot, or of every
-        Textile bot.
-      </p>
-      <p class="mt-4"><a href="/docs/voice/">Read about voice</a></p>
-    </div>
-    <VoiceNotice />
-  </section>
-
-  <WeaveBand />
-
-  <section aria-labelledby="security">
-    <h2 id="security" class="section-title max-w-[40rem]">Agent code never holds your bot’s token</h2>
-    <dl class="facts">
-      <div>
-        <dt>Grants</dt>
-        <dd>
-          Each workflow and script names the Discord operations and hosts it may use. Destructive operations are named
-          one by one.
-        </dd>
-      </div>
-      <div>
-        <dt>A broker in between</dt>
-        <dd>Every request agent code makes reaches Textile’s broker, which checks the grant and adds the real token.</dd>
-      </div>
-      <div>
-        <dt>Public hosts only</dt>
-        <dd>Outbound requests can’t reach private, loopback, or cloud metadata addresses.</dd>
-      </div>
-      <div>
-        <dt>Encrypted at rest</dt>
-        <dd>Stored bot tokens are encrypted. Voice is relayed, never stored.</dd>
-      </div>
-    </dl>
-    <p class="mt-8"><a href="/docs/security/">Read about security</a></p>
-  </section>
-
-  <WeaveBand />
-
-  <section class="max-w-[40rem]" aria-labelledby="access">
-    <h2 id="access" class="section-title">Get access</h2>
-    <p class="mt-5">
-      Textile opens in rounds, starting with a closed alpha. Sign in with Discord to check your access, and to find
-      where to follow progress until you’re in. Paid plans and a free tier, billed through Discord, come after the alpha.
+  <Section id="publish" title="Your agent ships a workflow in one call" event="discord_workflow_publish">
+    <p>
+      A workflow is plain discord.js, written like any bot. Your agent publishes it over MCP; Textile bundles it, keeps
+      the bot online, and runs every event in a fresh sandbox.
     </p>
-    <div class="mt-8">
-      <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in with Discord</a>
+    <p>
+      The sandbox never holds the bot’s token. Each call goes through a broker that checks the workflow’s grants and adds
+      the token itself.
+    </p>
+    <p><a class="next-link" href="/docs/workflows/">Read about workflows</a></p>
+    {#snippet demo()}<Publish />{/snippet}
+  </Section>
+
+  <Section id="slash" title="Slash commands answer from your code" event="interactionCreate">
+    <p>
+      Each interaction runs the workflow in its own isolate. State that should last, like this count, lives in the
+      workflow’s key-value store.
+    </p>
+    {#snippet demo()}<Slash />{/snippet}
+  </Section>
+
+  <Section id="schedules" title="Cron schedules that fire once" event="cron {CRON}">
+    <p>
+      Each tick runs once, however many hosts there are. A tick missed while the bot was offline runs once, late, when
+      it’s back.
+    </p>
+    {#snippet demo()}<Schedule />{/snippet}
+  </Section>
+
+  <Section id="webhooks" title="Webhooks from anywhere" event="POST {ROUTE.replace(/\/\d+\//, '/…/')}">
+    <p>
+      The same workflow answers HTTP at its own route. Routes are public, so the handler checks who’s calling before it
+      posts.
+    </p>
+    {#snippet demo()}<Webhook />{/snippet}
+  </Section>
+
+  <Section id="scripts" title="Many Discord calls, one tool call" event="discord_script_run">
+    <p>
+      <code class="prose-code">discord_script_run</code> runs discord.js once, now, under the same grants as workflows,
+      so a batch of Discord calls costs your agent one tool call.
+    </p>
+    {#snippet demo()}<Script />{/snippet}
+  </Section>
+
+  <Section id="voice" title="Voice, speaker by speaker" event="voiceStateUpdate">
+    <p>
+      Join a voice channel and open one WebSocket. Each person’s audio arrives as its own stream, tagged with their
+      Discord ID, in Opus or PCM16. Send audio back and the bot speaks.
+    </p>
+    <p>
+      Before the bot hears anyone, it posts a notice. Anyone who opts out is never relayed, and Textile never stores
+      audio.
+    </p>
+    <p><a class="next-link" href="/docs/voice/">Read about voice</a></p>
+    {#snippet demo()}<Voice />{/snippet}
+  </Section>
+
+  <section class="close" aria-labelledby="access">
+    <ThreadField layout={close} target={signIn} />
+    <div class="close-copy">
+      <h2 id="access">Access opens in rounds</h2>
+      <p class="lede">
+        Textile starts with a closed alpha. Sign in with Discord to check your access, and to find where to follow
+        progress until you’re in.
+      </p>
+      <div class="actions">
+        <a bind:this={signIn} class="button button-primary" href="/login" data-sveltekit-reload>
+          <DiscordLogo />Sign in with Discord
+        </a>
+        <a class="button button-secondary" href="/docs/tools/">See every MCP tool</a>
+      </div>
     </div>
   </section>
 </div>
 
 <style>
-  .hero {
-    display: grid;
-    gap: 2.5rem;
-    align-items: center;
-    padding-top: 2.5rem;
+  .landing {
+    overflow-x: clip;
   }
-  .hero-loom {
-    max-width: min(30rem, 80%);
-    width: 100%;
+  .hero {
+    position: relative;
+    display: grid;
+    align-items: center;
+    gap: 3rem;
+    min-height: clamp(42rem, 100svh, 75rem);
+    margin-top: calc(-1 * var(--header-height));
+    padding: calc(var(--header-height) + 2rem) var(--gutter) 4rem;
+  }
+  /* Each field fades out at its open edges instead of stopping at its box. */
+  .hero :global(.field) {
+    mask-image: linear-gradient(#000 78%, transparent);
+  }
+  .close :global(.field) {
+    mask-image: linear-gradient(transparent, #000 16%, #000 84%, transparent);
+  }
+  .hero-copy,
+  .hero :global(.hero-window) {
+    position: relative;
+    z-index: 1;
+  }
+  /* The threads pass behind the copy dimmed, so the headline reads first. */
+  .hero-copy::before {
+    content: '';
+    position: absolute;
+    inset: -12% -8% -12% -40%;
+    z-index: -1;
+    background: radial-gradient(closest-side, rgb(7 6 12 / 0.72), rgb(7 6 12 / 0.4) 60%, transparent);
+    pointer-events: none;
+  }
+  h1 {
+    font-size: clamp(3.25rem, 1.2rem + 5.6vw, 8.75rem);
+    font-weight: 600;
+    line-height: 0.98;
+    letter-spacing: -0.045em;
+  }
+  .lede {
+    margin-top: 1.5rem;
+    max-width: 38ch;
+    color: var(--ink);
+    font-size: clamp(1.25rem, 0.95rem + 0.85vw, 1.875rem);
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 2.5rem;
+  }
+  .hero :global(.hero-window) {
+    width: min(100%, 36rem);
     justify-self: center;
   }
   @media (min-width: 60rem) {
     .hero {
-      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-      gap: 3rem;
-      padding-top: 4rem;
+      grid-template-columns: minmax(0, 1fr) clamp(26rem, 31vw, 40rem);
+      gap: clamp(3rem, 8vw, 12rem);
     }
-    .hero-loom {
+    .hero :global(.hero-window) {
+      width: 100%;
       justify-self: end;
     }
   }
-  .section-title {
-    font-size: clamp(1.875rem, 1.2rem + 2.4vw, 2.75rem);
-    font-weight: 800;
-  }
-  .split {
+  .close {
+    position: relative;
     display: grid;
-    gap: 2rem;
-    align-items: start;
+    align-items: center;
+    min-height: clamp(34rem, 80svh, 56rem);
+    margin-top: clamp(6rem, 10vw, 12rem);
+    padding: 4rem var(--gutter);
   }
-  @media (min-width: 56rem) {
-    .split {
-      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-      gap: 4rem;
+  .close-copy {
+    position: relative;
+    z-index: 1;
+    max-width: 44rem;
+  }
+  .close h2 {
+    font-size: clamp(2.5rem, 1.3rem + 3.6vw, 5.5rem);
+  }
+  @media (min-width: 60rem) {
+    .close-copy {
+      justify-self: end;
     }
-    /* The heading stays beside a long list as it scrolls past. */
-    .split > :first-child {
-      position: sticky;
-      top: 2rem;
-    }
-  }
-  .tools {
-    padding: 0.5rem 1.25rem 1.25rem;
-    border: 1px solid var(--rule);
-    border-radius: var(--radius-l);
-    background: var(--surface);
-  }
-  .tools-group {
-    margin-top: 1rem;
-    margin-bottom: 0.25rem;
-    color: var(--muted);
-    font-size: 0.875rem;
-    font-weight: 700;
-    font-variation-settings: var(--axes-text);
-  }
-  .tool {
-    display: grid;
-    gap: 0 1rem;
-    padding-block: 0.375rem;
-    border-bottom: 1px solid var(--rule);
-  }
-  .tool:last-child {
-    border-bottom: none;
-  }
-  @media (min-width: 40rem) {
-    .tool {
-      grid-template-columns: 15.5rem minmax(0, 1fr);
-    }
-  }
-  .tool dt {
-    color: var(--ink);
-    font-variation-settings: var(--axes-code);
-    font-size: 0.875rem;
-    overflow-wrap: anywhere;
-  }
-  .tool dd {
-    color: var(--muted);
-    font-size: 0.9375rem;
-  }
-  .facts {
-    display: grid;
-    gap: 1.75rem 3rem;
-    margin-top: 2rem;
-  }
-  @media (min-width: 48rem) {
-    .facts {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-  .facts dt {
-    color: var(--ink);
-    font-size: 1.125rem;
-    font-weight: 750;
-    font-variation-settings: var(--axes-display);
-  }
-  .facts dd {
-    margin-top: 0.25rem;
   }
 </style>

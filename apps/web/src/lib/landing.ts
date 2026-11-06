@@ -1,117 +1,112 @@
 /**
- * The landing page's product facts: the MCP tools (README.md's table) and workflow samples that run on Textile
- * (docs/workflows.md, and the workflow tests in packages/isolate and apps/server). Keep them in step with those.
+ * The landing page's product facts: one workflow that runs on Textile, the tool calls that publish and enable it, and
+ * a one-off script. They follow docs/workflows.md and the workflow tool descriptions in packages/isolate; keep them in
+ * step with those.
  */
 
-export const TOOL_GROUPS = [
-  {
-    name: 'Discord API',
-    tools: [
-      ['discord_api_search', 'Find operations and the permissions they need.'],
-      ['discord_api_describe', 'Read an operation’s parameters and body schema.'],
-      ['discord_api_read', 'Run read operations.'],
-      ['discord_api_write', 'Run create and update operations.'],
-      ['discord_api_destructive', 'Run deletes and other destructive operations.'],
-      ['discord_api_admin', 'Change bot and application settings and commands.'],
-      ['discord_guild_get', 'Read a server, compact and typed.'],
-      ['discord_permissions_explain', 'Diagnose effective server and channel permissions.'],
-    ],
-  },
-  {
-    name: 'Scripts and workflows',
-    tools: [
-      ['discord_script_run', 'Run discord.js once, as the bot.'],
-      ['discord_workflow_publish', 'Store a new revision of a workflow.'],
-      ['discord_workflow_list', 'List workflows and who changed them.'],
-      ['discord_workflow_enable', 'Run a revision and show its grants.'],
-      ['discord_workflow_disable', 'Stop running a workflow.'],
-      ['discord_workflow_delete', 'Delete a workflow, its state, and its logs.'],
-      ['discord_workflow_logs', 'Read recent runs, errors, and console output.'],
-    ],
-  },
-  {
-    name: 'Voice',
-    tools: [
-      ['discord_voice_join', 'Join a voice channel to play audio, and optionally hear it.'],
-      ['discord_voice_leave', 'Leave a server’s voice channel.'],
-    ],
-  },
-] as const
+/** A sample bot's ID, for the workflow's route. */
+export const BOT_ID = '876543210987654321'
+export const WORKFLOW_NAME = 'standup'
+export const ROUTE = `/workflows/${BOT_ID}/${WORKFLOW_NAME}`
+export const CRON = '0 9 * * 1-5'
+/** The webhook's shared secret, as the workflow's source spells it. */
+export const SECRET = 'replace-with-a-long-random-string'
+/** What the workflow posts on each tick. */
+export const STANDUP_POST = 'Standup time: what did you ship today?'
 
-export const WORKFLOWS = [
-  {
-    name: 'Messages',
-    summary: 'Answer messages, joins, and reactions as they happen.',
-    source: `import { Client, Events, GatewayIntentBits } from 'discord.js'
+/** One workflow with all three kinds of trigger: a cron schedule, a slash command, and an HTTP route. */
+export const WORKFLOW = `import { Client, Events } from 'discord.js'
+import { kv } from 'textile'
+
+const STANDUP = '123456789012345678' // the #standup channel
+// Shared with the service that calls this workflow's route
+const SECRET = '${SECRET}'
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+  intents: [],
+  schedules: ['${CRON}'],
 })
 
-client.on(Events.MessageCreate, async (message) => {
-  if (message.content === 'ping') await message.reply('pong')
+// Weekdays at 9:00 UTC
+client.on('schedule', async () => {
+  const channel = await client.channels.fetch(STANDUP)
+  await channel.send('${STANDUP_POST}')
 })
 
-client.login(process.env.DISCORD_TOKEN)`,
-  },
-  {
-    name: 'Slash commands',
-    summary: 'Answer slash commands and buttons.',
-    source: `import { Client, Events } from 'discord.js'
-
-const client = new Client({ intents: [] })
-
+// /standup shipped:<text>
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return
-  if (interaction.commandName !== 'hello') return
-  await interaction.deferReply()
-  const who = interaction.options.getString('who')
-  await interaction.editReply(\`hello \${who}\`)
+  if (interaction.commandName !== 'standup') return
+  const shipped = interaction.options.getString('shipped')
+  const count = ((await kv.get('shipped')) ?? 0) + 1
+  await kv.set('shipped', count)
+  await interaction.reply(\`Logged: \${shipped}. \${count} so far.\`)
 })
 
-client.login(process.env.DISCORD_TOKEN)`,
-  },
-  {
-    name: 'Schedules',
-    summary: 'Post on a cron schedule. Each tick runs once, never twice.',
-    source: `import { Client } from 'discord.js'
-
-const client = new Client({ intents: [], schedules: ['0 9 * * *'] })
-
-client.on('schedule', async ({ scheduledAt }) => {
-  const channel = await client.channels.fetch('123456789012345678')
-  const day = scheduledAt.toISOString().slice(0, 10)
-  await channel.send(\`Digest for \${day}\`)
-})`,
-  },
-  {
-    name: 'Webhooks',
-    summary:
-      'Give the bot an HTTP route for other services to call. Anyone can reach it, so it checks the caller.',
-    source: `import { Client } from 'discord.js'
-
-const client = new Client({ intents: [] })
-// The secret you give the service that calls this route.
-const SECRET = 'replace-with-a-long-random-string'
-
+// POST /workflows/<bot ID>/${WORKFLOW_NAME}
 export default {
   async fetch(request: Request) {
-    if (request.headers.get('authorization') !== \`Bearer \${SECRET}\`) {
+    const auth = request.headers.get('authorization')
+    if (auth !== \`Bearer \${SECRET}\`) {
       return new Response('unauthorized', { status: 401 })
     }
     const { text } = await request.json()
-    await client.rest.post('/channels/123456789012345678/messages', {
+    await client.rest.post(\`/channels/\${STANDUP}/messages\`, {
       body: { content: text },
     })
     return new Response('ok')
   },
-}`,
+}`
+
+const GRANTS = {
+  operations: [],
+  families: ['channel', 'message', 'interaction', 'webhook'],
+  hosts: [],
+}
+
+/** JSON indented by object, with each array of plain values on one line, as a person would write it. */
+const json = (value: unknown) =>
+  JSON.stringify(value, null, 2).replace(
+    /\[\n\s+([^[\]{}]*?)\n\s*\]/g,
+    (_, items: string) => `[${items.split(/,\n\s+/).join(', ')}]`,
+  )
+
+/** What `discord_workflow_publish` and `discord_workflow_enable` return for the workflow above. */
+const revision = (enabled: boolean) =>
+  json({
+    name: WORKFLOW_NAME,
+    revision: 1,
+    events: ['schedule', 'interactionCreate'],
+    intents: [],
+    route: ROUTE,
+    schedules: [CRON],
+    grants: GRANTS,
+    packages: [],
+    enabled,
+  })
+
+/** The agent's two tool calls, each with its arguments and what Textile answers. */
+export const CALLS = [
+  {
+    tool: 'discord_workflow_publish',
+    // The source is the file beside it, cut short here.
+    arguments: json({
+      name: WORKFLOW_NAME,
+      grants: { families: GRANTS.families },
+      source: "import { Client, Events } from 'discord.js'…",
+    }),
+    result: revision(false),
+  },
+  {
+    tool: 'discord_workflow_enable',
+    arguments: `{ "name": "${WORKFLOW_NAME}" }`,
+    result: revision(true),
   },
 ] as const
+
+/** What the workflow replies to /standup. */
+export const standupReply = (shipped: string, count: number) =>
+  `Logged: ${shipped}. ${count} so far.`
 
 export const SCRIPT = `import { EmbedBuilder } from 'discord.js'
 
@@ -126,3 +121,92 @@ export default async ({ client }) => {
   }
   return 'sent'
 }`
+
+/** The notice a bot posts before it relays voice, and its buttons' replies (packages/bot-host/src/consent.ts). */
+export const VOICE_NOTICE = {
+  notice: 'I’m relaying voice in this channel to an AI agent.',
+  optOutHere: 'Opt out here',
+  optOutAll: 'Opt out of all Textile bots',
+  optedOutHere: 'I won’t relay your voice in this server.',
+  optedOutAll: 'No Textile bot will relay your voice.',
+  undoneHere: 'I can relay your voice in this server again.',
+  undoneAll: 'Textile bots can relay your voice again.',
+} as const
+
+const fence = (language: string, code: string) => `\`\`\`${language}\n${code}\n\`\`\``
+
+/**
+ * The landing page's Markdown twin: the same story as the page, written to be read. Links are absolute on `origin`, and
+ * links to the site's pages point at their twins.
+ */
+export const landingMarkdown = (origin: string) => `# Discord bots for AI agents
+
+Your agent writes the code. Textile keeps the bot online.
+
+Textile is a Discord bot platform for AI agents, served over MCP. Your agent signs in, sends its bot's token with each
+request, and gets a bot that stays online, runs the discord.js workflows the agent writes, runs one-off scripts, and
+joins voice channels. Textile hosts no models: your agent brings its own.
+
+[Sign in with Discord](${origin}/login) · [Read the docs](${origin}/docs.md)
+
+## Your agent ships a workflow in one call
+
+A workflow is plain discord.js, written like any bot. This one posts a standup prompt every weekday, logs answers to a
+\`/standup\` slash command, and posts whatever an outside service sends to its HTTP route:
+
+${fence('ts', WORKFLOW)}
+
+The agent publishes it with \`${CALLS[0].tool}\`. Textile bundles it, loads it once to find the events, schedules, and
+route it uses, and stores it as revision 1:
+
+${fence('json', CALLS[0].result)}
+
+Then \`${CALLS[1].tool}\` runs it. From then on, the bot stays online without the agent. Each event, tick, and request
+runs the workflow in a fresh sandbox that never holds the bot's token: a broker checks every call against the
+workflow's grants and adds the token itself. [Read about workflows](${origin}/docs/workflows.md).
+
+## Slash commands and buttons
+
+When someone runs \`/standup shipped:the onboarding flow\`, the workflow answers in its own isolate, and keeps its
+count in the workflow's key-value store:
+
+> ${standupReply('the onboarding flow', 4)}
+
+## Cron schedules that fire once
+
+\`${CRON}\` is 9:00 UTC, Monday to Friday. Each tick runs once, however many hosts there are. A tick missed while the
+bot was offline runs once, late, when it is back.
+
+> ${STANDUP_POST}
+
+## Webhooks from anywhere
+
+The workflow answers HTTP at \`${ROUTE}\`. Routes are public, so the handler checks the caller's secret: a request
+without it gets \`401 unauthorized\` and posts nothing.
+
+${fence('http', `POST ${ROUTE}\nAuthorization: Bearer ${SECRET}\nContent-Type: application/json\n\n{ "text": "Deployed v2.4.1" }`)}
+
+## Many Discord calls, one tool call
+
+\`discord_script_run\` runs discord.js once, now, under the same grants as workflows, so a batch of Discord calls costs
+your agent one tool call:
+
+${fence('ts', SCRIPT)}
+
+## Voice, speaker by speaker
+
+Join a voice channel and open one WebSocket. Each person's audio arrives as its own stream, tagged with their Discord
+ID, in Opus or PCM16. Send audio back and the bot speaks. Before the bot hears anyone, it posts a notice:
+
+> ${VOICE_NOTICE.notice}
+>
+> **${VOICE_NOTICE.optOutHere}** · **${VOICE_NOTICE.optOutAll}**
+
+Anyone who opts out is never relayed: their audio is dropped before it is decrypted. Textile never stores audio.
+[Read about voice](${origin}/docs/voice.md).
+
+## Access opens in rounds
+
+Textile starts with a closed alpha. [Sign in with Discord](${origin}/login) to check your access, and to find where to
+follow progress until you're in. Every MCP tool is listed in the [docs](${origin}/docs/tools.md).
+`
