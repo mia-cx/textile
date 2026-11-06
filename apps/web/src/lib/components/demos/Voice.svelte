@@ -251,8 +251,9 @@ async function undo() {
   .discord-button:hover {
     background: #6d6f78;
   }
+  /* Room for the longest reply on two lines, as it wraps in the narrowest notice: answering never moves the page. */
   .reply {
-    min-height: 8.5rem;
+    min-height: 9.25rem;
   }
   .ephemeral {
     display: grid;
