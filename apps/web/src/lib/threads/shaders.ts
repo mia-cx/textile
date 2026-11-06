@@ -29,6 +29,9 @@ const float = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n))
 /** Half the strip's width, in CSS pixels: room for the thread's own soft halo; the bloom gives the wider glow. */
 const HALF_WIDTH = float(2)
 
+/** The white the densest light burns toward, in either language's vector type: warm, like the concept's hot crossings. */
+const WARM_WHITE = (vec3: string) => `${vec3}(1.0, 0.93, 0.84)`
+
 /** The constants both languages share, each written by `declare` in that language's syntax. */
 const constants = (declare: (name: string, value: string) => string) =>
   [
@@ -40,6 +43,8 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('WAVE', float(SHAPE.wave)),
     declare('FRAY', float(SHAPE.fray)),
     declare('FIBRES', float(SHAPE.fibres)),
+    declare('DRIFT', float(SHAPE.drift)),
+    declare('WEAVE', float(SHAPE.weave)),
     declare('RIBBONS', float(SHAPE.ribbons)),
     declare('RIBBON', float(SHAPE.ribbon)),
     declare('JOIN', float(SHAPE.join)),
@@ -81,10 +86,11 @@ fn strandColour(strand: u32) -> vec3f {
   return U[8u + strand].rgb;
 }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
-// of it, so dense light keeps its hue; only the densest, where the cord ends, burns toward white.
+// of it, so dense light keeps its hue; only the densest, at the braid's crossings and where the cord ends, burns toward
+// a warm white, as hot filament does.
 fn tone(hdr: vec3f) -> vec3f {
   let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3f(1.0), smoothstep(2.0, 5.0, peak) * 0.85);
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3f')}, smoothstep(2.0, 5.0, peak) * 0.85);
 }
 `
 
@@ -110,7 +116,8 @@ fn place(i: f32, u: f32) -> vec4f {
   if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
   let strand = i - 3.0 * floor(i / 3.0);
   let phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
-  let jitter = (floor(hash(i + 5.9) * FIBRES) + 0.5) / FIBRES * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * 0.12;
+  let jitter = (floor(hash(i + 5.9) * FIBRES) + 0.5) / FIBRES * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * 0.2;
+  let drift = hash(i + 4.7) * TAU;
 
   let a = 1.0 - u;
   let p = a * a * p0 + 2.0 * a * u * p1 + u * u * p2;
@@ -127,7 +134,8 @@ fn place(i: f32, u: f32) -> vec4f {
   let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   let turns = spine / (PITCH * cord * SWELL);
   let twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + strand * TAU / 3.0;
-  let braided = radius * (sin(twist) + jitter * FRAY);
+  let fibre = jitter + DRIFT * sin(u * WEAVE + drift);
+  let braided = radius * (sin(twist) + fibre * FRAY);
   let inBraid = smoothstep(joins - JOIN, joins, u);
   return vec4f(p + n * mix(current, braided, inBraid), inBraid, cos(twist));
 }
@@ -303,7 +311,7 @@ vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb :
 vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.6) : U[8 + strand].rgb; }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(2.0, 5.0, peak) * 0.85);
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3')}, smoothstep(2.0, 5.0, peak) * 0.85);
 }
 `
 
@@ -326,7 +334,8 @@ vec4 place(float i, float u) {
   if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
   float strand = mod(i, 3.0);
   float phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
-  float jitter = (floor(hash(i + 5.9) * FIBRES) + 0.5) / FIBRES * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * 0.12;
+  float jitter = (floor(hash(i + 5.9) * FIBRES) + 0.5) / FIBRES * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * 0.2;
+  float drift = hash(i + 4.7) * TAU;
 
   float a = 1.0 - u;
   vec2 p = a * a * p0 + 2.0 * a * u * p1 + u * u * p2;
@@ -343,7 +352,8 @@ vec4 place(float i, float u) {
   float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   float turns = spine / (PITCH * cord * SWELL);
   float twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + strand * TAU / 3.0;
-  float braided = radius * (sin(twist) + jitter * FRAY);
+  float fibre = jitter + DRIFT * sin(u * WEAVE + drift);
+  float braided = radius * (sin(twist) + fibre * FRAY);
   float inBraid = smoothstep(joins - JOIN, joins, u);
   return vec4(p + n * mix(current, braided, inBraid), inBraid, cos(twist));
 }

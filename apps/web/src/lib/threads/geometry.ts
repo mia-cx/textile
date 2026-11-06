@@ -67,6 +67,12 @@ export const SHAPE = {
   fray: 0.4,
   fibres: 8,
   /**
+   * How far a fibre drifts across its strand, in the same units as its place in it (-1 to 1), and how fast, in radians
+   * per unit along the thread: about one and a half slow waves over the braid, so fibres cross inside each strand.
+   */
+  drift: 0.3,
+  weave: 24,
+  /**
    * How many ribbons the threads travel in, and how wide each is, as a fraction of the whole funnel: narrower than the
    * gaps between them, so the current reads as separate strands of fibre on the dark.
    */
@@ -121,11 +127,13 @@ export const thread = (field: Field, i: number) => {
     joins: label ? Math.max(joins, Math.min(SHAPE.joined, label.at + SHAPE.join * 1.5)) : joins,
     strand: i % 3,
     phase: hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6,
-    // Where in its strand the thread runs, -1 to 1: one of a few fibre bundles, so each strand reads as fibres.
+    // Where in its strand the thread runs, -1 to 1: near one of a few fibre bundles, so each strand reads as fibres.
     jitter:
       ((Math.floor(hash(i + 5.9) * SHAPE.fibres) + 0.5) / SHAPE.fibres) * 2 -
       1 +
-      (hash(i + 8.3) - 0.5) * 0.12,
+      (hash(i + 8.3) - 0.5) * 0.2,
+    // Where in its slow drift across the strand the thread starts.
+    drift: hash(i + 4.7) * TAU,
     ribbon,
   }
 }
@@ -140,7 +148,7 @@ const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
 /** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
 export function position(field: Field, i: number, u: number, t: number): Point {
   const { start: p0, control: p1, end: p2, spread, cord } = field
-  const { lane, pin, joins, strand, phase, jitter } = thread(field, i)
+  const { lane, pin, joins, strand, phase, jitter, drift } = thread(field, i)
   const a = 1 - u
   const x = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0]
   const y = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1]
@@ -164,7 +172,8 @@ export function position(field: Field, i: number, u: number, t: number): Point {
     turns * TAU * Math.log((1 + SHAPE.swell) / (1 + SHAPE.swell * a)) -
     t * SHAPE.spin +
     (strand * TAU) / 3
-  const braided = radius * (Math.sin(twist) + jitter * SHAPE.fray)
+  const fibre = jitter + SHAPE.drift * Math.sin(u * SHAPE.weave + drift)
+  const braided = radius * (Math.sin(twist) + fibre * SHAPE.fray)
   const offset = current + (braided - current) * smoothstep(joins - SHAPE.join, joins, u)
   return [x + nx * offset, y + ny * offset]
 }
