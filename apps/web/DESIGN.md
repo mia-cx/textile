@@ -81,7 +81,8 @@ for event labels, the 2D fallback, the section strands, and the social card.
 - Each thread is one instance: a triangle strip of 201 point pairs, widened 3.2px for a soft halo. Threads add their light
   into a half-float target; a second pass tone-maps it (`1 − e^(−1.25x)`) over the ink, dithered.
 - Labelled threads are pinned where their label sits, so labels are placed once per resize, never per frame. Labels are
-  placed as fractions of the hero while its copy scales on its own, so they show from 1360px wide, where they clear it.
+  placed as fractions of the hero while its copy scales on its own, so they show from a 1280px-wide hero, where they
+  clear it.
 - Renderers, in order: WebGPU, WebGL2 (with `EXT_color_buffer_float`, else straight additive), then one still canvas 2D
   frame. Asking for a context claims the canvas, so a failed renderer leaves a fresh one. A lost GPU device is replaced
   once; after a second loss the field uses WebGL2 or 2D.
