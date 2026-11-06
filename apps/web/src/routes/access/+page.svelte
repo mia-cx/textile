@@ -9,19 +9,16 @@ let { data }: PageProps = $props()
 <Seo path="/access" noindex />
 
 <section class="mx-auto max-w-2xl px-4 pt-16 sm:px-8 sm:pt-24">
-  {#if data.username === undefined}
-    <h1 class="text-4xl font-extrabold sm:text-5xl">Sign in to Textile</h1>
-    <p class="mt-5 text-lg">Sign in with Discord to see whether you have access to the alpha.</p>
-    <div class="mt-8">
-      <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in with Discord</a>
-    </div>
-  {:else if data.access}
+  {#if data.signedIn}
     <h1 class="text-4xl font-extrabold sm:text-5xl">You’re in</h1>
     <p class="mt-5 text-lg">You have access to the Textile alpha. Connect your agent to start.</p>
     <div class="mt-8">
       <a class="button button-primary" href="/docs/connecting/">Connect an agent</a>
     </div>
-  {:else}
+    <form method="POST" action="/logout" class="mt-12 border-t border-rule pt-4">
+      <button class="text-action" type="submit">Sign out</button>
+    </form>
+  {:else if data.denied}
     <h1 class="text-4xl font-extrabold sm:text-5xl">You don’t have access yet</h1>
     <p class="mt-5 text-lg">
       Access to Textile opens in rounds, by invitation. Join {COMMUNITY.name} to follow progress and get
@@ -30,18 +27,22 @@ let { data }: PageProps = $props()
     <div class="mt-8">
       <a class="button button-primary" href={COMMUNITY.invite}>Join the Discord server</a>
     </div>
-  {/if}
-
-  {#if data.username !== undefined}
-    <form method="POST" action="/logout" class="mt-12 flex flex-wrap items-center gap-x-4 border-t border-rule pt-4 text-muted">
-      <span>Signed in as <strong class="font-semibold text-ink">{data.username}</strong></span>
-      <button class="sign-out" type="submit">Sign out</button>
-    </form>
+    <p class="mt-12 border-t border-rule pt-4">
+      <a class="text-action" href="/login" data-sveltekit-reload>Sign in again</a>
+    </p>
+  {:else}
+    <h1 class="text-4xl font-extrabold sm:text-5xl">Sign in to Textile</h1>
+    <p class="mt-5 text-lg">Sign in with Discord to see whether you have access to the alpha.</p>
+    <div class="mt-8">
+      <a class="button button-primary" href="/login" data-sveltekit-reload>Sign in with Discord</a>
+    </div>
   {/if}
 </section>
 
 <style>
-  .sign-out {
+  .text-action {
+    display: inline-flex;
+    align-items: center;
     min-height: 2.75rem;
     color: var(--accent-text);
     text-decoration: underline;
@@ -49,7 +50,7 @@ let { data }: PageProps = $props()
     text-underline-offset: 0.2em;
     cursor: pointer;
   }
-  .sign-out:hover {
+  .text-action:hover {
     text-decoration-thickness: 2px;
   }
 </style>

@@ -18,13 +18,11 @@ declare global {
   interface Env {
     /** The static assets: the app's client files and the docs build under /docs. */
     ASSETS: { fetch(request: Request | URL | string): Promise<Response> }
-    DISCORD_CLIENT_ID: string
-    /** Discord's origin; tests point it at a stand-in. */
-    DISCORD_URL: string
-    DISCORD_CLIENT_SECRET?: string
-    /** Base64 of 32 random bytes: the AES-256-GCM key for session cookies. */
+    /** Central's origin, the OAuth issuer people sign in with. */
+    CENTRAL_URL?: string
+    /** Self-hosted only: central inside the cluster, which requests to `CENTRAL_URL` go through. */
+    CENTRAL?: { fetch(input: string, init?: RequestInit): Promise<Response> }
+    /** Base64 of 32 random bytes: the AES-256-GCM key for the sign-in cookies. */
     SESSION_KEY?: string
-    /** Comma-separated Discord user IDs who have access to the alpha. */
-    ACCESS_LIST?: string
   }
 }

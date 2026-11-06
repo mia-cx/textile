@@ -1,7 +1,7 @@
 <script lang="ts">
 import { page } from '$app/state'
 
-/** Sign-in failures that another attempt can fix: Discord refused the code (400) or didn't say who signed in (502). */
+/** Sign-in failures that another attempt can fix: central refused the code (400) or couldn't be reached (502). */
 const RETRYABLE = new Set([400, 502])
 </script>
 

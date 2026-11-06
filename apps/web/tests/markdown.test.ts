@@ -155,8 +155,24 @@ describe('Markdown for agents', () => {
         linked.add(path!)
       }
     }
-    // Sign-in links redirect to Discord; nothing linked is missing.
-    for (const path of linked) expect((await get(path, {})).status, path).toBeLessThan(400)
+    // Nothing linked is missing. Signing in leaves for central, which sign-in.test.ts fakes.
+    for (const path of linked) {
+      if (path === '/login') continue
+      expect((await get(path, {})).status, path).toBeLessThan(400)
+    }
+  })
+
+  // Proves staging and previews stay out of search results, pages and twins alike, while textile.cx is indexed.
+  it.each([
+    ['https://staging.example/', 'noindex'],
+    ['https://staging.example/index.md', 'noindex'],
+    ['https://staging.example/docs/voice/', 'noindex'],
+    [`${ORIGIN}/`, null],
+    [`${ORIGIN}/index.md`, null],
+  ])('asks search engines not to index %s: %s', async (url, robots) => {
+    const response = await get(url, { 'user-agent': CHROME })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-robots-tag')).toBe(robots)
   })
 
   it('puts every page’s Markdown in llms-full.txt', async () => {

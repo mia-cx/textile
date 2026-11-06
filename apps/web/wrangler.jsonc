@@ -1,25 +1,31 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // The Workers preview. textile.cx gets its own environment, with its route, when Mia puts the site live.
-  "name": "textile-web-preview",
-  // Not later than the workerd bundled with the pinned wrangler.
+  // Nothing here publishes the site: workers.dev and preview URLs are off, and no environment has a route. Staging runs
+  // this build in self-hosted workerd (workerd/site.capnp); textile.cx is `env.production`, once Mia puts the site live.
+  "name": "textile-web",
+  // Not later than the workerd bundled with the pinned wrangler. workerd/site.capnp names the same date.
   "compatibility_date": "2026-10-01",
   "main": ".svelte-kit/cloudflare/_worker.js",
   // The build copies the docs site (apps/docs) under /docs. Docs requests reach the Worker first
-  // (src/routes/docs), so agents get Markdown there too.
+  // (src/routes/docs), so agents get Markdown there too. workerd/assets.js routes the same way.
   "assets": {
     "binding": "ASSETS",
     "directory": ".svelte-kit/cloudflare",
     "run_worker_first": ["/docs", "/docs/*"]
   },
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
-  "vars": {
-    // Textile's Discord application. Sign-in uses it with the `identify` scope.
-    "DISCORD_CLIENT_ID": "1162037890742759424",
-    "DISCORD_URL": "https://discord.com"
-  },
-  // Locally from .dev.vars (see .dev.vars.example); deployed, with `wrangler secret put`.
-  "secrets": { "required": ["DISCORD_CLIENT_SECRET", "SESSION_KEY", "ACCESS_LIST"] }
+  // Locally from .dev.vars (see .dev.vars.example); on Cloudflare, with `wrangler secret put`.
+  "secrets": { "required": ["SESSION_KEY"] },
+  "env": {
+    // textile.cx. Going live adds its route, `"routes": [{ "pattern": "textile.cx", "custom_domain": true }]`, and
+    // central's origin, `"vars": { "CENTRAL_URL": "https://<central>" }`. Environments don't inherit secrets, so they
+    // repeat here.
+    "production": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "secrets": { "required": ["SESSION_KEY"] }
+    }
+  }
 }
