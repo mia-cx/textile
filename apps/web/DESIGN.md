@@ -75,14 +75,15 @@ rail.
 `src/lib/threads/`. One geometry (`geometry.ts`) runs everywhere: in WGSL for WebGPU, in GLSL for WebGL2, and on the CPU
 for event labels, the 2D fallback, the section strands, and the social card.
 
-- Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel that narrows
-  the whole way: steadily at first, then fast as it gathers onto the braid, so there is no pinch and no straight run.
+- Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel whose
+  nearly straight edges close in steadily until they meet the braid, tangent to it, so there is no knee, no pinch, and
+  no straight run.
   They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a colour
   (golden-ratio steps, so neighbours differ), so the funnel reads as separate strands of fibre on the dark.
 - From `braid`, past the hero's headline, threads keep leaving the funnel for a three-strand braid inside it, innermost
-  first, outermost last. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to a point
-  and keeps one helix angle, so it twists tighter as it goes and meets the target at its thinnest, `cord`, and
-  brightest. The hero's cord stops just short of the window, whose edge glows where it arrives.
+  first, outermost last. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord`
+  and keeps one helix angle, so it twists tighter as it goes and meets the target at its thinnest and brightest. The
+  hero's cord stops just short of the window, whose rim catches a narrow flare where it arrives.
 - The threads emit light. Each is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the
   braid twists tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its
   own phase in the funnel and in step within the braid, so they travel along it. Threads add their light into a

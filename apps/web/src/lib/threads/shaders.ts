@@ -36,7 +36,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PITCH', float(SHAPE.pitch)),
     declare('SWELL', float(SHAPE.swell)),
     declare('TAPER', float(SHAPE.taper)),
-    declare('GATHER', float(SHAPE.gather)),
+    declare('CLOSE', float(SHAPE.close)),
     declare('WAVE', float(SHAPE.wave)),
     declare('FRAY', float(SHAPE.fray)),
     declare('RIBBONS', float(SHAPE.ribbons)),
@@ -47,7 +47,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
-    declare('BRAID_LIGHT', float(0.22)),
+    declare('BRAID_LIGHT', float(0.5)),
     // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak.
     declare('PULSES', float(2.5)),
     declare('PULSE_SPEED', float(0.16)),
@@ -77,7 +77,7 @@ fn strandColour(strand: u32) -> vec3f {
 // of it, so dense light keeps its hue; only the densest, where the cord ends, burns toward white.
 fn tone(hdr: vec3f) -> vec3f {
   let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3f(1.0), smoothstep(2.0, 6.0, peak) * 0.85);
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3f(1.0), smoothstep(1.5, 5.0, peak) * 0.85);
 }
 `
 
@@ -110,7 +110,7 @@ fn place(i: f32, u: f32) -> vec4f {
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   let radius = cord * (1.0 + SWELL * a);
-  let width = radius + spread * (1.0 - TAPER * u) * (1.0 - smoothstep(GATHER, 1.0, u));
+  let width = radius + spread * pow(max(1.0 - u / CLOSE, 0.0), TAPER);
   var held = 1.0;
   if (pin >= 0.0) { let d = (u - pin) / 0.09; held = 1.0 - exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + phase) * 0.6 + sin(u * 9.0 - t * 0.23 + phase * 1.7) * 0.4;
@@ -291,7 +291,7 @@ vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb :
 vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.4) : U[8 + strand].rgb; }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(2.0, 6.0, peak) * 0.85);
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(1.5, 5.0, peak) * 0.85);
 }
 `
 
@@ -322,7 +322,7 @@ vec4 place(float i, float u) {
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   float radius = cord * (1.0 + SWELL * a);
-  float width = radius + spread * (1.0 - TAPER * u) * (1.0 - smoothstep(GATHER, 1.0, u));
+  float width = radius + spread * pow(max(1.0 - u / CLOSE, 0.0), TAPER);
   float held = 1.0;
   if (pin >= 0.0) { float d = (u - pin) / 0.09; held = 1.0 - exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + phase) * 0.6 + sin(u * 9.0 - t * 0.23 + phase * 1.7) * 0.4;

@@ -35,16 +35,16 @@ const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
- * The hero's event labels, each on a thread at the edge of the current, where the concept puts them and the copy never
- * reaches: two above the headline (at about 18% and 27% of the height), two below the actions (at about 80% and 83%),
+ * The hero's event labels, each on a thread along the current's outer edge, on clear dark, where the copy never
+ * reaches: two above the headline (at about 20% and 31% of the height), two below the actions (at about 80% and 86%),
  * all left of the window. They are placed as fractions of the hero while the copy scales on its own, so they clear it
  * only from LABELLED pixels wide (the box, without a scrollbar); narrower, the hero shows its threads without them.
  */
 const LABELS = [
-  { text: 'messageCreate', at: 0.475, lane: -0.87 },
-  { text: 'interactionCreate', at: 0.66, lane: -0.79 },
-  { text: 'voiceStateUpdate', at: 0.475, lane: 0.78 },
-  { text: `cron ${CRON}`, at: 0.69, lane: 1.08 },
+  { text: 'messageCreate', at: 0.45, lane: -1.05 },
+  { text: 'interactionCreate', at: 0.6, lane: -1.08 },
+  { text: 'voiceStateUpdate', at: 0.36, lane: 1 },
+  { text: `cron ${CRON}`, at: 0.5, lane: 1.16 },
 ]
 const LABELLED = 1280
 /** How far short of the window's edge the cord ends, in CSS pixels. */
@@ -64,8 +64,9 @@ function hero(
       start: [-width * 0.06, height * 0.5],
       control: [end[0] * 0.5, height * 0.5],
       end,
-      spread: height * 0.44,
-      cord: clamp(width * 0.002, 3, 5),
+      spread: height * 0.54,
+      cord: clamp(width * 0.004, 5, 9),
+      // Past the headline: the braid gathers in the open space between the copy and the window.
       braid: 0.64,
       count: width > 1600 ? 560 : 440,
       intensity: 0.75,
@@ -80,7 +81,7 @@ function hero(
     control: [end[0], end[1] - height * 0.32],
     end,
     spread: height * 0.2,
-    cord: 3,
+    cord: 4,
     braid: 0.6,
     count: 280,
     intensity: 0.7,
@@ -101,7 +102,7 @@ function close(
     control: [end[0] * 0.55, end[1]],
     end,
     spread: height * 0.5,
-    cord: 3,
+    cord: 6,
     braid: 0.62,
     count: 520,
     intensity: 0.85,
@@ -293,20 +294,20 @@ function close(
     width: min(100%, 36rem);
     justify-self: center;
   }
-  /* The cord's light spills onto the window's edge where it arrives: the top's middle when stacked, the left edge's
-     middle side by side, as `hero` ends it. */
+  /* The cord's light catches the window's rim where it arrives: the top's middle when stacked, the left edge's middle
+     side by side, as `hero` ends it. A narrow flare along the rim, not a disc over the window's contents. */
   .hero :global(.hero-window)::after {
     content: '';
     position: absolute;
     top: 0;
     left: 50%;
-    width: 7rem;
-    height: 7rem;
+    width: 6rem;
+    height: 1.5rem;
     translate: -50% -50%;
     background: radial-gradient(
       closest-side,
-      rgb(255 255 255 / 0.55),
-      color-mix(in srgb, var(--thread-violet) 40%, transparent) 35%,
+      color-mix(in srgb, var(--thread-violet) 85%, white),
+      color-mix(in srgb, var(--thread-violet) 45%, transparent) 40%,
       transparent
     );
     mix-blend-mode: screen;
@@ -324,6 +325,8 @@ function close(
     .hero :global(.hero-window)::after {
       top: 50%;
       left: 0;
+      width: 1.5rem;
+      height: 6rem;
     }
   }
   .close {
