@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { type Field, position, tint } from '../src/lib/threads/geometry.ts'
+import { along, type Field, position, tint } from '../src/lib/threads/geometry.ts'
 
 const app = fileURLToPath(new URL('..', import.meta.url))
 const fonts = join(app, 'node_modules/@fontsource-variable')
@@ -20,9 +20,9 @@ const field: Field = {
   start: [-60, HEIGHT * 0.5],
   control: [WIDTH * 0.32, HEIGHT * 0.5],
   end: [WIDTH * 0.62, HEIGHT * 0.5],
-  spread: HEIGHT * 0.62,
-  cord: 13,
-  braid: 0.78,
+  spread: HEIGHT * 0.54,
+  cord: 5,
+  braid: 0.6,
   count: 420,
   intensity: 1,
   labels: [],
@@ -31,7 +31,9 @@ const POINTS = 160
 /** A settled moment of the current, as the page's still frame shows. */
 const STILL_TIME = 12
 const threads = Array.from({ length: field.count }, (_, i) => {
-  const d = Array.from({ length: POINTS + 1 }, (_, s) => position(field, i, s / POINTS, STILL_TIME))
+  const d = Array.from({ length: POINTS + 1 }, (_, s) =>
+    position(field, i, along(s / POINTS), STILL_TIME),
+  )
     .map(([x, y], s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
     .join('')
   const { colour, brightness } = tint(field, i)
