@@ -3,18 +3,15 @@
  * module runs it on the CPU to place the event labels and to draw the 2D fallback.
  *
  * Threads stream from `start` along a quadratic curve through `control` to `end`, inside a funnel that narrows the
- * whole way: `spread` pixels either side where they enter, `cord` pixels at `end`. From `braid` (a fraction of the way
- * along) on, threads keep leaving the funnel to join a three-strand braid inside it, the innermost first and the
- * outermost last. The braid narrows with the funnel and twists tighter as it goes, so it ends at `end` as one cord,
- * at its thinnest.
+ * whole way, steadily at first and then fast as it gathers onto the braid: `spread` pixels either side where they
+ * enter, `cord` pixels at `end`. From `braid` (a fraction of the way along) on, threads keep leaving the funnel to join
+ * a three-strand braid inside it, the innermost first and the outermost last. The braid narrows to a point and twists
+ * tighter as it goes, so it ends at `end` as one cord, at its thinnest.
  */
 
 export type Point = readonly [x: number, y: number]
 
-/**
- * A labelled thread: it passes exactly through its label at `at` along the curve, `lane` across the funnel (-1 and 1
- * are its edges where the threads enter; most threads stay within `SHAPE.reach`).
- */
+/** A labelled thread: it passes exactly through its label at `at` along the curve, `lane` across the funnel (-1 to 1). */
 export interface Label {
   readonly text: string
   readonly at: number
@@ -56,24 +53,27 @@ const TAU = Math.PI * 2
 export const SHAPE = {
   /** Braid radii per full twist: the braid keeps one helix angle, so it twists tighter as it narrows. */
   pitch: 5.5,
-  /** How many cord radii the braid widens by from `end` back to `start`. */
-  swell: 7,
+  /** How many cord radii the braid widens by from `end` back to `start`: it narrows linearly to a point. */
+  swell: 30,
   /**
-   * How the funnel narrows: its width beyond the braid's goes as (1 - u)^opening · (1 + opening · u), which holds
-   * level where the threads enter and narrows ever faster toward the end. Higher holds it open longer.
+   * How the funnel narrows: its width beyond the braid's goes as (1 - taper · u) · (1 - smoothstep(gather, 1, u)),
+   * losing `taper` of it steadily on the way, then closing fast onto the braid from `gather` (a fraction of the way
+   * along) to the end.
    */
-  opening: 2,
+  taper: 0.6,
+  gather: 0.7,
   /** How far the current sways, as a fraction of the funnel's width. */
   wave: 0.14,
   /** How far a thread strays from its strand in the braid, in braid radii. */
   fray: 0.55,
-  /** How many ribbons the threads travel in, and how wide each is, as a fraction of the whole funnel. */
+  /**
+   * How many ribbons the threads travel in, and how wide each is, as a fraction of the whole funnel: narrower than the
+   * gaps between them, so the current reads as separate strands of fibre on the dark.
+   */
   ribbons: 11,
-  ribbon: 0.16,
-  /** How far past the funnel's edges the outermost lanes reach, so threads also enter from above and below. */
-  reach: 1.25,
+  ribbon: 0.1,
   /** How much of the way a thread takes to join the braid, and how far along the last thread has joined. */
-  join: 0.22,
+  join: 0.16,
   joined: 0.95,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
@@ -99,8 +99,8 @@ export const thread = (field: Field, i: number) => {
   const label = field.labels[i]
   const ribbon = Math.floor(hash(i + 1.3) * SHAPE.ribbons)
   const centre = ((ribbon + 0.5) / SHAPE.ribbons) * 2 - 1 + (hash(ribbon + 11) - 0.5) * 0.15
-  const lane = label ? label.lane : (centre + (hash(i + 0.5) - 0.5) * SHAPE.ribbon) * SHAPE.reach
-  const order = Math.min(1, (0.7 * Math.abs(lane)) / SHAPE.reach + 0.3 * hash(i + 7.1))
+  const lane = label ? label.lane : centre + (hash(i + 0.5) - 0.5) * SHAPE.ribbon
+  const order = Math.min(1, 0.7 * Math.abs(lane) + 0.3 * hash(i + 7.1))
   const joins = field.braid + (SHAPE.joined - field.braid) * order
   return {
     lane,
@@ -133,9 +133,9 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const nx = -ty / length
   const ny = tx / length
 
-  // The braid's radius narrows linearly to `cord`; the funnel narrows to the braid.
+  // The braid's radius narrows linearly to `cord`; the funnel narrows onto the braid.
   const radius = cord * (1 + SHAPE.swell * a)
-  const width = radius + spread * a ** SHAPE.opening * (1 + SHAPE.opening * u)
+  const width = radius + spread * (1 - SHAPE.taper * u) * (1 - smoothstep(SHAPE.gather, 1, u))
   const held = pin < 0 ? 1 : 1 - Math.exp(-(((u - pin) / 0.09) ** 2))
   const sway =
     Math.sin(u * 4.5 + t * 0.35 + phase) * 0.6 + Math.sin(u * 9 - t * 0.23 + phase * 1.7) * 0.4

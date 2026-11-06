@@ -18,7 +18,7 @@ const field: Field = {
   control: [560, HEIGHT * 0.6],
   end: [WIDTH, HEIGHT * END],
   spread: HEIGHT * 0.36,
-  cord: 7,
+  cord: 3,
   braid: 0.74,
   count: 30,
   intensity: 1,

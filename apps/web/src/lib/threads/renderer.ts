@@ -1,4 +1,14 @@
-import { along, type Field, MAX_LABELS, position, SEGMENTS, tint } from './geometry'
+import {
+  along,
+  CROWD,
+  type Field,
+  MAX_LABELS,
+  position,
+  SEGMENTS,
+  SHAPE,
+  thread,
+  tint,
+} from './geometry'
 import {
   BLOOM_SCALE,
   bloomWgsl,
@@ -375,6 +385,8 @@ export function webgl2(canvas: HTMLCanvasElement): Renderer | undefined {
 /** Points per thread in the 2D fallback, and how many threads it draws at most: one still frame, drawn once. */
 const STILL_SEGMENTS = SEGMENTS
 const STILL_THREADS = 320
+/** How much light each thread gives in the still frame's braid, where they overlap. */
+const BRAID_STILL = 0.3
 
 /** The fallback without a GPU: the same field, as one still frame of canvas 2D strokes, each with a faint halo. */
 export function still(canvas: HTMLCanvasElement): Renderer | undefined {
@@ -391,22 +403,40 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       context.fillStyle = css(palette.background, 1)
       context.fillRect(0, 0, canvas.width, canvas.height)
       context.globalCompositeOperation = 'lighter'
-      const count = Math.min(field.count, STILL_THREADS)
-      for (let i = 0; i < count; i++) {
-        const { colour, brightness } = tint(field, i)
-        const rgb = palette.threads[colour] ?? palette.threads[0]
+      const [violet, amber, silver] = palette.threads
+      const [vr, vg, vb] = violet
+      const [sr, sg, sb] = silver
+      // The braid's strands, as the shaders' `strandColour`: violet, amber, and violet toward silver.
+      const strands: ReadonlyArray<RGB> = [
+        violet,
+        amber,
+        [vr + (sr - vr) * 0.4, vg + (sg - vg) * 0.4, vb + (sb - vb) * 0.4],
+      ]
+      /** One thread's points from `from` to `to` (of STILL_SEGMENTS), stroked with a faint halo under a fine core. */
+      const stroke = (i: number, from: number, to: number, rgb: RGB, alpha: number) => {
         context.beginPath()
-        for (let s = 0; s <= STILL_SEGMENTS; s++) {
+        for (let s = from; s <= to; s++) {
           const [x, y] = position(field, i, along(s / STILL_SEGMENTS), time)
-          if (s === 0) context.moveTo(x, y)
+          if (s === from) context.moveTo(x, y)
           else context.lineTo(x, y)
         }
         context.lineWidth = 5
-        context.strokeStyle = css(rgb, 0.05 * brightness * field.intensity)
+        context.strokeStyle = css(rgb, 0.1 * alpha)
         context.stroke()
         context.lineWidth = 0.8
-        context.strokeStyle = css(rgb, 0.55 * brightness * field.intensity)
+        context.strokeStyle = css(rgb, alpha)
         context.stroke()
+      }
+      const count = Math.min(field.count, STILL_THREADS)
+      for (let i = 0; i < count; i++) {
+        const { colour, brightness } = tint(field, i)
+        const { joins, strand } = thread(field, i)
+        const alpha = 0.8 * brightness * field.intensity
+        // In the funnel a thread takes its own colour; from halfway into the braid, its strand's, dimmer, as hundreds
+        // of threads share it. `into` is the point there: `along` inverted.
+        const into = Math.ceil((1 - (1 - (joins - SHAPE.join / 2)) ** (1 / CROWD)) * STILL_SEGMENTS)
+        stroke(i, 0, into, palette.threads[colour] ?? violet, alpha)
+        stroke(i, into, STILL_SEGMENTS, strands[strand] ?? violet, alpha * BRAID_STILL)
       }
       // The flare where the cord ends.
       const [x, y] = field.end

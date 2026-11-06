@@ -76,19 +76,23 @@ rail.
 for event labels, the 2D fallback, the section strands, and the social card.
 
 - Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel that narrows
-  the whole way, so there is no pinch and no straight run. They travel in eleven ribbons that share a lane, a sway, and
-  a colour (golden-ratio steps, so neighbours differ), so the funnel reads as a current.
-- From `braid` on, threads keep leaving the funnel for a three-strand braid inside it, innermost first, outermost last,
-  each taking its strand's colour. The braid narrows with the funnel and keeps one helix angle, so it twists tighter as
-  it goes and meets the target at its thinnest, `cord`, and brightest.
+  the whole way: steadily at first, then fast as it gathers onto the braid, so there is no pinch and no straight run.
+  They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a colour
+  (golden-ratio steps, so neighbours differ), so the funnel reads as separate strands of fibre on the dark.
+- From `braid`, past the hero's headline, threads keep leaving the funnel for a three-strand braid inside it, innermost
+  first, outermost last. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to a point
+  and keeps one helix angle, so it twists tighter as it goes and meets the target at its thinnest, `cord`, and
+  brightest. The hero's cord stops just short of the window, whose edge glows where it arrives.
 - The threads emit light. Each is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the
-  braid twists tightest) widened 2px for its own halo, with pulses of light running along it toward the target. Threads
-  add their light into a half-float target. The bloom shrinks that to a quarter of the CSS size and blurs it both ways;
-  the tone pass adds it back, with a near-white flare where the cord ends, and tone-maps it all (`1 − e^(−1.25x)`) over
-  the ink, dithered.
-- Labelled threads run at the edge of the current and join the braid only after their label. They are pinned where the
-  label sits, so labels are placed once per resize, never per frame. Labels are placed as fractions of the hero while
-  its copy scales on its own, so they show from a 1280px-wide hero, where they clear it.
+  braid twists tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its
+  own phase in the funnel and in step within the braid, so they travel along it. Threads add their light into a
+  half-float target. The bloom shrinks that to a quarter of the CSS size, averaging every pixel it covers, and blurs it
+  both ways; the tone pass adds it back, with a near-white flare where the cord ends. The tone map keeps hue: the
+  brightest channel saturates as `1 − e^(−1.25x)`, the others keep their share, and only the densest light burns toward
+  white. Dithered, over the ink.
+- Labelled threads run at the edge of the current, where the concept places them, and join the braid only after their
+  label. They are pinned where the label sits, so labels are placed once per resize, never per frame. Labels are placed
+  as fractions of the hero while its copy scales on its own, so they show from a 1280px-wide hero, where they clear it.
 - The field passes behind the hero's copy dimmed by a soft radial shade, and the subline carries its own text shadow, so
   the copy reads cleanly with no visible box.
 - Renderers, in order: WebGPU, WebGL2 (with `EXT_color_buffer_float`, else straight additive), then one still canvas 2D
@@ -96,7 +100,7 @@ for event labels, the 2D fallback, the section strands, and the social card.
   once; after a second loss the field uses WebGL2 or 2D.
 - It renders only while on screen (IntersectionObserver) and the tab is visible. With reduced motion it draws one still
   frame. Off screen or hidden, a resize marks the frame stale and it is drawn when the field shows.
-- The hero carries 820 threads above 1600px, 640 below, and 280 on phones, where they come down into the top of the
+- The hero carries 560 threads above 1600px, 440 below, and 280 on phones, where they come down into the top of the
   window. The close carries 520 and shows only side by side, where it has room beside its copy.
 
 Between, each section's event runs as a small SVG bundle of the same geometry across the page above its heading, braiding

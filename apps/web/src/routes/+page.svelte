@@ -35,18 +35,20 @@ const SIDE_BY_SIDE = 960
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
- * The hero's event labels, each on a thread at the edge of the current, in the bands the copy never reaches: two above
- * the headline (at about 20% and 26% of the height), two below the actions (at about 80%), all left of the window.
- * They are placed as fractions of the hero while the copy scales on its own, so they clear it only from LABELLED
- * pixels wide (the box, without a scrollbar); narrower, the hero shows its threads without them.
+ * The hero's event labels, each on a thread at the edge of the current, where the concept puts them and the copy never
+ * reaches: two above the headline (at about 18% and 27% of the height), two below the actions (at about 80% and 83%),
+ * all left of the window. They are placed as fractions of the hero while the copy scales on its own, so they clear it
+ * only from LABELLED pixels wide (the box, without a scrollbar); narrower, the hero shows its threads without them.
  */
 const LABELS = [
-  { text: 'messageCreate', at: 0.43, lane: -0.82 },
-  { text: 'interactionCreate', at: 0.585, lane: -1.02 },
-  { text: 'voiceStateUpdate', at: 0.335, lane: 0.75 },
-  { text: `cron ${CRON}`, at: 0.57, lane: 1.13 },
+  { text: 'messageCreate', at: 0.475, lane: -0.87 },
+  { text: 'interactionCreate', at: 0.66, lane: -0.79 },
+  { text: 'voiceStateUpdate', at: 0.475, lane: 0.78 },
+  { text: `cron ${CRON}`, at: 0.69, lane: 1.08 },
 ]
 const LABELLED = 1280
+/** How far short of the window's edge the cord ends, in CSS pixels. */
+const TIP_GAP = 4
 
 /** The hero: hundreds of threads streaming in from the left, braiding into the Discord window's left edge. */
 function hero(
@@ -54,18 +56,19 @@ function hero(
   target: DOMRect | undefined,
 ): Field {
   if (width >= SIDE_BY_SIDE) {
+    // The cord ends just short of the window, so its hot point shows; the window's edge glows where it meets it.
     const end: Point = target
-      ? [target.x + 2, target.y + target.height * 0.5]
+      ? [target.x - TIP_GAP, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
     return {
       start: [-width * 0.06, height * 0.5],
       control: [end[0] * 0.5, height * 0.5],
       end,
-      spread: height * 0.56,
-      cord: clamp(width * 0.004, 5, 9),
-      braid: 0.35,
-      count: width > 1600 ? 820 : 640,
-      intensity: 0.6,
+      spread: height * 0.44,
+      cord: clamp(width * 0.002, 3, 5),
+      braid: 0.64,
+      count: width > 1600 ? 560 : 440,
+      intensity: 0.75,
       labels: width >= LABELLED ? LABELS : [],
     }
   }
@@ -77,8 +80,8 @@ function hero(
     control: [end[0], end[1] - height * 0.32],
     end,
     spread: height * 0.2,
-    cord: 4,
-    braid: 0.4,
+    cord: 3,
+    braid: 0.6,
     count: 280,
     intensity: 0.7,
     labels: [],
@@ -98,8 +101,8 @@ function close(
     control: [end[0] * 0.55, end[1]],
     end,
     spread: height * 0.5,
-    cord: 5,
-    braid: 0.4,
+    cord: 3,
+    braid: 0.62,
     count: 520,
     intensity: 0.85,
     labels: [],
@@ -290,6 +293,25 @@ function close(
     width: min(100%, 36rem);
     justify-self: center;
   }
+  /* The cord's light spills onto the window's edge where it arrives: the top's middle when stacked, the left edge's
+     middle side by side, as `hero` ends it. */
+  .hero :global(.hero-window)::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 7rem;
+    height: 7rem;
+    translate: -50% -50%;
+    background: radial-gradient(
+      closest-side,
+      rgb(255 255 255 / 0.55),
+      color-mix(in srgb, var(--thread-violet) 40%, transparent) 35%,
+      transparent
+    );
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
   @media (min-width: 60rem) {
     .hero {
       grid-template-columns: minmax(0, 1fr) clamp(26rem, 31vw, 40rem);
@@ -298,6 +320,10 @@ function close(
     .hero :global(.hero-window) {
       width: 100%;
       justify-self: end;
+    }
+    .hero :global(.hero-window)::after {
+      top: 50%;
+      left: 0;
     }
   }
   .close {

@@ -35,26 +35,26 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('TAU', '6.283185307'),
     declare('PITCH', float(SHAPE.pitch)),
     declare('SWELL', float(SHAPE.swell)),
-    declare('OPENING', float(SHAPE.opening)),
+    declare('TAPER', float(SHAPE.taper)),
+    declare('GATHER', float(SHAPE.gather)),
     declare('WAVE', float(SHAPE.wave)),
     declare('FRAY', float(SHAPE.fray)),
     declare('RIBBONS', float(SHAPE.ribbons)),
     declare('RIBBON', float(SHAPE.ribbon)),
-    declare('REACH', float(SHAPE.reach)),
     declare('JOIN', float(SHAPE.join)),
     declare('JOINED', float(SHAPE.joined)),
     declare('SPIN', float(SHAPE.spin)),
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
-    declare('BRAID_LIGHT', float(0.18)),
+    declare('BRAID_LIGHT', float(0.22)),
     // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak.
     declare('PULSES', float(2.5)),
     declare('PULSE_SPEED', float(0.16)),
     declare('PULSE_LIGHT', float(2.2)),
     // How much of the bloom adds back, and how bright the flare is where the cord ends.
-    declare('BLOOM', float(1.4)),
-    declare('FLARE_LIGHT', float(1.6)),
+    declare('BLOOM', float(1.1)),
+    declare('FLARE_LIGHT', float(2.5)),
   ].join('\n')
 
 const commonWgsl = /* wgsl */ `
@@ -67,6 +67,17 @@ fn paint(pick: f32) -> vec3f {
   if (pick < 0.48) { return U[8].rgb; }
   if (pick < 0.8) { return U[9].rgb; }
   return U[10].rgb;
+}
+// The braid's strands: violet, amber, and violet toward silver, so it stays coloured rather than turning white.
+fn strandColour(strand: u32) -> vec3f {
+  if (strand == 2u) { return mix(U[8].rgb, U[10].rgb, 0.4); }
+  return U[8u + strand].rgb;
+}
+// Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
+// of it, so dense light keeps its hue; only the densest, where the cord ends, burns toward white.
+fn tone(hdr: vec3f) -> vec3f {
+  let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3f(1.0), smoothstep(2.0, 6.0, peak) * 0.85);
 }
 `
 
@@ -84,10 +95,10 @@ fn place(i: f32, u: f32) -> vec4f {
   let spread = U[2].z; let cord = U[2].w; let braid = U[3].x; let t = U[0].w;
   let ribbon = ribbonOf(i);
   let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
-  var lane = (centre + (hash(i + 0.5) - 0.5) * RIBBON) * REACH;
+  var lane = centre + (hash(i + 0.5) - 0.5) * RIBBON;
   var pin = -1.0;
   if (i < U[3].w) { let label = U[4u + u32(i)]; pin = label.x; lane = label.y; }
-  var joins = braid + (JOINED - braid) * min(1.0, 0.7 * abs(lane) / REACH + 0.3 * hash(i + 7.1));
+  var joins = braid + (JOINED - braid) * min(1.0, 0.7 * abs(lane) + 0.3 * hash(i + 7.1));
   if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
   let strand = i - 3.0 * floor(i / 3.0);
   let phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
@@ -99,7 +110,7 @@ fn place(i: f32, u: f32) -> vec4f {
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   let radius = cord * (1.0 + SWELL * a);
-  let width = radius + spread * pow(a, OPENING) * (1.0 + OPENING * u);
+  let width = radius + spread * (1.0 - TAPER * u) * (1.0 - smoothstep(GATHER, 1.0, u));
   var held = 1.0;
   if (pin >= 0.0) { let d = (u - pin) / 0.09; held = 1.0 - exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + phase) * 0.6 + sin(u * 9.0 - t * 0.23 + phase * 1.7) * 0.4;
@@ -131,7 +142,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   var pick = hash(i + 4.4);
   if (hash(i + 9.7) < 0.75) { pick = fract(ribbonOf(i) * 0.618034 + 0.05); }
   let strand = u32(i) % 3u;
-  let colour = mix(paint(pick), U[8u + strand].rgb, here.z);
+  let colour = mix(paint(pick), strandColour(strand), here.z);
   var brightness = 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
   if (i < U[3].w) { brightness = 1.0; }
   // Strands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
@@ -144,7 +155,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   out.clip = vec4f(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   out.colour = colour * brightness * shade * U[3].z;
   out.across = side;
-  out.pulse = u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * 0.35 + hash(ribbonOf(i) + 8.1);
+  out.pulse = u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.z);
   return out;
 }
 
@@ -259,7 +270,7 @@ fn fs(v: Screen) -> @location(0) vec4f {
   let hdr = textureLoad(light, vec2i(v.at.xy), 0).rgb
     + textureSample(bloom, filtering, v.uv).rgb * BLOOM
     + flare(distance(css, U[2].xy) / U[2].w);
-  let mapped = 1.0 - exp(-hdr * U[11].w);
+  let mapped = tone(hdr);
   let dither = (hash(v.at.x * 0.137 + v.at.y * 1.173) - 0.5) / 255.0;
   return vec4f(U[11].rgb + mapped + dither, 1.0);
 }
@@ -273,6 +284,11 @@ float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
 float ribbonOf(float i) { return floor(hash(i + 1.3) * RIBBONS); }
 float along(float fraction) { return 1.0 - pow(1.0 - fraction, CROWD); }
 vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb : U[10].rgb; }
+vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.4) : U[8 + strand].rgb; }
+vec3 tone(vec3 hdr) {
+  float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
+  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, vec3(1.0), smoothstep(2.0, 6.0, peak) * 0.85);
+}
 `
 
 export const threadVertexGlsl = /* glsl */ `${commonGlsl}
@@ -285,12 +301,12 @@ vec4 place(float i, float u) {
   float spread = U[2].z; float cord = U[2].w; float braid = U[3].x; float t = U[0].w;
   float ribbon = ribbonOf(i);
   float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
-  float lane = (centre + (hash(i + 0.5) - 0.5) * RIBBON) * REACH;
+  float lane = centre + (hash(i + 0.5) - 0.5) * RIBBON;
   float pin = -1.0;
   for (int k = 0; k < ${MAX_LABELS}; k++) {
     if (float(k) < U[3].w && float(k) == i) { pin = U[4 + k].x; lane = U[4 + k].y; }
   }
-  float joins = braid + (JOINED - braid) * min(1.0, 0.7 * abs(lane) / REACH + 0.3 * hash(i + 7.1));
+  float joins = braid + (JOINED - braid) * min(1.0, 0.7 * abs(lane) + 0.3 * hash(i + 7.1));
   if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
   float strand = mod(i, 3.0);
   float phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * 0.6;
@@ -302,7 +318,7 @@ vec4 place(float i, float u) {
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   float radius = cord * (1.0 + SWELL * a);
-  float width = radius + spread * pow(a, OPENING) * (1.0 + OPENING * u);
+  float width = radius + spread * (1.0 - TAPER * u) * (1.0 - smoothstep(GATHER, 1.0, u));
   float held = 1.0;
   if (pin >= 0.0) { float d = (u - pin) / 0.09; held = 1.0 - exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + phase) * 0.6 + sin(u * 9.0 - t * 0.23 + phase * 1.7) * 0.4;
@@ -330,7 +346,7 @@ void main() {
   vec2 pos = here.xy + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
   float pick = hash(i + 9.7) < 0.75 ? fract(ribbonOf(i) * 0.618034 + 0.05) : hash(i + 4.4);
-  vec3 colour = mix(paint(pick), U[8 + int(mod(i, 3.0))].rgb, here.z);
+  vec3 colour = mix(paint(pick), strandColour(int(mod(i, 3.0))), here.z);
   float brightness = i < U[3].w ? 1.0 : 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
   float facing = 0.15 + 0.85 * (0.5 + 0.5 * here.w);
   float shade = mix(1.0, facing * BRAID_LIGHT, here.z) * smoothstep(0.0, 0.06, u);
@@ -339,7 +355,7 @@ void main() {
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   vColour = colour * brightness * shade * U[3].z;
   vAcross = side;
-  vPulse = u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * 0.35 + hash(ribbonOf(i) + 8.1);
+  vPulse = u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.z);
 }
 `
 
@@ -419,7 +435,7 @@ vec3 flare(float r) { return ${flare('vec3')}; }
 void main() {
   vec2 css = vec2(gl_FragCoord.x, float(textureSize(light, 0).y) - gl_FragCoord.y) / U[0].z;
   vec3 hdr = texelFetch(light, ivec2(gl_FragCoord.xy), 0).rgb + texture(bloom, vUv).rgb * BLOOM + flare(distance(css, U[2].xy) / U[2].w);
-  vec3 mapped = 1.0 - exp(-hdr * U[11].w);
+  vec3 mapped = tone(hdr);
   float dither = (hash(gl_FragCoord.x * 0.137 + gl_FragCoord.y * 1.173) - 0.5) / 255.0;
   colour = vec4(U[11].rgb + mapped + dither, 1.0);
 }
