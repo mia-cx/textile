@@ -378,8 +378,9 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
           Math.sin(s * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4)
       : 0
   const spread = th.lane * width + sway
-  // The braid's swing fades faster than the strands part, so a strand coming loose straightens rather than crimps.
-  const held = (1 - loose) ** 3
+  // The braid's swing fades as the strands part, gone once they are two braid radii apart, so a strand coming loose
+  // straightens rather than crimps.
+  const held = (1 - loose) * Math.exp(-(((loose * width) / cord.radius) ** 2))
   const point: Point = [
     x + nx * braided * held + ax * spread * loose,
     y + ny * braided * held + ay * spread * loose,

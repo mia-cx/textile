@@ -48,6 +48,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('EDGES', float(SHAPE.edges)),
     declare('EDGE_LANES', float(SHAPE.edgeLanes)),
     declare('EDGE_STEP', float(SHAPE.edgeStep)),
+    declare('EDGE_SPREAD', float(SHAPE.edgeSpread)),
     declare('INNER', float(SHAPE.inner)),
     declare('EDGE_LIGHT', float(SHAPE.edgeLight)),
     declare('INNER_LIGHT', float(SHAPE.innerLight)),
@@ -92,9 +93,9 @@ const constants = (declare: (name: string, value: string) => string) =>
     // brightest on its band's edge fibres.
     declare('GLINTS', float(10)),
     declare('GLINT_SPEED', float(0.05)),
-    declare('GLINT_LIGHT', float(14)),
+    declare('GLINT_LIGHT', float(8)),
     // How dark a fibre is behind the braid, against in front of it.
-    declare('BACK', float(0.08)),
+    declare('BACK', float(0.2)),
     // How much of the bloom adds back, and how bright the flare is where the cord ends.
     declare('BLOOM', float(0.55)),
     declare('FLARE_LIGHT', float(2.5)),
@@ -127,7 +128,7 @@ fn fibre(i: f32, across: f32) -> vec3f {
   let bundle = (min(floor(inside * FIBRES), FIBRES - 1.0) + 0.5) / FIBRES;
   let jitter = select(
     INNER * (bundle * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * SPILL),
-    sign(across) * (1.0 - EDGE_STEP * min(floor((1.0 - reach) / EDGES * EDGE_LANES), EDGE_LANES - 1.0)),
+    sign(across) * (1.0 - EDGE_STEP * min(floor((1.0 - reach) / EDGES * EDGE_LANES), EDGE_LANES - 1.0) - hash(i + 9.1) * EDGE_SPREAD),
     edge,
   );
   return vec3f(jitter, select(0.0, 1.0, edge), hash(i + 4.7) * TAU);
@@ -135,7 +136,7 @@ fn fibre(i: f32, across: f32) -> vec3f {
 // How far from the spine a fibre lies, in braid radii, where its strand has turned twist and u along the fibre: its
 // strand's swing across the plait, and its place across its band. Mirrors band in geometry.ts.
 fn band(twist: f32, f: vec3f, u: f32) -> f32 {
-  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * pow(0.5 + 0.5 * sin(2.0 * twist), 2.0));
+  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
 }
 // How near the viewer a strand is where it has turned twist, -1 to 1: a plait's strand passes over one neighbour and
 // under the other as it swings across, so its depth turns twice as fast as its swing.
@@ -144,14 +145,17 @@ fn depthOf(twist: f32) -> f32 { return sin(2.0 * twist); }
 // inside it, and much more where its strand passes over than under, so the crossings read.
 fn braidLight(depth: f32, f: vec3f, own: f32) -> f32 {
   let front = 0.5 + 0.5 * depth;
-  return mix(INNER_LIGHT * own, EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
+  return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
 }
 // How brightly a fibre glints at depth: where its strand passes over its neighbour.
 fn glintLight(depth: f32, f: vec3f) -> f32 {
   let facing = max(depth, 0.0);
   let f2 = facing * facing;
-  return GLINT_LIGHT * f2 * f2 * f2 * mix(0.3, 1.0, f.y);
+  return GLINT_LIGHT * f2 * mix(0.15, 1.0, f.y);
 }
+// What a glint multiplies a fibre of this shade by, so it shines as bright as a band's edge whatever the fibre's own
+// light: a spark of its own, not a share of the fibre's.
+fn spark(shade: f32) -> f32 { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
 // of it, so dense light keeps its hue; only the densest, at the braid's crossings and where the cord ends, burns toward
 // a warm white, as hot filament does.
@@ -290,7 +294,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   );
   out.glint = vec2f(
     u * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7),
-    glintLight(here.depth, th.fibre) * here.braided,
+    glintLight(here.depth, th.fibre) * here.braided * spark(shade),
   );
   return out;
 }
@@ -431,23 +435,24 @@ vec3 fibre(float i, float across) {
   float inside = (across / (1.0 - EDGES) + 1.0) / 2.0;
   float bundle = (min(floor(inside * FIBRES), FIBRES - 1.0) + 0.5) / FIBRES;
   float jitter = edge
-    ? sign(across) * (1.0 - EDGE_STEP * min(floor((1.0 - reach) / EDGES * EDGE_LANES), EDGE_LANES - 1.0))
+    ? sign(across) * (1.0 - EDGE_STEP * min(floor((1.0 - reach) / EDGES * EDGE_LANES), EDGE_LANES - 1.0) - hash(i + 9.1) * EDGE_SPREAD)
     : INNER * (bundle * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * SPILL);
   return vec3(jitter, edge ? 1.0 : 0.0, hash(i + 4.7) * TAU);
 }
 float band(float twist, vec3 f, float u) {
-  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * pow(0.5 + 0.5 * sin(2.0 * twist), 2.0));
+  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
 }
 float depthOf(float twist) { return sin(2.0 * twist); }
 float braidLight(float depth, vec3 f, float own) {
   float front = 0.5 + 0.5 * depth;
-  return mix(INNER_LIGHT * own, EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
+  return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
 }
 float glintLight(float depth, vec3 f) {
   float facing = max(depth, 0.0);
   float f2 = facing * facing;
-  return GLINT_LIGHT * f2 * f2 * f2 * mix(0.3, 1.0, f.y);
+  return GLINT_LIGHT * f2 * mix(0.15, 1.0, f.y);
 }
+float spark(float shade) { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[10].w;
   return mix(hdr * U[10].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3')}, smoothstep(2.5, 6.0, peak) * WHITE_HOT);
@@ -540,7 +545,7 @@ void main() {
     u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
     mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, here.braided)
   );
-  vGlint = vec2(u * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * here.braided);
+  vGlint = vec2(u * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * here.braided * spark(shade));
 }
 `
 
@@ -734,8 +739,9 @@ fn place(th: Thread, k: f32) -> Placed {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
   let spread = th.lane * b.z + sway;
-  // The braid's swing fades faster than the strands part, so a strand coming loose straightens rather than crimps.
-  let held = (1.0 - loose) * (1.0 - loose) * (1.0 - loose);
+  // The braid's swing fades as the strands part, gone once they are two braid radii apart, so a strand coming loose
+  // straightens rather than crimps.
+  let held = (1.0 - loose) * exp(-pow(loose * b.z / radius, 2.0));
   return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
 }
 
@@ -786,7 +792,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
     run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * here.loose,
     mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose),
   );
-  out.glint = vec2f(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * braided);
+  out.glint = vec2f(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * braided * spark(shade));
   return out;
 }
 `
@@ -842,7 +848,7 @@ Placed place(Thread th, float k) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
   float spread = th.lane * b.z + sway;
-  float held = (1.0 - loose) * (1.0 - loose) * (1.0 - loose);
+  float held = (1.0 - loose) * exp(-pow(loose * b.z / radius, 2.0));
   return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
 }
 
@@ -885,6 +891,6 @@ void main() {
   vColour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   vAcross = side;
   vPulse = vec2(run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * here.loose, mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
-  vGlint = vec2(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * braided);
+  vGlint = vec2(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * braided * spark(shade));
 }
 `

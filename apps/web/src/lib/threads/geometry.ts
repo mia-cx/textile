@@ -69,8 +69,8 @@ export const SHAPE = {
    * fibres, `fray` braid radii either side of its centre where it passes in front, and `flat` of that where it passes
    * behind: a band swells as it swings out over its neighbours, so the braid's outline bulges at every crossing.
    */
-  fray: 0.6,
-  flat: 0.15,
+  fray: 0.75,
+  flat: 0.5,
   /**
    * The share of a band's fibres that run along its two edges, in `edgeLanes` close lanes `edgeStep` apart (in the
    * band's -1 to 1): crisp, bright lines, each fibre still visible, around the dimmer fibres inside. Those spread over
@@ -78,14 +78,16 @@ export const SHAPE = {
    */
   edges: 0.36,
   edgeLanes: 3,
-  edgeStep: 0.1,
+  edgeStep: 0.14,
+  /** How far an edge fibre strays inward from its lane: a little, so each lane reads as a few fibres, not one stroke. */
+  edgeSpread: 0.05,
   inner: 0.8,
   fibres: 24,
   /** How far an inner fibre strays from its bundle, in the band's units: little, so each bundle reads as one fine fibre. */
   spill: 0.04,
   /** How bright a band's edge fibres and its inner fibres are in the braid, against their brightness in the funnel. */
   edgeLight: 1.5,
-  innerLight: 0.45,
+  innerLight: 0.75,
   /**
    * How far an inner fibre drifts across its band, in the same units as its place in it (-1 to 1), and how fast, in
    * radians per unit along the thread: about one and a half slow waves over the braid, so fibres cross inside each
@@ -251,7 +253,8 @@ export const fibre = (i: number, across: number) => {
             Math.min(
               Math.floor(((1 - reach) / SHAPE.edges) * SHAPE.edgeLanes),
               SHAPE.edgeLanes - 1,
-            ))
+            ) -
+          hash(i + 9.1) * SHAPE.edgeSpread)
       : SHAPE.inner * (bundle * 2 - 1 + (hash(i + 8.3) - 0.5) * SHAPE.spill),
     drift: hash(i + 4.7) * TAU,
   }
@@ -277,7 +280,7 @@ export const band = (twist: number, jitter: number, edge: boolean, along: number
   Math.sin(twist) +
   (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
     SHAPE.fray *
-    (SHAPE.flat + (1 - SHAPE.flat) * ((1 + Math.sin(2 * twist)) / 2) ** 2)
+    (SHAPE.flat + ((1 - SHAPE.flat) * (1 + Math.sin(2 * twist))) / 2)
 
 /** About how long the spine is, in pixels: between its chord and its control polygon. Mirrors the shaders. */
 const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
@@ -347,6 +350,7 @@ export const warmth = (field: Field, i: number, u: number, t: number, braided: n
 export const brightness = (field: Field, i: number, braided = 0) => {
   const own =
     i < field.labels.length ? SHAPE.labelled : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** 3
-  const inBand = thread(field, i).edge ? SHAPE.edgeLight : SHAPE.innerLight * own
+  // Inside a band the fibres glow more evenly than in the funnel: the cube root of their own brightness.
+  const inBand = thread(field, i).edge ? SHAPE.edgeLight : SHAPE.innerLight * Math.cbrt(own)
   return own + (inBand - own) * braided
 }
