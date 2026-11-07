@@ -239,21 +239,26 @@ function hero(
   }
 }
 
-/** The close: threads braiding into the sign-in button. Only side by side; stacked, the close shows no field. */
+/**
+ * The close: threads braiding into the sign-in button, as the hero's braid into its window. They gather into loose ropes
+ * from a tenth of the way along, curl and take the band's look from 40%, and the plait is whole only at the button,
+ * thinnest there: it ends just short of the button's edge, a hot point, and lights the button (`.cord-lit`). Only side
+ * by side; stacked, the close shows no field.
+ */
 function close(
   { width, height }: { width: number; height: number },
   target: DOMRect | undefined,
 ): Field {
   const end: Point = target
-    ? [target.x + 2, target.y + target.height / 2]
+    ? [target.x - TIP_GAP, target.y + target.height / 2]
     : [width * 0.6, height * 0.6]
   return {
     start: [-width * 0.08, height * 0.5],
     control: [end[0] * 0.55, end[1]],
     end,
     spread: height * 0.5,
-    cord: 9,
-    braid: [0.15, 0.35, 0.92],
+    cord: 3,
+    braid: [0.1, 0.4, 1],
     count: 520,
     intensity: 0.85,
     labels: [],
@@ -278,7 +283,7 @@ function close(
       </div>
     </div>
     <!-- The window clips its contents, so the rim flare where the cord arrives lives on this frame around it. -->
-    <div class="hero-window" data-weave-start>
+    <div class="hero-window cord-lit" data-weave-start>
       <Window bind:window={heroWindow} channel="standup" label="Your bot at work in Discord" class="hero-card">
         <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
         <Message author="Weaver" bot time="Today at 9:12 AM" used={{ by: 'you', command: '/standup' }}>
@@ -357,7 +362,7 @@ function close(
         Textile is in closed alpha. Sign in with Discord to check your access.
       </p>
       <div class="actions">
-        <a bind:this={signIn} class="button button-primary" href="/login" data-sveltekit-reload>
+        <a bind:this={signIn} class="button button-primary cord-lit" href="/login" data-sveltekit-reload>
           <DiscordLogo />Sign in with Discord
         </a>
         <a class="button button-secondary" href="/docs/tools/">See every MCP tool</a>
@@ -477,25 +482,27 @@ function close(
     width: min(100%, 36rem);
     justify-self: center;
   }
-  /* The cord's light falls on the window where it arrives (`--tip`): the top's middle when stacked, the left edge's
-     middle side by side, as `hero` ends it. It falls off as the inverse square of the distance from the cord's end,
-     1.8 / (1 + (r / reach)²) in the stops below, clipped at full strength: bright along the rim, which faces the cord,
-     and faint across the face beside it, which the light only grazes. White nearest the cord, as the tone map burns the
-     hottest light white, and violet beyond. Both layers sit above the window. */
-  .hero-window {
+  /* A cord's light falls on what it arrives at (`--tip`): the hero window, at its top's middle when stacked and its left
+     edge's middle side by side, as `hero` ends it; the close's sign-in button, at its left edge's middle. It falls off
+     as the inverse square of the distance from the cord's end, 1.8 / (1 + (r / reach)²) in the stops below, clipped at
+     full strength: bright along the rim, which faces the cord, and faint across the face beside it, which the light
+     only grazes. White nearest the cord, as the tone map burns the hottest light white, and violet beyond. Both layers
+     sit above the element. */
+  .cord-lit {
     --tip: 50% 0;
     /* About the cord's width where it arrives: light from all of it, not from a point. */
     --reach: 3.5rem;
     --hot: #fff3ea;
     --lit: color-mix(in srgb, var(--thread-violet) 70%, white);
+    --lit-radius: 1.125rem;
   }
-  .hero-window::before,
-  .hero-window::after {
+  .cord-lit::before,
+  .cord-lit::after {
     content: '';
     position: absolute;
     z-index: 1;
     inset: 0;
-    border-radius: 1.125rem;
+    border-radius: var(--lit-radius);
     background: radial-gradient(
       circle at var(--tip),
       var(--hot) 0,
@@ -512,11 +519,11 @@ function close(
     pointer-events: none;
   }
   /* The face, lit at a grazing angle: far fainter than the rim. */
-  .hero-window::before {
+  .cord-lit::before {
     opacity: 0.1;
   }
-  /* The rim: the same light on the window's border alone, masked to a ring as wide as the border. */
-  .hero-window::after {
+  /* The rim: the same light on the border alone, masked to a ring as wide as the border. */
+  .cord-lit::after {
     padding: 2px;
     mask:
       linear-gradient(#000 0 0) content-box exclude,
@@ -564,6 +571,20 @@ function close(
   }
   .close h2 {
     font-size: clamp(2.5rem, 1.3rem + 3.6vw, 5.5rem);
+  }
+  /* The close's cord ends at its sign-in button's left edge and lights it, as the hero's lights its window: a smaller
+     reach, as the cord arrives thinner. Only side by side, where the close draws its threads. */
+  .close .cord-lit {
+    position: relative;
+    --tip: 0 50%;
+    --reach: 2.5rem;
+    --lit-radius: var(--radius-pill);
+  }
+  @media (max-width: 59.99rem) {
+    .close .cord-lit::before,
+    .close .cord-lit::after {
+      content: none;
+    }
   }
   @media (min-width: 60rem) {
     .close-copy {
