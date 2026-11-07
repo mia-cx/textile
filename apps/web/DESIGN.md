@@ -73,28 +73,42 @@ rail.
 ## The thread field
 
 `src/lib/threads/`. One geometry (`geometry.ts`) runs everywhere: in WGSL for WebGPU, in GLSL for WebGL2, and on the CPU
-for event labels, the 2D fallback, the section strands, and the social card.
+for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.ts`) runs the same braid down the page.
 
 - Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel whose
-  nearly straight edges close in steadily until they meet the braid's outline, tangent to it, where the braid is whole,
-  so there is no knee, no waist, and no straight run. They travel in eleven ribbons, narrower than the gaps between
-  them, that share a lane, a sway, and a colour (golden-ratio steps, so neighbours differ: silver at the edges, amber
-  among violet toward the middle), so the funnel reads as separate strands of fibre on the dark.
-- Across `braid`, threads keep leaving the funnel for a three-strand braid inside it, inner lanes mostly first and the
-  outermost last. The hero measures it from its layout, again when webfonts load: threads behind the headline,
-  subline, and buttons stay loose, the braid forms in the open gap between the copy's right edge and the window's left
-  edge, at every width, and it is whole only for the last tenth of that gap. Each thread eases in over a share of the
-  gap, with no corner. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord`
-  and keeps one helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing has room, twisting
-  tighter as it goes to meet the target at its thinnest. The hero's cord stops just short of the window; the window
+  nearly straight edges close in steadily until they meet the braid's outline, tangent to it, so there is no knee, no
+  waist, and no straight run. They travel in eleven loose bundles of varying width that share a lane, a sway, and
+  mostly a colour (golden-ratio steps, so neighbours differ). Most fibres hug their bundle and a few fray far from it
+  on slow curves of their own, and one thread in sixteen strays between bundles, so the bundles read as loose fibre,
+  not cables.
+- `braid` holds three points along the field. From `gathers`, the bundles start gathering into three strands side by
+  side, inner lanes mostly first; from `forms`, the strands grow their swing into a plait over half the stretch to
+  `whole`, and every thread has joined its strand by 70% of it. The hero measures them from its layout, again when
+  webfonts load: the bundles start to gather behind the copy, 1.2 gaps before its right edge; the plait forms only in
+  the open gap between the copy and the window, at every width; and it is whole where it meets the window. Each thread
+  eases in with no corner, so the plait has no visible start. The braid narrows linearly to `cord` and keeps one helix
+  angle, a long pitch of 11 radii per twist (about 34°), so each crossing has room, twisting tighter as it goes to meet
+  the target at its thinnest. The hero's cord stops just short of the window; the window
   drops its black shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping
   can't cut, takes the cord's light: on its rim, which faces the cord, and faintly across its face, falling off as the
   inverse square of the distance from the cord's end.
+- Only violet and amber: every thread runs violet to amber and back along its length, the gradient flowing toward the
+  target, faster in the plait (10 cycles per field length against 2.4 in the current). As threads gather they take
+  their strand's phase, a third of a cycle from its neighbours', so each band shows both colours and no band is one
+  colour. The rate is integrated along the field, so the colour never sweeps where it changes. Every strand breathes:
+  a slow wave of light (±22%) and warmth, about six seconds long, travelling toward the target.
 - The threads emit light, in linear units with real range: a lone fibre in the current gives about 0.1, the braid's
-  bands a few times that, and glints, sparks on a fifth of the braid's fibres, a few hundred times. Each thread is one
-  instance, a triangle strip of 201 point pairs (crowded toward the end, where the braid twists tightest) widened 2px
-  for its own halo. Pulses of light run along every thread toward the target, at its own phase in the funnel and in
-  step within the braid, so they travel along it. Threads add their light into a half-float target.
+  bands a few times that, and glints a few hundred times. Glints spark on a fifth of the braid's fibres where a strand
+  passes over its neighbour, and on loose fibres too, at one place in a hundred, at the same intensity, so they bloom.
+  Each thread is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the braid twists
+  tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its own phase in
+  the funnel and in step within the braid, so they travel along it. Threads add their light into a half-float target.
+- The lead: six fibres that burn five times brighter than the brightest of the rest, on a lane of their own inside the
+  labelled threads, in clear dark above the headline. They gather into the top strand and ride its band's edge through
+  the plait. The page's cord carries the hero's strands on as themselves: its thread `i` is the hero's thread `i`, in
+  the same strand, with the same fibre, and it picks up the hero's twist, colour, and drift where the hero's cord meets
+  the window, carried on behind the window to its bottom. So the lead runs down the whole cord, on its strand's side as
+  the strands part behind each section, and on into the strand that leaves the cord where it comes apart in voice.
 - 6% of the light scatters into glare, as in a lens or the air: a chain of seven bloom targets from a quarter of the
   CSS size down, each halving the last with a 13-tap filter, then added back up through a tent, an equal share per
   octave. That sums to a glare falling off as `1 / (1 + (r / 4.7px)²)` out to about 500px: a tight core, a long faint
@@ -114,9 +128,11 @@ for event labels, the 2D fallback, the section strands, and the social card.
 - The hero carries 560 threads above 1600px, 440 below, and 280 on phones, where they come down into the top of the
   window. The close carries 520 and shows only side by side, where it has room beside its copy.
 
-Between, each section's event runs as a small SVG bundle of the same geometry across the page above its heading, braiding
-into a knot beside the event's name. A CSS view timeline draws the threads in as the section rises; the cron knots light
-the same way. Without scroll timelines, or with reduced motion, everything is simply drawn.
+Between, the cord (`Weave`) leaves the hero window's bottom and carries the braid down the page on the GPU, as the hero
+draws it: it gathers in the gap above each section, with the section's event on its knot, and comes apart behind the
+section into loose strands, each keeping its colour, dimmed under the prose. It draws down ahead of the reader on a
+scroll timeline; without scroll timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds
+still.
 
 Measured in Chromium 156 on an RTX 3070 (Vulkan), hero on screen at 2000×1100:
 
@@ -140,7 +156,7 @@ that works without any effect.
 | Component | What it is |
 | --- | --- |
 | `threads/ThreadField` | The live field, braiding into `target`; `layout` places it per size. |
-| `threads/Strands` | A section's small SVG bundle. |
+| `threads/Weave` | The cord down the page, carrying on the hero's strands from `seam`. |
 | `Section` | Heading and prose beside the product, with its event above. |
 | `discord/Window`, `discord/Message` | A Discord channel and its messages, as real DOM. |
 | `demos/*` | Publish, Slash, Schedule, Webhook, Script, Voice. |

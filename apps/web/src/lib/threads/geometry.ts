@@ -200,18 +200,19 @@ export const SHAPE = {
   /**
    * The lead: a few fibres that burn `traced` times brighter than the brightest of the rest, all the way along, so the
    * eye can follow one strand from the current through the braid and down the page. They are threads `traceFirst` on,
-   * `traceCount` of them, with ribbon `traceRibbon`'s colour, on a lane of their own between the bundles, `traceLane`
-   * across the current and `traceHalf` wide, so the dark shows either side of them; in the braid they ride their
-   * strand's edge, `trace` across its band and inward in steps of `traceStep`.
+   * `traceCount` of them, with ribbon `traceRibbon`'s colour, on a lane of their own, `traceLane` across the current
+   * and `traceHalf` wide: high, inside the labelled threads, so it runs in clear dark above the hero's headline before
+   * it gathers into the top strand. In the braid they ride their strand's edge, `trace` across its band and inward in
+   * steps of `traceStep`.
    */
   traceFirst: 4,
   traceCount: 6,
   traceRibbon: 1,
-  traceLane: -0.6,
+  traceLane: -0.8,
   traceHalf: 0.02,
   trace: 0.98,
   traceStep: 0.04,
-  traced: 3,
+  traced: 5,
 } as const
 
 /** The same hash the shaders use: a thread's index to a stable pseudo-random number in [0, 1). */
