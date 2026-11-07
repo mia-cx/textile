@@ -91,11 +91,13 @@ const constants = (declare: (name: string, value: string) => string) =>
     // Glints in the braid: specular sparkles where a fibre catches the light, `GLINTS` along each thread's length,
     // travelling with the flow (thread lengths per second). They show where a strand passes over its neighbour,
     // brightest on its band's edge fibres.
-    declare('GLINTS', float(10)),
+    declare('GLINTS', float(12)),
     declare('GLINT_SPEED', float(0.05)),
-    declare('GLINT_LIGHT', float(8)),
+    declare('GLINT_LIGHT', float(11)),
     // How dark a fibre is behind the braid, against in front of it.
     declare('BACK', float(0.2)),
+    // How much of its warmth a strand keeps right at the back of the braid.
+    declare('COOL', float(0.35)),
     // How much of the bloom adds back, and how bright the flare is where the cord ends.
     declare('BLOOM', float(0.55)),
     declare('FLARE_LIGHT', float(2.5)),
@@ -151,11 +153,14 @@ fn braidLight(depth: f32, f: vec3f, own: f32) -> f32 {
 fn glintLight(depth: f32, f: vec3f) -> f32 {
   let facing = max(depth, 0.0);
   let f2 = facing * facing;
-  return GLINT_LIGHT * f2 * mix(0.15, 1.0, f.y);
+  return GLINT_LIGHT * f2 * mix(0.2, 1.0, f.y);
 }
 // What a glint multiplies a fibre of this shade by, so it shines as bright as a band's edge whatever the fibre's own
 // light: a spark of its own, not a share of the fibre's.
 fn spark(shade: f32) -> f32 { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
+// How warm a strand braided (0 to 1) into the braid is at depth, from its warmth w: a gold strand falling behind its
+// neighbours leans violet, as the concept's do, rather than darkening to brown.
+fn cool(w: f32, depth: f32, braided: f32) -> f32 { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
 // of it, so dense light keeps its hue; only the densest, at the braid's crossings and where the cord ends, burns toward
 // a warm white, as hot filament does.
@@ -199,7 +204,10 @@ fn fs(v: Out) -> @location(0) vec4f {
   let d = abs(v.across) * ${HALF_WIDTH};
   let core = exp(-(d * d) / 0.3);
   let halo = 0.1 * exp(-(d * d) / 1.6);
-  return vec4f(v.colour * (core + halo) * (pulse(v.pulse.x, v.pulse.y) + glint(v.glint.x) * v.glint.y), 1.0);
+  // A glint adds warm-white light of its own, as bright as the fibre's strongest channel, so it burns white over a band
+  // whose own colour is already saturated, rather than adding more of that colour.
+  let spark = ${WARM_WHITE('vec3f')} * max(v.colour.r, max(v.colour.g, v.colour.b)) * glint(v.glint.x) * v.glint.y;
+  return vec4f((v.colour * pulse(v.pulse.x, v.pulse.y) + spark) * (core + halo), 1.0);
 }`
 
 export const threadWgsl = /* wgsl */ `${commonWgsl}
@@ -276,7 +284,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   var pick = hash(i + 4.4);
   if (hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
   let flow = u * GRADIENT * mix(1.0, BRAID_GRADIENT, here.braided) - U[0].w * FLOW;
-  let colour = mix(U[8].rgb, U[9].rgb, warmth(flow + mix(pick, th.strand / 3.0, here.braided)));
+  let colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided));
   var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   if (i < U[3].w) { own = LABELLED; }
   // Bands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
@@ -450,9 +458,10 @@ float braidLight(float depth, vec3 f, float own) {
 float glintLight(float depth, vec3 f) {
   float facing = max(depth, 0.0);
   float f2 = facing * facing;
-  return GLINT_LIGHT * f2 * mix(0.15, 1.0, f.y);
+  return GLINT_LIGHT * f2 * mix(0.2, 1.0, f.y);
 }
 float spark(float shade) { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
+float cool(float w, float depth, float braided) { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
 vec3 tone(vec3 hdr) {
   float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[10].w;
   return mix(hdr * U[10].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3')}, smoothstep(2.5, 6.0, peak) * WHITE_HOT);
@@ -533,7 +542,7 @@ void main() {
 
   float pick = hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
   float flow = u * GRADIENT * mix(1.0, BRAID_GRADIENT, here.braided) - U[0].w * FLOW;
-  vec3 colour = mix(U[8].rgb, U[9].rgb, warmth(flow + mix(pick, th.strand / 3.0, here.braided)));
+  vec3 colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided));
   float own = i < U[3].w ? LABELLED : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float shade = mix(own, braidLight(here.depth, th.fibre, own), here.braided) * smoothstep(0.0, 0.06, u);
 
@@ -569,8 +578,8 @@ float glint(float phase) {
 }
 void main() {
   float d = abs(vAcross) * ${HALF_WIDTH};
-  float light = pulse(vPulse.x, vPulse.y) + glint(vGlint.x) * vGlint.y;
-  colour = vec4(vColour * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)) * light, 1.0);
+  vec3 spark = ${WARM_WHITE('vec3')} * max(vColour.r, max(vColour.g, vColour.b)) * glint(vGlint.x) * vGlint.y;
+  colour = vec4((vColour * pulse(vPulse.x, vPulse.y) + spark) * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)), 1.0);
 }
 `
 
@@ -683,6 +692,9 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     declare('FADE', float(224)),
     // How bright loose strands are, behind a section, and how much of that shows behind its prose.
     declare('LOOSE_LIGHT', float(0.55)),
+    // How soon a strand's pulses fall out of step with the braid's as it comes loose: early, so they never line up in
+    // rows across the parting strands.
+    declare('PULSE_SPREAD', float(8)),
     declare('COPY_LIGHT', float(0.2)),
   ].join('\n')
 
@@ -777,7 +789,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   if (hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
   let run = here.s / DRIFT_SPAN;
   let flow = run * GRADIENT * mix(1.0, BRAID_GRADIENT, braided) - U[0].w * FLOW;
-  let colour = mix(U[8].rgb, U[9].rgb, warmth(flow + mix(pick, th.strand / 3.0, braided)));
+  let colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, braided));
   let own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   let shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), braided);
   // The cord fades out over FADE above its tip, and dims behind prose.
@@ -789,7 +801,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   out.colour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   out.across = side;
   out.pulse = vec2f(
-    run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * here.loose,
+    run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0),
     mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose),
   );
   out.glint = vec2f(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * braided * spark(shade));
@@ -881,7 +893,7 @@ void main() {
   float pick = hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
   float run = here.s / DRIFT_SPAN;
   float flow = run * GRADIENT * mix(1.0, BRAID_GRADIENT, braided) - U[0].w * FLOW;
-  vec3 colour = mix(U[8].rgb, U[9].rgb, warmth(flow + mix(pick, th.strand / 3.0, braided)));
+  vec3 colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, braided));
   float own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), braided);
   float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
@@ -890,7 +902,7 @@ void main() {
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   vColour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   vAcross = side;
-  vPulse = vec2(run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * here.loose, mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
+  vPulse = vec2(run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0), mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
   vGlint = vec2(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * braided * spark(shade));
 }
 `
