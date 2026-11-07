@@ -338,25 +338,19 @@ const ribbonPick = (ribbon: number) => {
 }
 
 /**
- * How warm a strand `braided` (0 to 1) into the braid is at `depth`, from its warmth `w`: a gold strand falling
- * behind its neighbours leans violet, as the concept's do, rather than darkening to brown. Mirrors `cool` in the shaders.
- */
-export const cool = (w: number, depth: number, braided: number) =>
-  w * (1 + (SHAPE.cool + (1 - SHAPE.cool) * (0.5 + 0.5 * depth) - 1) * braided)
-
-/**
  * How warm thread `i` is at `u` along it and time `t`: 0 violet, 1 amber. Every thread runs violet to amber and back,
- * the gradient flowing toward the end; in the funnel most share their ribbon's phase, in the braid their strand's, and
- * a strand behind the braid's others leans violet. Mirrors `warmth` and its use, through `cool`, in the shaders;
- * `braided` is how far into the braid `u` is, 0 to 1.
+ * the gradient flowing toward the end; in the funnel most share their ribbon's phase, in the braid their strand's.
+ * Mirrors `warmth` and its use in the shaders; `braided` is how far into the braid `u` is, 0 to 1. The shaders then
+ * shade the braid by depth, leaning a gold strand violet behind its neighbours (`cool`), lighting the bands in front,
+ * and sparking glints; the 2D renderers stroke in pieces too long to follow the braid's depth, so they leave all of that
+ * out rather than band the braid into seams.
  */
 export const warmth = (field: Field, i: number, u: number, t: number, braided: number) => {
   const { ribbon, strand } = thread(field, i)
   const pick = hash(i + 9.7) < SHAPE.coherence ? ribbonPick(ribbon) : hash(i + 4.4)
   const rate = SHAPE.gradient * (1 + (SHAPE.braidGradient - 1) * braided)
   const phase = u * rate - t * SHAPE.flow + pick + (strand / 3 - pick) * braided
-  const w = smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
-  return cool(w, Math.sin(2 * twistOf(field, strand, u, t)), braided)
+  return smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
 }
 
 /**

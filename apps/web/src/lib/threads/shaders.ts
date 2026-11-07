@@ -164,7 +164,8 @@ fn glintLight(depth: f32, f: vec3f) -> f32 {
 // light: a spark of its own, not a share of the fibre's.
 fn spark(shade: f32) -> f32 { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
 // How warm a strand braided (0 to 1) into the braid is at depth, from its warmth w: a gold strand falling behind its
-// neighbours leans violet, as the concept's do, rather than darkening to brown. Mirrors cool in geometry.ts.
+// neighbours leans violet, as the concept's do, rather than darkening to brown. Shading only: the 2D renderers leave it
+// out (see warmth in geometry.ts).
 fn cool(w: f32, depth: f32, braided: f32) -> f32 { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
 // of it, so dense light keeps its hue; only the densest, at the braid's crossings and where the cord ends, burns toward
