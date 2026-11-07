@@ -82,8 +82,9 @@ for event labels, the 2D fallback, the section strands, and the social card.
   reads as separate strands of fibre on the dark.
 - Across `braid`, threads keep leaving the funnel for a three-strand braid inside it, inner lanes mostly first and the
   outermost last. The hero measures it from its layout: threads behind the headline, subline, and buttons stay loose,
-  the braid forms in the open gap between the copy's right edge and the window's left edge, and it is whole only for
-  the last fifth of that gap. A gap too narrow to turn in gently borrows a little from behind the copy's edge. Its
+  the braid forms in the open gap between the copy's right edge and the window's left edge, at every width, and it is
+  whole only for the last tenth of that gap. Each thread's turn scales with the gap, so a narrow one turns threads in
+  no tighter, against the plait's own turns, than a wide one. Its
   strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one long helix
   angle (11 radii per twist), so each crossing has room, twisting tighter as it goes to meet the target at its
   thinnest. The hero's cord stops just short of the window; the window drops its black shadow there, so the cord's end
