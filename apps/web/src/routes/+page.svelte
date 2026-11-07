@@ -478,13 +478,29 @@ function close(
   }
   @media (min-width: 60rem) {
     .hero {
-      grid-template-columns: minmax(0, 1fr) clamp(26rem, 31vw, 40rem);
-      gap: clamp(3rem, 8vw, 12rem);
+      grid-template-columns: minmax(0, 1fr) clamp(26rem, 36vw, 50rem);
+      gap: clamp(3rem, 7vw, 10rem);
     }
     .hero-window {
       --tip: 0 50%;
       width: 100%;
       justify-self: end;
+    }
+    /* Beside the headline the window is the hero's other half, so it carries the same weight: the channel keeps room
+       above its two messages, as a real channel's history does, and on wider screens its whole Discord UI scales up
+       with the headline. Not so far that the gap where the braid forms closes. */
+    .hero-window :global(.hero-card .messages) {
+      min-height: 15rem;
+    }
+  }
+  @media (min-width: 90rem) {
+    .hero-window :global(.hero-card) {
+      zoom: 1.15;
+    }
+  }
+  @media (min-width: 110rem) {
+    .hero-window :global(.hero-card) {
+      zoom: 1.35;
     }
   }
   .close {
