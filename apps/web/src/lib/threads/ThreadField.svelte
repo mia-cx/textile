@@ -234,7 +234,7 @@ onMount(() => {
     font-size: 0.9375rem;
     letter-spacing: 0.01em;
     white-space: nowrap;
-    /* A tight halo of the page's ink around each glyph, as a map labels over its roads: threads sway, so now and then
+    /* A tight halo of the page's paper around each glyph, as a map labels over its roads: threads sway, so now and then
        one passes behind a name, and there it runs under the letters instead of striking them through. */
     text-shadow:
       0 0 1px var(--paper),
