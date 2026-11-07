@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte'
 import { type Field, position } from './geometry'
-import { type Palette, type Renderer, type RGB, still, webgl2, webgpu } from './renderer'
+import { hex, type Palette, type Renderer, type RGB, still, webgl2, webgpu } from './renderer'
 
 /**
  * A live field of luminous threads that braid into `target`, drawn with WebGPU, else WebGL2, else one still canvas 2D
@@ -38,11 +38,6 @@ const MAX_STEP = 0.1
 /** How many lost GPU devices the field replaces before it stops asking for WebGPU. */
 const MAX_GPU_RECOVERIES = 1
 
-/** `#rrggbb`, as the thread tokens are written. */
-const hex = (value: string): RGB => {
-  const channel = (at: number) => Number.parseInt(value.trim().slice(at, at + 2), 16) / 255
-  return [channel(1), channel(3), channel(5)]
-}
 /** `rgb(r, g, b)`, as computed styles report colours. */
 const rgb = (value: string): RGB => {
   const [r = 0, g = 0, b = 0] = (value.match(/[\d.]+/g) ?? []).map(Number)

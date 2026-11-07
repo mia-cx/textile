@@ -4,7 +4,8 @@ import type { Snippet } from 'svelte'
 /**
  * One part of the landing page's story: the heading and a few sentences, and the product doing that thing. `children`
  * is the prose; `demo` is the product. `event` names what runs it: side by side, the page's cord (Weave) carries it to
- * the demo; stacked, it sits above the demo on a short thread.
+ * the demo, coming apart behind the section and dimming under its prose; stacked, it sits above the demo on a short
+ * thread.
  *
  * `layout` places the two on a wide screen, so neighbouring parts never share a shape; stacked, every part reads the
  * same, heading first:
@@ -33,7 +34,7 @@ let {
 </script>
 
 <section class="section" data-layout={layout} aria-labelledby={id} data-weave-label={event}>
-  <div class="prose">
+  <div class="prose" data-weave-copy>
     <h2 {id}>{title}</h2>
     {@render children()}
   </div>

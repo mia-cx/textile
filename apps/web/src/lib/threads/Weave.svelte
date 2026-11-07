@@ -1,136 +1,251 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import { type Stop, weave } from './weave'
+import { type Box, type Cord, type Stop, weave } from './cord'
+import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
+import { hex, type Palette } from './renderer'
 
 /**
- * The hero's cord carried on down the page: it leaves the bottom of `[data-weave-start]`, and for each section that
- * names its event in `data-weave-label`, crosses the gap above it and enters the section's `[data-weave]` element on
- * the side that attribute names (`top` at `data-weave-at` along it, or `left`, level with any `[data-weave-y]` inside),
- * with the event's name on a knot where it enters, then comes out of that element's bottom: below the entry, or below
- * its middle from the side. Mark the whole column of panels the cord should pass behind, so it never shows between
- * them. Panels sit above the cord.
+ * The hero's cord carried on down the page: it leaves the bottom of `[data-weave-start]` braided, and for each section
+ * that names its event in `data-weave-label`, gathers in the gap above it, with the event's name on a knot there, then
+ * comes apart behind the section into loose ribbons of fibre across its width, dimmed behind its `[data-weave-copy]`, and gathers again
+ * in the gap below. The gap's knot sits over the section's `[data-weave]` element: above `data-weave-at` along its top,
+ * or, with `data-weave="left"`, just left of it. Panels sit above the cord.
  *
  * A strand peels off into each `[data-weave-end]` in a section, to its left edge, or with `data-weave-end="window"`, to
  * the left edge of the Discord window around it: from the right edge of the section's `[data-weave-split]`, or, with no
- * split, from the entry, where the cord comes apart into its strands and ends.
+ * split, from where the cord enters the `[data-weave]` element, where it comes apart into its strands and ends.
  *
- * It draws as the reader scrolls, its tip a little below the middle of the screen, on a scroll timeline, so no script
- * runs while scrolling; without scroll timelines, or with reduced motion, it is simply drawn. It is drawn only side by
- * side; stacked, each section names its event above its demo instead. Decorative.
+ * The cord is drawn on the GPU, as the hero's threads are, on a canvas one screen tall (and a margin) that keeps to the
+ * part on screen. It draws down the page as the reader scrolls, its tip 75% of the way down the screen, fading into the
+ * page; without scroll timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds still.
+ * Without a GPU it is drawn in canvas 2D. It is drawn only side by side; stacked, each section names its event above
+ * its demo instead. Decorative.
  */
 
 /** Wide enough for the side-by-side layouts the cord runs between. */
 const WIDE = '(min-width: 64rem)'
-/** The cord's radius, as the hero's ends at the window, and how round its corners turn. */
+/** The cord's braid radius, as the hero's ends at the window. */
 const CORD = 7
-const CORNER = 90
-/** How far beside a panel the cord runs before it turns into a side entry. */
+/** How far left of a panel the cord gathers when it enters from the side. */
 const LANE = 110
-/** Violet, amber, and a lavender silver: the hero's braid tints its silver strand toward violet, and so does the cord. */
-const COLOURS = [
-  'var(--thread-violet)',
-  'var(--thread-amber)',
-  'color-mix(in srgb, var(--thread-silver) 55%, var(--thread-violet))',
-]
+/** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */
+const MARGIN = 0.15
+/** Where the cord's tip runs, as a share of the screen's height from its top. */
+const TIP = 0.75
+/** Device pixels per CSS pixel, at most, as the hero's. */
+const MAX_DPR = 2
+/** The moment reduced motion and the 2D fallback show, and the longest step between frames, as the hero's. */
+const STILL_TIME = 12
+const MAX_STEP = 0.1
+/** How many lost GPU devices the cord replaces before it stops asking for WebGPU. */
+const MAX_GPU_RECOVERIES = 1
 
 let box: HTMLDivElement
-/** Nothing to draw: stacked, and before the page is measured. */
-const UNWOVEN: ReturnType<typeof weave> = { strokes: [], spine: '', lines: '', knots: [] }
-let woven = $state(UNWOVEN)
-let size = $state({ width: 0, height: 0 })
+let canvas: HTMLCanvasElement
+let knots = $state<Cord['knots']>([])
+let kind = $state<CordRenderer['kind']>()
 
 onMount(() => {
   const root = box.parentElement
   if (!root) return
   const wide = matchMedia(WIDE)
+  const motion = matchMedia('(prefers-reduced-motion: no-preference)')
+  const scrolled = CSS.supports('animation-timeline: view()')
+  let renderer: CordRenderer | undefined
+  let cord: Cord | undefined
+  let palette: Palette | undefined
+  /** The weave's top on the page, so scrolling needs no layout to find what shows. */
+  let offset = 0
+  let visible = false
+  let frame = 0
+  let time = STILL_TIME
+  let last = 0
+  let destroyed = false
+
+  /** The part of the cord the screen shows now, with the canvas's margin, and how far down it is drawn. */
+  const view = () => {
+    const top = scrollY - offset - innerHeight * MARGIN
+    const tip =
+      scrolled && motion.matches ? scrollY - offset + innerHeight * TIP : Number.POSITIVE_INFINITY
+    return { left: 0, top, tip }
+  }
+  const draw = () => {
+    if (!renderer || !cord || !palette) return
+    const shown = view()
+    canvas.style.translate = `0 ${shown.top}px`
+    renderer.draw(palette, time, shown)
+  }
+  const live = () => visible && !document.hidden && wide.matches && cord !== undefined
+  const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
+  const tick = (now: number) => {
+    frame = 0
+    if (!live()) return
+    if (animates()) time += Math.min((now - last) / 1000, MAX_STEP)
+    last = now
+    draw()
+    if (animates()) frame = requestAnimationFrame(tick)
+  }
+  /** Draws on the next frame, and keeps drawing while the cord moves; still, it draws again only as the page scrolls. */
+  const wake = () => {
+    if (frame !== 0 || !live()) return
+    last = performance.now()
+    frame = requestAnimationFrame(tick)
+  }
 
   const measure = () => {
-    const origin = box.getBoundingClientRect()
-    size = { width: origin.width, height: origin.height }
-    /** An element's box in the weave's pixels. */
-    const rect = (element: Element) => {
-      const r = element.getBoundingClientRect()
-      return new DOMRect(r.x - origin.x, r.y - origin.y, r.width, r.height)
+    if (!wide.matches) {
+      cord = undefined
+      knots = []
+      return
     }
-    const middle = (r: DOMRect) => r.top + r.height / 2
+    const origin = box.getBoundingClientRect()
+    offset = origin.top + scrollY
+    const dpr = Math.min(devicePixelRatio, MAX_DPR)
+    const height = Math.ceil(innerHeight * (1 + 2 * MARGIN))
+    canvas.style.height = `${height}px`
+    canvas.width = Math.round(origin.width * dpr)
+    canvas.height = Math.round(height * dpr)
+    const style = getComputedStyle(box)
+    palette = {
+      threads: [
+        hex(style.getPropertyValue('--thread-violet')),
+        hex(style.getPropertyValue('--thread-amber')),
+      ],
+      background: [0, 0, 0],
+    }
 
-    /** What the cord needs from one section, read from its `data-weave*` attributes. */
-    const stop = (section: HTMLElement): Stop | undefined => {
+    /** An element's box in the weave's pixels. */
+    const rect = (element: Element): Box => {
+      const r = element.getBoundingClientRect()
+      return {
+        left: r.left - origin.left,
+        top: r.top - origin.top,
+        right: r.right - origin.left,
+        bottom: r.bottom - origin.top,
+      }
+    }
+    const middle = (r: Box) => (r.top + r.bottom) / 2
+    const start = root.querySelector('[data-weave-start]')
+    if (!start) return
+    const from = rect(start)
+    let above = from.bottom
+    const stops: Stop[] = []
+    for (const section of root.querySelectorAll<HTMLElement>('[data-weave-label]')) {
       const entry = section.querySelector<HTMLElement>('[data-weave]')
-      if (!entry) return undefined
+      const copy = section.querySelector('[data-weave-copy]')
+      if (!entry || !copy) continue
+      // Strands spread across the section's whole width, inside its gutters, behind its panels and prose.
+      const parts = [...section.children].map(rect)
+      const whole = rect(section)
+      const gutter = getComputedStyle(section)
+      const content: Box = {
+        left: whole.left + Number.parseFloat(gutter.paddingLeft),
+        top: Math.min(...parts.map((r) => r.top)),
+        right: whole.right - Number.parseFloat(gutter.paddingRight),
+        bottom: Math.max(...parts.map((r) => r.bottom)),
+      }
       const panel = rect(entry)
       const level = entry.querySelector('[data-weave-y]')
-      const side = entry.dataset.weave === 'left' ? 'left' : 'top'
+      const side = entry.dataset.weave === 'left'
+      const x = side
+        ? panel.left - LANE
+        : panel.left + (panel.right - panel.left) * Number(entry.dataset.weaveAt ?? 0.5)
       const split = section.querySelector('[data-weave-split]')
-      const x =
-        panel.left + panel.width * (side === 'left' ? 0.5 : Number(entry.dataset.weaveAt ?? 0.5))
-      return {
+      stops.push({
         label: section.dataset.weaveLabel ?? '',
-        side,
-        enter: side === 'left' ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
-        out: [x, panel.bottom],
-        top: Math.min(...[...section.children].map((child) => rect(child).top)),
-        bottom: Math.max(...[...section.children].map((child) => rect(child).bottom)),
+        pinch: [x, (above + content.top) / 2],
+        box: content,
+        copy: rect(copy),
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
+        enter: side ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
           const wall = end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end
           return [rect(wall).left, middle(rect(end))]
         }),
-      }
+      })
+      above = content.bottom
     }
+    cord = weave([(from.left + from.right) / 2, from.bottom], stops, CORD)
+    knots = cord.knots
+    renderer?.load(cord)
+    draw()
+    wake()
+  }
 
-    const start = root.querySelector('[data-weave-start]')
-    if (!wide.matches || !start) {
-      woven = UNWOVEN
-      return
+  /** A canvas keeps its first context, so starting over, or past a failed renderer, needs a fresh one. */
+  const replaceCanvas = () => {
+    const fresh = canvas.cloneNode() as HTMLCanvasElement
+    canvas.replaceWith(fresh)
+    canvas = fresh
+  }
+
+  /** WebGPU, then WebGL2, then canvas 2D, as the hero's field starts; a lost device starts the cord over once. */
+  let losses = 0
+  const start = async () => {
+    renderer = undefined
+    const attempts =
+      losses > MAX_GPU_RECOVERIES ? [cordWebgl2, cordStill] : [cordWebgpu, cordWebgl2, cordStill]
+    for (const attempt of attempts) {
+      try {
+        renderer = await attempt(canvas)
+      } catch (error) {
+        // biome-ignore lint/suspicious/noConsole: the cord still draws with the next renderer; the console is where the failure gets reported.
+        console.warn('The cord fell back to a simpler renderer.', error)
+        replaceCanvas()
+      }
+      if (renderer) break
     }
-    const from = rect(start)
-    const sections = [...root.querySelectorAll<HTMLElement>('[data-weave-label]')]
-    woven = weave(
-      [from.left + from.width / 2, from.bottom],
-      sections.map(stop).filter((s) => s !== undefined),
-      { cord: CORD, corner: CORNER, lane: LANE },
-    )
+    if (destroyed) return renderer?.destroy()
+    kind = renderer?.kind
+    renderer?.lost?.then(() => {
+      if (destroyed) return
+      losses += 1
+      cancelAnimationFrame(frame)
+      frame = 0
+      replaceCanvas()
+      void start()
+    })
+    measure()
   }
 
   const resize = new ResizeObserver(measure)
   resize.observe(root)
+  const seen = new IntersectionObserver(([entry]) => {
+    visible = entry?.isIntersecting ?? false
+    wake()
+  })
+  seen.observe(box)
+  const onScroll = () => wake()
+  const onMotion = () => {
+    if (!motion.matches) time = STILL_TIME
+    wake()
+  }
+  addEventListener('scroll', onScroll, { passive: true })
+  document.addEventListener('visibilitychange', onScroll)
+  motion.addEventListener('change', onMotion)
   wide.addEventListener('change', measure)
   void document.fonts.ready.then(measure)
+  void start()
+
   return () => {
+    destroyed = true
+    cancelAnimationFrame(frame)
     resize.disconnect()
+    seen.disconnect()
+    removeEventListener('scroll', onScroll)
+    document.removeEventListener('visibilitychange', onScroll)
+    motion.removeEventListener('change', onMotion)
     wide.removeEventListener('change', measure)
+    renderer?.destroy()
   }
 })
 </script>
 
-<div bind:this={box} class="weave" style:--height="{size.height}px" aria-hidden="true">
-  <div class="threads">
-    <div class="cord">
-      <svg viewBox="0 0 {size.width} {size.height}" focusable="false">
-        <g>
-          <path class="halo" d={woven.spine} />
-          {#each woven.strokes as stroke}
-            <path class="glow" d={stroke.d} stroke={COLOURS[stroke.colour]} />
-          {/each}
-          <!-- Light adds where fibres cross, as the hero's threads do, so the braid burns brightest at its crossings. -->
-          <g class="cores">
-            {#each woven.strokes as stroke}
-              <path d={stroke.d} stroke={COLOURS[stroke.colour]} stroke-opacity={stroke.opacity} />
-            {/each}
-          </g>
-        </g>
-      </svg>
-    </div>
-    <!-- The cord's last stretch, where it fades into the page: its route and its strands' lines, painted over them in
-         the page's paper. -->
-    <div class="tip">
-      <svg viewBox="0 0 {size.width} {size.height}" focusable="false"><path class="fade" d={woven.lines} /></svg>
-    </div>
-  </div>
+<div bind:this={box} class="weave" data-renderer={kind} aria-hidden="true">
+  <div class="threads"><canvas bind:this={canvas}></canvas></div>
   <div class="reveal marks">
     <div class="hold">
-      {#each woven.knots as knot}
+      {#each knots as knot}
         <span class="mark" data-side={knot.side} style:translate="{knot.x}px {knot.y}px"><span class="label">{knot.text}</span></span>
       {/each}
     </div>
@@ -138,8 +253,8 @@ onMount(() => {
 </div>
 
 <style>
-  /* Fills the page it is in, and names the scroll timeline the cord draws on. No z-index of its own, so the cord can sit
-     behind the page's panels and its knots in front of them. */
+  /* Fills the page it is in, and names the scroll timeline the knots reveal on. No z-index of its own, so the cord can
+     sit behind the page's panels and its knots in front of them. */
   .weave {
     position: absolute;
     inset: 0;
@@ -147,59 +262,36 @@ onMount(() => {
     view-timeline: --weave block;
   }
   .reveal,
-  .threads,
-  .cord {
+  .threads {
     position: absolute;
     inset: 0;
-  }
-  .reveal,
-  .cord {
     overflow: clip;
   }
   .threads {
     z-index: 0;
   }
-  /* Drawn in full, without scroll timelines or with reduced motion, the cord doesn't fade at its tip. */
-  .tip {
-    display: none;
-  }
   .marks {
     z-index: 2;
   }
-  svg,
+  /* One screen tall, and a margin; moved down the page to where the screen is each frame it draws. */
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
   .hold {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
   }
-  path {
-    fill: none;
-  }
-  /* A soft violet light around the whole cord, a glow around each fibre, and the fibres themselves. */
-  .halo {
-    stroke: var(--thread-violet);
-    stroke-width: 30;
-    stroke-opacity: 0.05;
-    stroke-linecap: round;
-  }
-  .glow {
-    stroke-width: 6;
-    stroke-opacity: 0.05;
-  }
-  .cores path {
-    stroke-width: 1;
-    mix-blend-mode: plus-lighter;
-  }
-  /* Wider than the cord's halo, so it covers every fibre and its glow. */
-  .fade {
-    stroke: var(--paper);
-    stroke-width: 40;
-    stroke-linecap: round;
+  @media not (min-width: 64rem) {
+    .weave {
+      display: none;
+    }
   }
 
-  /* A knot on the cord where it enters a panel, and the event's name beside it, as the hero labels its threads. */
+  /* A knot on the cord where it gathers above a section, and the event's name beside it, as the hero labels its
+     threads. */
   .mark {
     position: absolute;
     top: 0;
@@ -218,8 +310,10 @@ onMount(() => {
     background: #fff;
     box-shadow: 0 0 12px 3px color-mix(in srgb, var(--thread-violet) 85%, transparent);
   }
+  /* Above the knot, clear of the braid, on the side the cord doesn't come in from. */
   .label {
     position: absolute;
+    left: 1.25rem;
     bottom: 0.75rem;
     color: var(--ink);
     font-family: var(--font-code);
@@ -228,25 +322,18 @@ onMount(() => {
     white-space: nowrap;
     text-shadow: 0 0 12px var(--paper), 0 0 4px var(--paper);
   }
-  [data-side='top'] .label {
-    left: 0.875rem;
-  }
-  /* Below the thread, since the cord comes down beside the panel and turns in above it. */
   [data-side='left'] .label {
-    right: 0.875rem;
-    top: 0.625rem;
-    bottom: auto;
+    right: 1.25rem;
+    left: auto;
   }
 
-  /* The cord draws down the page with the reader: the clip box slides down over it while what it holds slides back up
-     by as much, so only transforms change, on the compositor. Its tip runs 75% of the way down the screen. */
+  /* The knots show as the cord's tip reaches them: the clip box slides down over them while what it holds slides back
+     up by as much, so only transforms change, on the compositor. Its edge runs 75% of the way down the screen, with
+     the cord's tip. */
   @supports (animation-timeline: view()) {
     @media (prefers-reduced-motion: no-preference) {
       .reveal,
-      .reveal > *,
-      .threads,
-      .cord > svg,
-      .tip > svg {
+      .reveal > * {
         animation: linear both;
         animation-timeline: --weave;
         animation-range: cover 25vh cover calc(100% - 75vh);
@@ -257,66 +344,6 @@ onMount(() => {
       .reveal > * {
         animation-name: hold;
       }
-      /* The cord fades into the page over its last 14rem, as the hero's threads fade at their ends, rather than
-         stopping at an edge. Its window, one screen and 14rem tall with its bottom at the tip, slides down by
-         `--height`, the height of the box the weave fills, while the cord inside slides back up by as much. Over the
-         last 14rem, the tip's box paints the cord's route and its strands' lines in the page's paper, fading in toward
-         the tip. A mask's cost grows with the box it covers, so only that short box is masked; and since nothing is
-         drawn twice where the two boxes meet, no edge between them can show. */
-      .threads,
-      .cord {
-        bottom: auto;
-        height: calc(100vh + 14rem);
-      }
-      .threads {
-        animation-name: clip-cord;
-      }
-      .tip {
-        display: block;
-        position: absolute;
-        top: 100vh;
-        right: 0;
-        left: 0;
-        /* 2px past the cord's edge, opaque there, so the cord's last row, wherever it falls between pixels, is
-           covered. */
-        height: calc(14rem + 2px);
-        overflow: clip;
-        mask-image: linear-gradient(transparent, #000 calc(100% - 2px));
-      }
-      .cord > svg,
-      .tip > svg {
-        height: var(--height);
-      }
-      .cord > svg {
-        animation-name: hold-cord;
-      }
-      .tip > svg {
-        animation-name: hold-tip;
-      }
-    }
-  }
-  @keyframes clip-cord {
-    from {
-      transform: translateY(calc(-100vh - 14rem));
-    }
-    to {
-      transform: translateY(calc(var(--height) - 100vh - 14rem));
-    }
-  }
-  @keyframes hold-cord {
-    from {
-      transform: translateY(calc(100vh + 14rem));
-    }
-    to {
-      transform: translateY(calc(100vh + 14rem - var(--height)));
-    }
-  }
-  @keyframes hold-tip {
-    from {
-      transform: translateY(14rem);
-    }
-    to {
-      transform: translateY(calc(14rem - var(--height)));
     }
   }
   @keyframes clip {

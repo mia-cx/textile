@@ -10,20 +10,8 @@ import {
   thread,
   warmth,
 } from './geometry'
-import {
-  BLOOM_SCALE,
-  bloomWgsl,
-  blurFragmentGlsl,
-  screenVertexGlsl,
-  shrinkFragmentGlsl,
-  threadFragmentGlsl,
-  threadVertexGlsl,
-  threadWgsl,
-  toneFragmentGlsl,
-  toneWgsl,
-  UNIFORM_VEC4S,
-  VERTICES_PER_THREAD,
-} from './shaders'
+import { type Painter, type Scene, webgl2Painter, webgpuPainter } from './gpu'
+import { threadVertexGlsl, threadWgsl, UNIFORM_VEC4S, VERTICES_PER_THREAD } from './shaders'
 
 /** The colours a field draws with, read from the page's tokens: the two thread colours and the ink behind them. */
 export interface Palette {
@@ -31,6 +19,12 @@ export interface Palette {
   readonly background: RGB
 }
 export type RGB = readonly [r: number, g: number, b: number]
+
+/** `#rrggbb`, as the thread tokens are written. */
+export const hex = (value: string): RGB => {
+  const channel = (at: number) => Number.parseInt(value.trim().slice(at, at + 2), 16) / 255
+  return [channel(1), channel(3), channel(5)]
+}
 
 /** A field drawn on one canvas. `draw` renders a frame at `time` seconds; the canvas is already sized in device pixels. */
 export interface Renderer {
@@ -42,7 +36,7 @@ export interface Renderer {
 }
 
 /** How much light the tone map lets through: higher is brighter, saturating sooner. */
-const EXPOSURE = 1.45
+export const EXPOSURE = 1.45
 
 /** Sizes are CSS pixels: the canvas's own size divided by `dpr`. */
 const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: number) => {
@@ -59,328 +53,32 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
   return u
 }
 
-/** The bloom target's size in pixels, for a canvas: a fixed fraction of its CSS size. */
-const bloomSize = (canvas: HTMLCanvasElement) =>
-  [
-    Math.max(1, Math.round(canvas.clientWidth * BLOOM_SCALE)),
-    Math.max(1, Math.round(canvas.clientHeight * BLOOM_SCALE)),
-  ] as const
-
-type Size = { readonly width: number; readonly height: number }
-/**
- * Whether targets made earlier no longer fit `canvas`: its device size changed, or its CSS size did, which sizes the
- * bloom. Zooming the page can change the second alone.
- */
-const resized = (canvas: HTMLCanvasElement, light: Size | undefined, glow: Size | undefined) => {
-  const [width, height] = bloomSize(canvas)
-  return (
-    light?.width !== canvas.width ||
-    light.height !== canvas.height ||
-    glow?.width !== width ||
-    glow.height !== height
-  )
+/** The hero's scene: its threads' shaders, on its own ink. */
+const HERO: Scene = {
+  wgsl: threadWgsl,
+  glsl: threadVertexGlsl,
+  vec4s: UNIFORM_VEC4S,
+  over: false,
+  data: false,
 }
 
-let gpuDevice: Promise<GPUDevice | undefined> | undefined
-
-/**
- * One device for every field on the page, until it is lost; the next field to start asks for a new one. Undefined when
- * the browser has no WebGPU or no adapter.
- */
-const device = () => {
-  if (gpuDevice) return gpuDevice
-  const requested = (async () => {
-    if (!('gpu' in navigator)) return undefined
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
-    const gpu = await adapter?.requestDevice()
-    gpu?.addEventListener('uncapturederror', (event) =>
-      // biome-ignore lint/suspicious/noConsole: the page keeps working without the field; the console is where a failed effect gets reported.
-      console.error('The thread field’s GPU work failed.', event.error.message),
-    )
-    void gpu?.lost.then(() => {
-      if (gpuDevice === requested) gpuDevice = undefined
-    })
-    return gpu
-  })().catch(() => undefined)
-  gpuDevice = requested
-  return requested
-}
-
-const HDR: GPUTextureFormat = 'rgba16float'
+/** A field drawn by a GPU painter. */
+const fieldOn = (canvas: HTMLCanvasElement, painter: Painter): Renderer => ({
+  kind: painter.kind,
+  lost: painter.lost,
+  draw: (field, palette, time) =>
+    painter.paint(pack(canvas, field, palette, time), VERTICES_PER_THREAD, field.count),
+  destroy: () => painter.destroy(),
+})
 
 export async function webgpu(canvas: HTMLCanvasElement): Promise<Renderer | undefined> {
-  const gpu = await device()
-  // Only with a device: asking for the context claims the canvas, which would leave no fallback.
-  if (!gpu) return undefined
-  const context = canvas.getContext('webgpu')
-  if (!context) return undefined
-  const format = navigator.gpu.getPreferredCanvasFormat()
-  context.configure({ device: gpu, format, alphaMode: 'opaque' })
-
-  const threadModule = gpu.createShaderModule({ code: threadWgsl })
-  const bloomModule = gpu.createShaderModule({ code: bloomWgsl })
-  const toneModule = gpu.createShaderModule({ code: toneWgsl })
-  const threads = gpu.createRenderPipeline({
-    layout: 'auto',
-    vertex: { module: threadModule, entryPoint: 'vs' },
-    fragment: {
-      module: threadModule,
-      entryPoint: 'fs',
-      targets: [
-        {
-          format: HDR,
-          blend: {
-            color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-          },
-        },
-      ],
-    },
-    primitive: { topology: 'triangle-strip' },
-  })
-  /** A pass that covers its whole target with one triangle, as every pass after the threads does. */
-  const screen = (module: GPUShaderModule, entryPoint: string, target: GPUTextureFormat) =>
-    gpu.createRenderPipeline({
-      layout: 'auto',
-      vertex: { module, entryPoint: 'vs' },
-      fragment: { module, entryPoint, targets: [{ format: target }] },
-      primitive: { topology: 'triangle-list' },
-    })
-  const shrink = screen(bloomModule, 'shrink', HDR)
-  const across = screen(bloomModule, 'across', HDR)
-  const down = screen(bloomModule, 'down', HDR)
-  const tone = screen(toneModule, 'fs', format)
-  const filtering = gpu.createSampler({ magFilter: 'linear', minFilter: 'linear' })
-  const uniforms = gpu.createBuffer({
-    size: UNIFORM_VEC4S * 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  })
-  const threadBindings = gpu.createBindGroup({
-    layout: threads.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: uniforms } }],
-  })
-
-  const texture = (width: number, height: number) =>
-    gpu.createTexture({
-      size: [width, height],
-      format: HDR,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    })
-  const sampling = (pipeline: GPURenderPipeline, source: GPUTexture) =>
-    gpu.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: source.createView() },
-        { binding: 1, resource: filtering },
-      ],
-    })
-
-  type Targets = ReturnType<typeof targets>
-  /**
-   * The half-float target the threads add into, and two small ones the bloom blurs between, with every pass's
-   * bindings. Remade when the canvas changes size.
-   */
-  const targets = () => {
-    const light = texture(canvas.width, canvas.height)
-    const [width, height] = bloomSize(canvas)
-    const glow = texture(width, height)
-    const blurred = texture(width, height)
-    return {
-      light,
-      glow,
-      blurred,
-      shrink: sampling(shrink, light),
-      across: sampling(across, glow),
-      down: sampling(down, blurred),
-      tone: gpu.createBindGroup({
-        layout: tone.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: uniforms } },
-          { binding: 1, resource: light.createView() },
-          { binding: 2, resource: glow.createView() },
-          { binding: 3, resource: filtering },
-        ],
-      }),
-    }
-  }
-  let current: Targets | undefined
-  const sized = () => {
-    if (current && !resized(canvas, current.light, current.glow)) return current
-    for (const old of [current?.light, current?.glow, current?.blurred]) old?.destroy()
-    current = targets()
-    return current
-  }
-
-  const run = (
-    encoder: GPUCommandEncoder,
-    pipeline: GPURenderPipeline,
-    bindings: GPUBindGroup,
-    into: GPUTextureView,
-    count = 3,
-    instances = 1,
-  ) => {
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        { view: into, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] },
-      ],
-    })
-    pass.setPipeline(pipeline)
-    pass.setBindGroup(0, bindings)
-    pass.draw(count, instances)
-    pass.end()
-  }
-
-  return {
-    kind: 'webgpu',
-    lost: gpu.lost,
-    draw(field, palette, time) {
-      const t = sized()
-      gpu.queue.writeBuffer(uniforms, 0, pack(canvas, field, palette, time))
-      const encoder = gpu.createCommandEncoder()
-      run(encoder, threads, threadBindings, t.light.createView(), VERTICES_PER_THREAD, field.count)
-      run(encoder, shrink, t.shrink, t.glow.createView())
-      run(encoder, across, t.across, t.blurred.createView())
-      run(encoder, down, t.down, t.glow.createView())
-      run(encoder, tone, t.tone, context.getCurrentTexture().createView())
-      gpu.queue.submit([encoder.finish()])
-    },
-    destroy() {
-      for (const old of [current?.light, current?.glow, current?.blurred]) old?.destroy()
-      uniforms.destroy()
-      context.unconfigure()
-    },
-  }
-}
-
-const compile = (gl: WebGL2RenderingContext, vertex: string, fragment: string) => {
-  const program = gl.createProgram()
-  for (const [type, source] of [
-    [gl.VERTEX_SHADER, vertex],
-    [gl.FRAGMENT_SHADER, fragment],
-  ] as const) {
-    const shader = gl.createShader(type)
-    if (!shader) throw new Error('WebGL2 could not create a shader.')
-    gl.shaderSource(shader, source)
-    gl.compileShader(shader)
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-      throw new Error(gl.getShaderInfoLog(shader) ?? 'A thread shader did not compile.')
-    gl.attachShader(program, shader)
-  }
-  gl.linkProgram(program)
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-    throw new Error(gl.getProgramInfoLog(program) ?? 'The thread shaders did not link.')
-  return program
+  const painter = await webgpuPainter(canvas, HERO)
+  return painter && fieldOn(canvas, painter)
 }
 
 export function webgl2(canvas: HTMLCanvasElement): Renderer | undefined {
-  const gl = canvas.getContext('webgl2', {
-    alpha: false,
-    antialias: false,
-    depth: false,
-    premultipliedAlpha: false,
-    powerPreference: 'high-performance',
-  })
-  if (!gl) return undefined
-  // Half-float targets need this; without it the threads add straight onto the canvas, unbloomed, and clip instead of
-  // tone-mapping.
-  const float = gl.getExtension('EXT_color_buffer_float') !== null
-  const threads = compile(gl, threadVertexGlsl, threadFragmentGlsl)
-  const threadUniforms = gl.getUniformLocation(threads, 'U')
-  /** A full-screen pass's program, with its samplers bound to texture units 0, 1, … in the order named. */
-  const pass = (fragment: string, samplers: ReadonlyArray<string>) => {
-    const program = compile(gl, screenVertexGlsl, fragment)
-    gl.useProgram(program)
-    for (const [unit, name] of samplers.entries())
-      gl.uniform1i(gl.getUniformLocation(program, name), unit)
-    return program
-  }
-  const passes = float
-    ? {
-        shrink: pass(shrinkFragmentGlsl, ['source']),
-        blur: pass(blurFragmentGlsl, ['source']),
-        tone: pass(toneFragmentGlsl, ['light', 'bloom']),
-      }
-    : undefined
-  const blurDirection = passes && gl.getUniformLocation(passes.blur, 'direction')
-  const toneUniforms = passes && gl.getUniformLocation(passes.tone, 'U')
-  const vao = gl.createVertexArray()
-
-  /** A half-float texture with its framebuffer, filtered so the bloom can sample between its pixels. */
-  const surface = (width: number, height: number) => {
-    const texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, width, height)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    const framebuffer = gl.createFramebuffer()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
-    return { texture, framebuffer, width, height }
-  }
-  type Surface = ReturnType<typeof surface>
-  let light: Surface | undefined
-  let glow: Surface | undefined
-  let blurred: Surface | undefined
-  const resize = () => {
-    if (!resized(canvas, light, glow)) return
-    for (const old of [light, glow, blurred]) {
-      if (!old) continue
-      gl.deleteTexture(old.texture)
-      gl.deleteFramebuffer(old.framebuffer)
-    }
-    const [width, height] = bloomSize(canvas)
-    light = surface(canvas.width, canvas.height)
-    glow = surface(width, height)
-    blurred = surface(width, height)
-  }
-
-  /** Draws the program in use over all of `into` (the canvas when undefined), sampling `sources` on units 0, 1, … */
-  const screen = (into: Surface | undefined, sources: ReadonlyArray<Surface>) => {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, into?.framebuffer ?? null)
-    gl.viewport(0, 0, into?.width ?? canvas.width, into?.height ?? canvas.height)
-    for (const [unit, from] of sources.entries()) {
-      gl.activeTexture(gl.TEXTURE0 + unit)
-      gl.bindTexture(gl.TEXTURE_2D, from.texture)
-    }
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
-  }
-
-  return {
-    kind: 'webgl2',
-    draw(field, palette, time) {
-      if (passes) resize()
-      const uniforms = pack(canvas, field, palette, time)
-      gl.bindVertexArray(vao)
-      gl.bindFramebuffer(gl.FRAMEBUFFER, light?.framebuffer ?? null)
-      gl.viewport(0, 0, canvas.width, canvas.height)
-      const [r, g, b] = passes ? [0, 0, 0] : palette.background
-      gl.clearColor(r, g, b, 1)
-      gl.clear(gl.COLOR_BUFFER_BIT)
-      gl.enable(gl.BLEND)
-      gl.blendFunc(gl.ONE, gl.ONE)
-      gl.useProgram(threads)
-      gl.uniform4fv(threadUniforms, uniforms)
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, VERTICES_PER_THREAD, field.count)
-      gl.disable(gl.BLEND)
-      if (!passes || !light || !glow || !blurred) return
-
-      gl.useProgram(passes.shrink)
-      screen(glow, [light])
-      gl.useProgram(passes.blur)
-      gl.uniform2f(blurDirection ?? null, 1, 0)
-      screen(blurred, [glow])
-      gl.uniform2f(blurDirection ?? null, 0, 1)
-      screen(glow, [blurred])
-      gl.useProgram(passes.tone)
-      gl.uniform4fv(toneUniforms ?? null, uniforms)
-      screen(undefined, [light, glow])
-    },
-    destroy() {
-      gl.getExtension('WEBGL_lose_context')?.loseContext()
-    },
-  }
+  const painter = webgl2Painter(canvas, HERO)
+  return painter && fieldOn(canvas, painter)
 }
 
 /** Points per thread in the 2D fallback, and how many threads it draws at most: one still frame, drawn once. */
