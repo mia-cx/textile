@@ -95,12 +95,11 @@ function clearOfCopy(field: Field, label: Label) {
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 /**
- * The hero's braid forms in the open gap between the copy and the window: threads start to leave the current at the
- * copy's edge, and the braid is whole for the last BRAIDED share of the gap. A gap shorter than FORMING pixels borrows
- * from behind the copy's edge, where the first threads barely start to turn, so the threads never turn in sharply.
+ * The hero's braid forms in the open gap between the copy and the window, at every width: threads start to leave the
+ * current at the copy's edge, and the braid is whole for the last BRAIDED share of the gap. Each thread's turn scales
+ * with the gap, so a narrow gap turns them in no tighter, against the plait's own turns, than a wide one.
  */
-const BRAIDED = 0.2
-const FORMING = 220
+const BRAIDED = 0.1
 
 type Spine = Pick<Field, 'start' | 'control' | 'end'>
 
@@ -123,8 +122,7 @@ function crossing(field: Spine, axis: 0 | 1, value: number) {
  */
 function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number, windowEdge: number) {
   const whole = windowEdge - (windowEdge - copyEdge) * BRAIDED
-  const from = Math.min(copyEdge, whole - FORMING)
-  return [crossing(field, axis, from), crossing(field, axis, whole)] as const
+  return [crossing(field, axis, copyEdge), crossing(field, axis, whole)] as const
 }
 
 /** The hero copy's box in the field's pixels, or undefined before it mounts. */
