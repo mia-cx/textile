@@ -159,7 +159,7 @@ onMount(() => {
   .threads {
     z-index: 0;
   }
-  /* Drawn in full, without scroll timelines or with reduced motion, the cord needs no separate tip. */
+  /* Drawn in full, without scroll timelines or with reduced motion, the cord doesn't fade at its tip. */
   .tip {
     display: none;
   }
@@ -261,8 +261,8 @@ onMount(() => {
          stopping at an edge. Its window, one screen and 14rem tall with its bottom at the tip, slides down by
          `--height`, the height of the box the weave fills, while the cord inside slides back up by as much. Over the
          last 14rem, the tip's box paints the cord's route and its strands' lines in the page's paper, fading in toward
-         the tip. A mask's cost grows with the box it covers, so only that short box is masked; and since it paints over
-         the cord rather than drawing a second cord beside it, no edge between two boxes can show. */
+         the tip. A mask's cost grows with the box it covers, so only that short box is masked; and since nothing is
+         drawn twice where the two boxes meet, no edge between them can show. */
       .threads,
       .cord {
         bottom: auto;

@@ -206,7 +206,7 @@ export interface Weaving {
  * again at the panel's `out`. It stops at the first stop where it comes apart.
  *
  * Besides the strokes, it returns `spine`, the cord's route, which its glow follows, and `lines`, that route with every
- * strand's line, which covers everything drawn.
+ * strand's line, which, stroked wider than the cord's glow, covers everything drawn.
  */
 export function weave(start: Point, stops: ReadonlyArray<Stop>, { cord, corner, lane }: Weaving) {
   const runs: Point[][] = []
