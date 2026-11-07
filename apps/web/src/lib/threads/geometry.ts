@@ -64,11 +64,13 @@ export const SHAPE = {
   /** How far the current sways, as a fraction of the funnel's width. */
   wave: 0.14,
   /**
-   * Each of the braid's three strands is a flat band of fibres lying around the braid, `span` radians either side of its
-   * centre: wide, so the bands nearly cover the braid. A band facing the viewer shows its full width, and one turning
-   * around the braid's edge narrows to a line.
+   * The braid is a three-strand plait: each strand swings from side to side across it, `sin(twist)` braid radii from its
+   * spine, passing over one neighbour and under the other, its depth `sin(2 twist)`. Each strand is a flat band of
+   * fibres, `fray` braid radii either side of its centre where it crosses the middle, and `flat` of that where it turns
+   * back at the braid's edge.
    */
-  span: 0.85,
+  fray: 0.7,
+  flat: 0.35,
   /**
    * The share of a band's fibres that run along its two edges, in `edgeLanes` close lanes `edgeStep` apart (in the
    * band's -1 to 1): crisp, bright lines, each fibre still visible, around the dimmer fibres inside. Those spread over
@@ -103,8 +105,11 @@ export const SHAPE = {
    * outermost ribbons stay violet, darkest where they pass the page's header.
    */
   hue: 0,
-  /** How much of the way a thread takes to join the braid, and how far along the last thread has joined. */
-  join: 0.16,
+  /**
+   * How much of the way a thread takes to join the braid: long, so each ribbon eases from its lane into the plait over
+   * a good share of the current, rather than turning in at once. And how far along the last thread has joined.
+   */
+  join: 0.3,
   joined: 0.85,
   /**
    * How strictly ribbons join in order from the inner lanes out: 1 by lane alone, 0 at random. Between, the braid fills
@@ -151,6 +156,15 @@ export const SHAPE = {
 export const hash = (n: number) => {
   const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453
   return x - Math.floor(x)
+}
+
+/**
+ * Eases from 0 at `a` to 1 at `b` with no slope and no curvature at either end, so a thread easing from its lane into
+ * the braid turns without a kink. Mirrors `ease` in the shaders.
+ */
+export const ease = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
+  return t * t * t * (t * (t * 6 - 15) + 10)
 }
 
 const smoothstep = (a: number, b: number, x: number) => {
@@ -232,11 +246,16 @@ const funnelWidth = ({ spread, cord }: Field, u: number) =>
   cord * (1 + SHAPE.swell * (1 - u)) + spread * Math.max(1 - u / SHAPE.close, 0) ** SHAPE.taper
 
 /**
- * Where around the braid a fibre at `jitter` across its band lies, in radians, where its strand has turned `twist`:
- * its offset from the braid's spine is the braid's radius times the sine of this. Mirrors `band` in the shaders.
+ * How far from the braid's spine a fibre at `jitter` across its band lies, in braid radii, where its strand has turned
+ * `twist`: its strand's swing across the plait, and its place across the band, which is widest where the strand
+ * crosses the middle. The band narrows as cos², not |cos|, which has a corner where it turns back. Mirrors `band` in
+ * the shaders.
  */
 export const band = (twist: number, jitter: number, edge: boolean, along: number, drift: number) =>
-  twist + (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) * SHAPE.span
+  Math.sin(twist) +
+  (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
+    SHAPE.fray *
+    (SHAPE.flat + (1 - SHAPE.flat) * Math.cos(twist) ** 2)
 
 /** About how long the spine is, in pixels: between its chord and its control polygon. Mirrors the shaders. */
 const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
@@ -272,8 +291,8 @@ export function position(field: Field, i: number, u: number, t: number): Point {
     turns * TAU * Math.log((1 + SHAPE.swell) / (1 + SHAPE.swell * a)) -
     t * SHAPE.spin +
     (strand * TAU) / 3
-  const braided = radius * Math.sin(band(twist, jitter, edge, u, drift))
-  const offset = current + (braided - current) * smoothstep(joins - SHAPE.join, joins, u)
+  const braided = radius * band(twist, jitter, edge, u, drift)
+  const offset = current + (braided - current) * ease(joins - SHAPE.join, joins, u)
   return [x + nx * offset, y + ny * offset]
 }
 

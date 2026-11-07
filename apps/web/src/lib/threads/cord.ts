@@ -51,12 +51,6 @@ const labelSide = (text: string, x: number, prefer: 'left' | 'right', width: num
 
 /** Pixels between samples along a path: fine enough that the braid's twists stay smooth. */
 const STEP = 4
-/**
- * How much of a section's height the cord takes to come apart below its gap, and to gather again above the next, and
- * the most it takes: long, so strands sweep in and out as gently as the hero's funnel narrows.
- */
-const RISE = 0.5
-const MAX_RISE = 800
 /** The share of a section's width its loose strands spread across. */
 const SPREAD = 0.92
 /** Texels per sample, and samples per row of the texture: rows stay within every GPU's smallest texture limit. */
@@ -115,14 +109,26 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t)
 }
 
-/** Points from `a` down to `b`, leaving and arriving straight down, easing across between. */
+/**
+ * Eases from 0 to 1 with no slope and no curvature at either end, so curves joined end to end turn without a kink.
+ */
+const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
+
+/** Points from `a` down to `b`, leaving and arriving straight down, easing across between without a kink. */
 function drop(a: Point, b: Point): Point[] {
   const steps = Math.max(1, Math.ceil((b[1] - a[1]) / STEP))
   return Array.from({ length: steps }, (_, k): Point => {
     const t = k / steps
-    return [a[0] + (b[0] - a[0]) * smoothstep(0, 1, t), a[1] + (b[1] - a[1]) * t]
+    return [a[0] + (b[0] - a[0]) * smootherstep(t), a[1] + (b[1] - a[1]) * t]
   })
 }
+
+/**
+ * How far the strands have come apart `t` of the way from a gap to the next (0 to 1): a smooth swell, nothing in the
+ * gaps and all of it midway, with no slope and no corner anywhere, so they fan out and gather like a current. Behind
+ * the last section, which no gap closes, they swell to its foot.
+ */
+const swell = (t: number, closes: boolean) => Math.sin((Math.PI * t) / (closes ? 1 : 2)) ** 2
 
 /** Dense points along the cubic from `a` to `d` through controls `b` and `c`. */
 function cubic(a: Point, b: Point, c: Point, d: Point): Point[] {
@@ -233,9 +239,8 @@ export function weave(
   const cord: Sample[] = frame(spine).map((p, i) => {
     const span = spans[i]
     if (!span) return { ...p, open: 0, width: 0, centre: 0, axis: [1, 0], light: 1 }
-    const rise = Math.min(MAX_RISE, (span.to - span.from) * RISE)
-    const gather = smoothstep(0, rise, span.to - p.y)
-    const open = smoothstep(0, rise, p.y - span.from) * (span.closes ? gather : 1)
+    const t = Math.min(1, Math.max(0, (p.y - span.from) / (span.to - span.from)))
+    const open = swell(t, span.closes)
     const middle = (span.box.left + span.box.right) / 2
     return {
       ...p,
@@ -243,7 +248,8 @@ export function weave(
       width: ((span.box.right - span.box.left) / 2) * SPREAD,
       centre: middle - p.x,
       axis: [1, 0],
-      light: span.closes ? 1 : gather,
+      // Behind the last section the strands fade out toward its foot.
+      light: span.closes ? 1 : 1 - open,
     }
   })
   const peels: Sample[][] = strands.slice(0, MAX_PEELS).map(({ line }) => {
@@ -327,7 +333,7 @@ export const cordThread = (i: number) => {
       path: 1 + peel,
       lane: across,
       strand: peel % 3,
-      leave: 0,
+      order: 0,
       phase: 0,
       ribbon: peel,
       ...fibre(i, across),
@@ -346,16 +352,19 @@ export const cordThread = (i: number) => {
     path: 0,
     lane: centre + (across * SHAPE.ribbon) / 2,
     strand: Math.min(2, Math.max(0, Math.floor((centre + 1) * 1.5))),
-    // Outer ribbons come apart first and gather last, as the hero's join it last.
-    leave: (1 - LOOSEN) * (1 - order),
+    // Inner ribbons stay closer to the braid: they come apart later and gather sooner.
+    order,
     phase: hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
     ribbon,
     ...fibre(i, across),
   }
 }
 
-/** How much of the way from braided to loose each thread takes to come apart. */
-export const LOOSEN = 0.8
+/**
+ * How much later the last thread to come apart does so than the first: a thread's looseness is the strands' swell
+ * raised to 1 + FAN × its order, which keeps it as smooth as the swell.
+ */
+export const FAN = 1.5
 
 /**
  * Thread `i` at its path's sample `k` at time `t`: where it is, and how loose it is there (0 braided, 1 loose). Reads
@@ -367,9 +376,9 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
   const d = cord.data
   const [x = 0, y = 0, nx = 0, ny = 0, s = 0, open = 0, width = 0, centre = 0, ax = 0, ay = 0] =
     d.subarray(o, o + 10)
-  const loose = smoothstep(th.leave, th.leave + LOOSEN, open)
+  const loose = Math.max(open, 1e-6) ** (1 + FAN * th.order)
   const twist = (s / (SHAPE.pitch * cord.radius)) * TAU - t * SHAPE.spin + (th.strand * TAU) / 3
-  const braided = cord.radius * Math.sin(band(twist, th.jitter, th.edge, s / DRIFT_SPAN, th.drift))
+  const braided = cord.radius * band(twist, th.jitter, th.edge, s / DRIFT_SPAN, th.drift)
   const sway =
     th.path === 0
       ? width *
