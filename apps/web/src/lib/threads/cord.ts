@@ -135,6 +135,8 @@ export interface Cord {
     side: 'left' | 'right'
   }>
   readonly radius: number
+  /** How far any strand strays up or down from its path's samples, at most. */
+  readonly reach: number
   /** Where its strands stand where it leaves the window. */
   readonly seam: Seam
   /** How far up and down the page anything of the cord reaches, its braid and its peels included. */
@@ -493,6 +495,14 @@ export function weave(
     paths.push({ first, count: path.length })
     first += path.length
   }
+  // How far a strand strays up or down from its path's samples, at most: its braid and glow, and where the course bends,
+  // its spread across the tilted axis.
+  const reach =
+    margin(radius) +
+    all.reduce(
+      (most, { path }) => path.reduce((m, p) => Math.max(m, p.width * Math.abs(p.axis[1])), most),
+      0,
+    )
   return {
     data,
     rows,
@@ -501,19 +511,22 @@ export function weave(
     copy: stops.slice(0, MAX_COPY).map((stop) => stop.copy),
     knots,
     radius,
+    reach,
     seam,
     extent: {
-      top: Math.min(...all.map(({ path }) => Math.min(...path.map((p) => p.y)))) - margin(radius),
-      bottom:
-        Math.max(...all.map(({ path }) => Math.max(...path.map((p) => p.y)))) + margin(radius),
+      top: Math.min(...all.map(({ path }) => Math.min(...path.map((p) => p.y)))) - reach,
+      bottom: Math.max(...all.map(({ path }) => Math.max(...path.map((p) => p.y)))) + reach,
     },
   }
 }
 
-/** How far a strand strays up or down from its path's samples: the braid's radius, and its glow. */
+/** How far a strand strays up or down from its path's samples in the braid: the braid's radius, and its glow. */
 const margin = (radius: number) => radius * 4 + STEP
 
-/** The cord's samples from `top` to `bottom`, and a little beyond, so its braid and sway reach the edges. */
+/**
+ * The cord's samples from `top` to `bottom`, and as far beyond as any strand strays from its sample (`reach`), so its
+ * braid and spread reach the edges.
+ */
 export function visible(cord: Cord, top: number, bottom: number): Span {
   const below = (y: number) => {
     let lo = 0
@@ -525,8 +538,8 @@ export function visible(cord: Cord, top: number, bottom: number): Span {
     }
     return lo
   }
-  const first = Math.max(0, below(top - margin(cord.radius)) - 1)
-  const last = Math.min(cord.heights.length, below(bottom + margin(cord.radius)) + 1)
+  const first = Math.max(0, below(top - cord.reach) - 1)
+  const last = Math.min(cord.heights.length, below(bottom + cord.reach) + 1)
   return { first, count: Math.max(0, last - first) }
 }
 
