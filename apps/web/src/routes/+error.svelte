@@ -6,7 +6,7 @@ const RETRYABLE = new Set([400, 502])
 </script>
 
 <svelte:head>
-  <title>{page.status === 404 ? 'Page not found' : 'Unable to load this page'} · Textile</title>
+  <title>{page.status === 404 ? 'Page not found' : 'Request failed'} · Textile</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -15,7 +15,7 @@ const RETRYABLE = new Set([400, 502])
     <h1 class="page-title">Page not found</h1>
     <p class="page-lede">This page doesn't exist. <a href="/">Go to the home page</a> or <a href="/docs/">read the docs</a>.</p>
   {:else}
-    <h1 class="page-title">Unable to load this page</h1>
+    <h1 class="page-title">Request failed</h1>
     <p class="page-lede">{page.error?.message}</p>
     <div class="mt-10">
       {#if RETRYABLE.has(page.status)}

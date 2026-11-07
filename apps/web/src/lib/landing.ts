@@ -166,7 +166,8 @@ Publish with \`${CALLS[0].tool}\` to store a revision. The result lists its trig
 ${fence('json', CALLS[0].result)}
 
 Enable it with \`${CALLS[1].tool}\`. Enabled workflows keep the bot online without agent calls.
-Each run starts in a fresh sandbox. Your workflow declares which Discord operations and external hosts it can use.
+When publishing, your agent grants the workflow access to specific Discord operations and external hosts.
+Each run starts in a fresh sandbox.
 Textile checks calls against those grants and keeps the bot token outside the sandbox.
 [Read about workflows](${origin}/docs/workflows.md) for supported events and runtime limits.
 

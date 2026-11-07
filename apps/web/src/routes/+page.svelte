@@ -191,8 +191,8 @@ function close(
       disconnects.
     </p>
     <p>
-      Each run starts in a fresh sandbox. Your workflow declares which Discord operations and external hosts it can use.
-      Textile keeps the bot token outside the sandbox.
+      When publishing, your agent grants the workflow access to specific Discord operations and external hosts.
+      Each run starts in a fresh sandbox. Textile keeps the bot token outside the sandbox.
     </p>
     <p><a class="next-link" href="/docs/workflows/">Read about workflows</a></p>
     {#snippet demo()}<Publish />{/snippet}
@@ -219,8 +219,8 @@ function close(
     layout="prose-left"
   >
     <p>
-      Give your workflow an HTTP handler to accept updates from another service. The example checks a shared secret
-      before posting to Discord.
+      Give your workflow an HTTP handler to accept updates from another service. Routes are public, so this example
+      checks a shared secret before posting to Discord.
     </p>
     {#snippet demo()}<Webhook />{/snippet}
   </Section>
