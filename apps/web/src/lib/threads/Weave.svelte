@@ -177,7 +177,7 @@ onMount(() => {
       })
       above = content.bottom
     }
-    cord = weave([(from.left + from.right) / 2, from.bottom], stops, CORD)
+    cord = weave([(from.left + from.right) / 2, from.bottom], stops, CORD, origin.width)
     knots = cord.knots
     loaded = false
     wake()
@@ -235,6 +235,8 @@ onMount(() => {
   document.addEventListener('visibilitychange', onScroll)
   motion.addEventListener('change', onMotion)
   wide.addEventListener('change', measure)
+  // The canvas is a screen tall, and the page's size can hold while the window's height changes.
+  addEventListener('resize', measure)
   void document.fonts.ready.then(measure)
   void start()
 
@@ -247,6 +249,7 @@ onMount(() => {
     document.removeEventListener('visibilitychange', onScroll)
     motion.removeEventListener('change', onMotion)
     wide.removeEventListener('change', measure)
+    removeEventListener('resize', measure)
     renderer?.destroy()
   }
 })

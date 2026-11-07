@@ -7,14 +7,23 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { along, type Field, position, tint } from '../src/lib/threads/geometry.ts'
+import {
+  along,
+  brightness,
+  type Field,
+  position,
+  SHAPE,
+  thread,
+  warmth,
+} from '../src/lib/threads/geometry.ts'
 
 const app = fileURLToPath(new URL('..', import.meta.url))
 const fonts = join(app, 'node_modules/@fontsource-variable')
 const [WIDTH, HEIGHT] = [1200, 630]
 /** The page's tokens (src/lib/tokens.css): the card is rendered outside the page, so it can't read them. */
 const INK = '#07060c'
-const COLOURS = ['#9a6bff', '#ffad5a', '#d4d7ea']
+const VIOLET = [0x7a, 0x45, 0xff]
+const AMBER = [0xff, 0x9f, 0x5a]
 
 const field: Field = {
   start: [-60, HEIGHT * 0.5],
@@ -30,14 +39,27 @@ const field: Field = {
 const POINTS = 160
 /** A settled moment of the current, as the page's still frame shows. */
 const STILL_TIME = 12
+/** Points per piece a thread is stroked in, each piece its own colour along its violet-to-amber gradient. */
+const PIECE = 2
+/** A colour `w` of the way from violet to amber. */
+const blend = (w: number) =>
+  `rgb(${VIOLET.map((v, c) => Math.round(v + ((AMBER[c] ?? v) - v) * w)).join(' ')})`
 const threads = Array.from({ length: field.count }, (_, i) => {
-  const d = Array.from({ length: POINTS + 1 }, (_, s) =>
+  const points = Array.from({ length: POINTS + 1 }, (_, s) =>
     position(field, i, along(s / POINTS), STILL_TIME),
   )
-    .map(([x, y], s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
-    .join('')
-  const { colour, brightness } = tint(field, i)
-  return `<path d="${d}" stroke="${COLOURS[colour]}" stroke-opacity="${(0.12 + 0.5 * brightness).toFixed(2)}"/>`
+  // From halfway into the braid on, a thread is braided: it takes its strand's colour and its band's light.
+  const into = thread(field, i).joins - SHAPE.join / 2
+  return Array.from({ length: POINTS / PIECE }, (_, n) => {
+    const piece = points.slice(n * PIECE, (n + 1) * PIECE + 1)
+    const u = along((n + 0.5) / (POINTS / PIECE))
+    const braided = u >= into ? 1 : 0
+    const d = piece
+      .map(([x, y], s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
+      .join('')
+    const opacity = Math.min(1, 0.12 + 0.5 * brightness(field, i, braided))
+    return `<path d="${d}" stroke="${blend(warmth(field, i, u, STILL_TIME, braided))}" stroke-opacity="${opacity.toFixed(2)}"/>`
+  }).join('')
 }).join('')
 
 const html = `<!doctype html><html><head><style>

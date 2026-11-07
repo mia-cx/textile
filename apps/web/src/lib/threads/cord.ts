@@ -36,6 +36,19 @@ export interface Stop {
   readonly ends: ReadonlyArray<Point>
 }
 
+/**
+ * About how far a knot's name reaches beside it, in px, as Weave.svelte sets it: 1.25rem from the knot, about 9px a
+ * character of its 15px monospace, and room to spare before the page's edge.
+ */
+const labelReach = (text: string) => 20 + text.length * 9 + 16
+
+/** The side a knot's name sits on: `prefer`, unless the page, `width` wide, has no room for it there. */
+const labelSide = (text: string, x: number, prefer: 'left' | 'right', width: number) => {
+  if (prefer === 'left' && x < labelReach(text)) return 'right'
+  if (prefer === 'right' && x + labelReach(text) > width) return 'left'
+  return prefer
+}
+
 /** Pixels between samples along a path: fine enough that the braid's twists stay smooth. */
 const STEP = 4
 /**
@@ -154,9 +167,15 @@ function frame(points: ReadonlyArray<Point>) {
 /**
  * The cord from `start` down through each stop in turn, with `radius` its braid's radius: braided down to the first
  * gap, then behind each section coming apart across it and gathering again in the next gap, until a stop whose strands
- * all peel off, where it ends. Strands peel off at each `split` into the ends to its right.
+ * all peel off, where it ends. Strands peel off at each `split` into the ends to its right. `width` is the page's: each
+ * knot's name sits on the side the cord doesn't come in from, unless the page has no room for it there.
  */
-export function weave(start: Point, stops: ReadonlyArray<Stop>, radius: number): Cord {
+export function weave(
+  start: Point,
+  stops: ReadonlyArray<Stop>,
+  radius: number,
+  width: number,
+): Cord {
   const spine: Point[] = []
   /** For each spine point, the section it comes apart behind, between the gaps `from` and `to`. */
   const spans: Array<{ box: Box; from: number; to: number; closes: boolean } | undefined> = []
@@ -172,7 +191,12 @@ export function weave(start: Point, stops: ReadonlyArray<Stop>, radius: number):
       text: stop.label,
       x: stop.pinch[0],
       y: stop.pinch[1],
-      side: at[0] > stop.pinch[0] + 1 ? 'left' : 'right',
+      side: labelSide(
+        stop.label,
+        stop.pinch[0],
+        at[0] > stop.pinch[0] + 1 ? 'left' : 'right',
+        width,
+      ),
     })
     at = stop.pinch
 
