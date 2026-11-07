@@ -6,7 +6,6 @@ import {
   MAX_LABELS,
   position,
   SEGMENTS,
-  SHAPE,
   thread,
   warmth,
 } from './geometry'
@@ -35,8 +34,8 @@ export interface Renderer {
   readonly lost?: Promise<unknown>
 }
 
-/** How much light the tone map lets through: higher is brighter, saturating sooner. */
-export const EXPOSURE = 1.45
+/** How much light the tone map lets through: higher is brighter, burning toward white sooner. */
+export const EXPOSURE = 1.15
 
 /** Sizes are CSS pixels: the canvas's own size divided by `dpr`. */
 const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: number) => {
@@ -45,11 +44,13 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
   u.set([canvas.width / dpr, canvas.height / dpr, dpr, time], 0)
   u.set([...field.start, ...field.control], 4)
   u.set([...field.end, field.spread, field.cord], 8)
-  u.set([field.braid, field.count, field.intensity, Math.min(field.labels.length, MAX_LABELS)], 12)
+  const [from, to] = field.braid
+  u.set([from, field.count, field.intensity, Math.min(field.labels.length, MAX_LABELS)], 12)
   for (const [i, label] of field.labels.slice(0, MAX_LABELS).entries())
     u.set([label.at, label.lane], 16 + i * 4)
   for (const [i, rgb] of palette.threads.entries()) u.set(rgb, 32 + i * 4)
   u.set([...palette.background, EXPOSURE], 40)
+  u.set([to], 44)
   return u
 }
 
@@ -127,10 +128,10 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       }
       const count = Math.min(field.count, STILL_THREADS)
       for (let i = 0; i < count; i++) {
-        const { joins } = thread(field, i)
+        const { joins, join } = thread(field, i)
         // From halfway into the braid, a thread gives less light, as hundreds share it. `into` is the point there:
         // `along` inverted.
-        const into = Math.ceil((1 - (1 - (joins - SHAPE.join / 2)) ** (1 / CROWD)) * STILL_SEGMENTS)
+        const into = Math.ceil((1 - (1 - (joins - join / 2)) ** (1 / CROWD)) * STILL_SEGMENTS)
         // In short pieces, so its colour follows the gradient along it.
         for (let s = 0; s < STILL_SEGMENTS; s += STILL_PIECE) {
           const to = Math.min(s + STILL_PIECE, STILL_SEGMENTS)

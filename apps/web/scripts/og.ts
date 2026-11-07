@@ -12,7 +12,6 @@ import {
   brightness,
   type Field,
   position,
-  SHAPE,
   thread,
   warmth,
 } from '../src/lib/threads/geometry.ts'
@@ -31,7 +30,7 @@ const field: Field = {
   end: [WIDTH * 0.62, HEIGHT * 0.5],
   spread: HEIGHT * 0.54,
   cord: 5,
-  braid: 0.6,
+  braid: [0.3, 0.85],
   count: 420,
   intensity: 1,
   labels: [],
@@ -49,7 +48,8 @@ const threads = Array.from({ length: field.count }, (_, i) => {
     position(field, i, along(s / POINTS), STILL_TIME),
   )
   // From halfway into the braid on, a thread is braided: it takes its strand's colour and its band's light.
-  const into = thread(field, i).joins - SHAPE.join / 2
+  const { joins, join } = thread(field, i)
+  const into = joins - join / 2
   return Array.from({ length: POINTS / PIECE }, (_, n) => {
     const piece = points.slice(n * PIECE, (n + 1) * PIECE + 1)
     const u = along((n + 0.5) / (POINTS / PIECE))

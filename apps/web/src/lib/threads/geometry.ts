@@ -3,9 +3,9 @@
  * module runs it on the CPU to place the event labels and to draw the 2D fallback.
  *
  * Threads stream from `start` along a quadratic curve through `control` to `end`, inside a funnel whose nearly straight
- * edges close in steadily from where they enter, `spread` pixels either side, until they meet the braid. From `braid`
- * (a fraction of the way along) on, threads keep leaving the funnel to join a three-strand braid inside it, the
- * innermost first and the outermost last. The braid narrows to a cord of radius `cord` and twists tighter as it goes,
+ * edges close in steadily from where they enter, `spread` pixels either side, until they meet the braid. Across `braid`
+ * (fractions of the way along), threads keep leaving the funnel to join a three-strand braid inside it, the innermost
+ * first and the outermost last. The braid narrows to a cord of radius `cord` and twists tighter as it goes,
  * so it ends at `end` at its thinnest.
  */
 
@@ -27,8 +27,11 @@ export interface Field {
   readonly spread: number
   /** The braid's radius at `end`, its thinnest. */
   readonly cord: number
-  /** How far along (0 to 1) the first threads join the braid. */
-  readonly braid: number
+  /**
+   * Where the braid forms, as fractions of the way along (0 to 1): the first threads start to leave the current at
+   * `from`, and the last have joined the braid by `to`.
+   */
+  readonly braid: readonly [from: number, to: number]
   readonly count: number
   /** Overall brightness, 0 to 1. */
   readonly intensity: number
@@ -51,24 +54,28 @@ const TAU = Math.PI * 2
 
 /** The field's shape, which the shaders read too (shaders.ts writes them into WGSL and GLSL). */
 export const SHAPE = {
-  /** Braid radii per full twist: the braid keeps one helix angle, so it twists tighter as it narrows. */
-  pitch: 8,
+  /**
+   * Braid radii per full twist: the braid keeps one helix angle, so it twists tighter as it narrows. Long, so each
+   * crossing has room to read.
+   */
+  pitch: 11,
   /** How many cord radii the braid widens by from `end` back to `start`: it narrows linearly to `cord`. */
   swell: 9,
   /**
-   * How the funnel narrows: its width beyond the braid's goes as (1 - u / close)^taper, nearly straight edges that
-   * close in steadily from the left edge and meet the braid, tangent to it, at `close` (a fraction of the way along).
+   * How the funnel narrows: its width beyond the braid's outline goes as (1 - u / to)^taper, nearly straight edges that
+   * close in steadily from the left edge and meet the braid's outline, tangent to it, where the braid is whole (`to`
+   * in the field's `braid`).
    */
   taper: 1.3,
-  close: 0.92,
   /** How far the current sways, as a fraction of the funnel's width. */
   wave: 0.14,
   /**
-   * The braid is a three-strand plait: each strand swings from side to side across it, `sin(twist)` braid radii from its
-   * spine, passing over one neighbour and under the other, its depth `sin(2 twist)`. Each strand is a flat band of
+   * The braid is a three-strand plait: each strand swings from side to side across it, `swing` braid radii from its
+   * spine at most, passing over one neighbour and under the other, its depth `sin(2 twist)`. Each strand is a flat band of
    * fibres, `fray` braid radii either side of its centre where it passes in front, and `flat` of that where it passes
    * behind: a band swells as it swings out over its neighbours, so the braid's outline bulges at every crossing.
    */
+  swing: 1.2,
   fray: 0.75,
   flat: 0.5,
   /**
@@ -108,11 +115,10 @@ export const SHAPE = {
    */
   hue: 0,
   /**
-   * How much of the way a thread takes to join the braid: long, so each ribbon eases from its lane into the plait over
-   * a good share of the current, rather than turning in at once. And how far along the last thread has joined.
+   * How much of the field's `braid` a thread takes to join it: long, so each ribbon eases from its lane into the plait
+   * over a good share of that stretch, rather than turning in at once.
    */
-  join: 0.3,
-  joined: 0.85,
+  join: 0.7,
   /**
    * How strictly ribbons join in order from the inner lanes out: 1 by lane alone, 0 at random. Between, the braid fills
    * out as soon as it forms, while the outermost ribbons still join last. And how far apart, in the same units, a
@@ -214,11 +220,15 @@ export const thread = (field: Field, i: number) => {
       (1 - SHAPE.inward) * hash(ribbon + 7.1) +
       SHAPE.stagger * hash(i + 7.1),
   )
-  const joins = field.braid + (SHAPE.joined - field.braid) * order
+  const [from, to] = field.braid
+  const join = SHAPE.join * (to - from)
+  const joins = from + join + (to - from - join) * order
   return {
     lane,
     pin: label ? label.at : -1,
-    joins: label ? Math.max(joins, Math.min(SHAPE.joined, label.at + SHAPE.join * 1.5)) : joins,
+    /** Where the thread has joined the braid, having left its lane `join` before. */
+    joins: label ? Math.max(joins, Math.min(to, label.at + join * 1.5)) : joins,
+    join,
     strand: strandOf(side),
     phase: label ? i * SHAPE.labelPhase : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
     // A labelled thread doesn't wander: its knot rides it, placed on the CPU.
@@ -269,9 +279,14 @@ export const fibre = (i: number, across: number) => {
 export const reach = (field: Field, at: number) =>
   funnelWidth(field, at) * SHAPE.wave * SHAPE.pinned
 
-/** The funnel's half-width `u` along it: the braid's, narrowing to `cord`, and the current's beyond it. */
-const funnelWidth = ({ spread, cord }: Field, u: number) =>
-  cord * (1 + SHAPE.swell * (1 - u)) + spread * Math.max(1 - u / SHAPE.close, 0) ** SHAPE.taper
+/**
+ * The funnel's half-width `u` along it: the braid's radius, narrowing toward `cord`, and the current's beyond it.
+ * Where the braid forms, the braid's part widens to its outline, so the current meets the plait without a waist.
+ * Mirrors `width` in `place` in the shaders.
+ */
+const funnelWidth = ({ spread, cord, braid: [from, to] }: Field, u: number) =>
+  cord * (1 + SHAPE.swell * (1 - u)) * (1 + (SHAPE.swing + SHAPE.fray - 1) * ease(from, to, u)) +
+  spread * Math.max(1 - u / to, 0) ** SHAPE.taper
 
 /**
  * How far from the braid's spine a fibre at `jitter` across its band lies, in braid radii, where its strand has turned
@@ -279,7 +294,7 @@ const funnelWidth = ({ spread, cord }: Field, u: number) =>
  * passes in front and thinnest behind. Mirrors `band` in the shaders.
  */
 export const band = (twist: number, jitter: number, edge: boolean, along: number, drift: number) =>
-  Math.sin(twist) +
+  SHAPE.swing * Math.sin(twist) +
   (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
     SHAPE.fray *
     (SHAPE.flat + ((1 - SHAPE.flat) * (1 + Math.sin(2 * twist))) / 2)
@@ -305,7 +320,7 @@ const twistOf = (field: Field, strand: number, u: number, t: number) =>
 /** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
 export function position(field: Field, i: number, u: number, t: number): Point {
   const { start: p0, control: p1, end: p2, cord } = field
-  const { lane, pin, joins, strand, phase, wander, jitter, drift, edge } = thread(field, i)
+  const { lane, pin, joins, join, strand, phase, wander, jitter, drift, edge } = thread(field, i)
   const a = 1 - u
   const x = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0]
   const y = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1]
@@ -325,7 +340,7 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const current = width * (lane + SHAPE.wave * held * sway + bend)
 
   const braided = radius * band(twistOf(field, strand, u, t), jitter, edge, u, drift)
-  const offset = current + (braided - current) * ease(joins - SHAPE.join, joins, u)
+  const offset = current + (braided - current) * ease(joins - join, joins, u)
   return [x + nx * offset, y + ny * offset]
 }
 

@@ -94,45 +94,92 @@ function clearOfCopy(field: Field, label: Label) {
 }
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
+/**
+ * The hero's braid forms in the open gap between the copy and the window: threads start to leave the current at the
+ * copy's edge, and the braid is whole for the last BRAIDED share of the gap. A gap shorter than FORMING pixels borrows
+ * from behind the copy's edge, where the first threads barely start to turn, so the threads never turn in sharply.
+ */
+const BRAIDED = 0.2
+const FORMING = 220
+
+type Spine = Pick<Field, 'start' | 'control' | 'end'>
+
+/** How far along `field`'s spine (0 to 1) it reaches `value` on `axis`, which it crosses once, rising. */
+function crossing(field: Spine, axis: 0 | 1, value: number) {
+  const { start: p0, control: p1, end: p2 } = field
+  const at = (u: number) => (1 - u) ** 2 * p0[axis] + 2 * u * (1 - u) * p1[axis] + u * u * p2[axis]
+  let [lo, hi] = [0, 1]
+  for (let step = 0; step < 32; step++) {
+    const mid = (lo + hi) / 2
+    if (at(mid) < value) lo = mid
+    else hi = mid
+  }
+  return lo
+}
+
+/**
+ * Where `field` braids: from where its spine leaves the copy, at `copyEdge` on `axis`, to the braid's whole, short of
+ * the window's edge at `windowEdge`.
+ */
+function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number, windowEdge: number) {
+  const whole = windowEdge - (windowEdge - copyEdge) * BRAIDED
+  const from = Math.min(copyEdge, whole - FORMING)
+  return [crossing(field, axis, from), crossing(field, axis, whole)] as const
+}
+
+/** The hero copy's box in the field's pixels, or undefined before it mounts. */
+function copyBox() {
+  if (!heroSection || !heroCopy) return undefined
+  const origin = heroSection.getBoundingClientRect()
+  const copy = heroCopy.getBoundingClientRect()
+  return { right: copy.right - origin.left, bottom: copy.bottom - origin.top }
+}
 
 /** The hero: hundreds of threads streaming in from the left, braiding into the Discord window's left edge. */
 function hero(
   { width, height }: { width: number; height: number },
   target: DOMRect | undefined,
 ): Field {
+  const copy = copyBox()
   if (width >= SIDE_BY_SIDE) {
     // The cord ends just short of the window, so its hot point shows; the window's edge glows where it meets it.
     const end: Point = target
       ? [target.x - TIP_GAP, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
-    const field: Field = {
+    const shape = {
       start: [-width * 0.06, height * 0.5],
       control: [end[0] * 0.5, height * 0.5],
       end,
       spread: height * 0.54,
       cord: clamp(width * 0.006, 7, 13),
-      // Past the headline: the braid gathers in the open space between the copy and the window.
-      braid: 0.64,
       count: width > 1600 ? 560 : 440,
       intensity: 0.75,
       labels: [],
+    } satisfies Omit<Field, 'braid'>
+    const field: Field = {
+      ...shape,
+      braid: braidBetween(shape, 0, copy?.right ?? width * 0.45, end[0] + TIP_GAP),
     }
     const labelled = width >= LABELLED && height >= LABELLED_HEIGHT
     return { ...field, labels: labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : [] }
   }
+  // Stacked, the threads come down past the copy into the window's top.
   const end: Point = target
     ? [target.x + target.width * 0.5, target.y + 2]
     : [width * 0.5, height * 0.6]
-  return {
+  const shape = {
     start: [-width * 0.3, height * 0.08],
     control: [end[0], end[1] - height * 0.32],
     end,
     spread: height * 0.2,
     cord: 6,
-    braid: 0.6,
     count: 280,
     intensity: 0.7,
     labels: [],
+  } satisfies Omit<Field, 'braid'>
+  return {
+    ...shape,
+    braid: braidBetween(shape, 1, copy?.bottom ?? height * 0.5, end[1]),
   }
 }
 
@@ -150,7 +197,7 @@ function close(
     end,
     spread: height * 0.5,
     cord: 9,
-    braid: 0.62,
+    braid: [0.32, 0.85],
     count: 520,
     intensity: 0.85,
     labels: [],

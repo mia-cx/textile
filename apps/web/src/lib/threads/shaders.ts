@@ -7,23 +7,30 @@ import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
  * across the curve. Pulses of light run along every thread toward the end, and in the braid, glints spark along each
  * fibre where its band turns toward the light.
  *
- * A frame takes four more passes after the threads add their light into a half-float target: `bloom` shrinks that
- * light to a small target (`BLOOM_SCALE` of the CSS size), `blur` spreads it across and then down, and `tone` maps the
- * light, its bloom, and a flare where the cord ends over the ink.
+ * Light is linear, in units where a lone fibre in the current gives about 0.1 and a glint a hundred times that. The
+ * threads add their light into a half-float target, and a frame then scatters a share of it as glare, as a lens or the
+ * air does: `shrink` averages the light into the first of BLOOM_LEVELS bloom targets (`BLOOM_SCALE` of the CSS size),
+ * `down` halves it level by level, and `up` adds each level back into the one above, blurring it with a tent. Each
+ * level spreads the light about twice as far as the one above it and carries an equal share, which sums to a glare that
+ * falls off as the inverse square of distance: a tight core and a long, faint tail. `tone` adds the glare to the light
+ * and maps it to the screen with AgX, which keeps hues saturated and burns only the hottest light toward white.
  *
- * Uniforms are eleven vec4s, packed by `pack` in renderer.ts:
+ * Uniforms are twelve vec4s, packed by `pack` in renderer.ts:
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  start.xy, control.xy
  *   2  end.xy, spread, cord
- *   3  braid, count, intensity, label count
+ *   3  braid from, count, intensity, label count
  *   4–7  labels: at, lane
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
+ *   11 braid to, -, -, -
  */
-export const UNIFORM_VEC4S = 11
+export const UNIFORM_VEC4S = 12
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
-/** The bloom target's size, as a fraction of the canvas's CSS size: the same blur radius at every pixel ratio. */
+/** The first bloom target's size, as a fraction of the canvas's CSS size: the same glare at every pixel ratio. */
 export const BLOOM_SCALE = 0.25
+/** Bloom targets, each half the size of the one before: the last spreads light over about a third of the screen. */
+export const BLOOM_LEVELS = 6
 
 /** A number as a shader float literal: `2` becomes `2.0`. */
 const float = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n))
@@ -31,14 +38,46 @@ const float = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n))
 /** Half the strip's width, in CSS pixels: room for the thread's own soft halo; the bloom gives the wider glow. */
 const HALF_WIDTH = float(2)
 
-/**
- * The white a glint burns toward, in either language's vector type: nearly pure, just warm, so a spark on its own reads
- * white after the tone map keeps its channels' ratios.
- */
-const SPARK_WHITE = (vec3: string) => `${vec3}(1.0, 0.97, 0.93)`
+/** The light a glint gives, in either language's vector type: nearly white, just warm. */
+const SPARK_WHITE = (vec3: string) => `${vec3}(1.0, 0.94, 0.86)`
 
-/** The white the densest light burns toward, in either language's vector type: warm, like the concept's hot crossings. */
-const WARM_WHITE = (vec3: string) => `${vec3}(1.0, 0.93, 0.84)`
+/**
+ * `tone`, in either language: linear light, scaled by the exposure, to sRGB for the screen by Troy Sobotka's AgX, in
+ * Benjamin Wrensch's polynomial fit. AgX compresses in a log space whose primaries lean inward, so bright light keeps its
+ * hue as it brightens and only the hottest burns toward white; a little more saturation than its base look keeps the
+ * violet and gold rich where they are dim.
+ */
+const AGX_IN = `0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+    0.0784335999999992, 0.878468636469772, 0.0784336,
+    0.0792237451477643, 0.0791661274605434, 0.879142973793104`
+const AGX_OUT = `1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+    -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+    -0.0990297440797205, -0.0989611768448433, 1.15107367264116`
+/** AgX's log range, in stops around mid grey. */
+const AGX_RANGE = { low: '-12.47393', high: '4.026069', lift: '12.47393', span: '16.500999' }
+const AGX_CURVE = `15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232`
+
+const agxWgsl = /* wgsl */ `
+fn tone(hdr: vec3f) -> vec3f {
+  let lit = mat3x3f(${AGX_IN}) * max(hdr * U[10].w, vec3f(1e-10));
+  let x = (clamp(log2(lit), vec3f(${AGX_RANGE.low}), vec3f(${AGX_RANGE.high})) + ${AGX_RANGE.lift}) / ${AGX_RANGE.span};
+  let x2 = x * x;
+  let x4 = x2 * x2;
+  let curved = ${AGX_CURVE};
+  let rich = mix(vec3f(dot(curved, vec3f(0.2126, 0.7152, 0.0722))), curved, SATURATION);
+  return clamp(mat3x3f(${AGX_OUT}) * rich, vec3f(0.0), vec3f(1.0));
+}`
+
+const agxGlsl = /* glsl */ `
+vec3 tone(vec3 hdr) {
+  vec3 lit = mat3(${AGX_IN}) * max(hdr * U[10].w, vec3(1e-10));
+  vec3 x = (clamp(log2(lit), vec3(${AGX_RANGE.low}), vec3(${AGX_RANGE.high})) + ${AGX_RANGE.lift}) / ${AGX_RANGE.span};
+  vec3 x2 = x * x;
+  vec3 x4 = x2 * x2;
+  vec3 curved = ${AGX_CURVE};
+  vec3 rich = mix(vec3(dot(curved, vec3(0.2126, 0.7152, 0.0722))), curved, SATURATION);
+  return clamp(mat3(${AGX_OUT}) * rich, vec3(0.0), vec3(1.0));
+}`
 
 /** The constants both languages share, each written by `declare` in that language's syntax. */
 const constants = (declare: (name: string, value: string) => string) =>
@@ -47,7 +86,6 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PITCH', float(SHAPE.pitch)),
     declare('SWELL', float(SHAPE.swell)),
     declare('TAPER', float(SHAPE.taper)),
-    declare('CLOSE', float(SHAPE.close)),
     declare('WAVE', float(SHAPE.wave)),
     declare('FRAY', float(SHAPE.fray)),
     declare('FLAT', float(SHAPE.flat)),
@@ -65,7 +103,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('RIBBONS', float(SHAPE.ribbons)),
     declare('RIBBON', float(SHAPE.ribbon)),
     declare('JOIN', float(SHAPE.join)),
-    declare('JOINED', float(SHAPE.joined)),
+    declare('SWING', float(SHAPE.swing)),
     declare('INWARD', float(SHAPE.inward)),
     declare('STAGGER', float(SHAPE.stagger)),
     declare('SCATTER', float(SHAPE.scatter)),
@@ -87,7 +125,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
-    declare('BRAID_LIGHT', float(0.5)),
+    declare('BRAID_LIGHT', float(0.17)),
     // Pulses along each thread, how fast they travel (thread lengths per second), and how bright they peak: less in the
     // braid, where hundreds of threads pulse in step and would otherwise burn it flat white.
     declare('PULSES', float(2.5)),
@@ -95,19 +133,20 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PULSE_LIGHT', float(2.2)),
     declare('BRAID_PULSE_LIGHT', float(0.3)),
     // Glints in the braid: specular sparkles where a fibre catches the light, `GLINTS` along each thread's length,
-    // travelling with the flow (thread lengths per second). They show where a strand passes over its neighbour,
-    // brightest on its band's edge fibres.
-    declare('GLINTS', float(12)),
+    // travelling with the flow (thread lengths per second), on GLINT_SHARE of the fibres. They show where a strand
+    // passes over its neighbour, brightest on its band's edge fibres, and burn a few hundred times a lone fibre's light.
+    declare('GLINTS', float(8)),
     declare('GLINT_SPEED', float(0.05)),
-    declare('GLINT_LIGHT', float(13)),
+    declare('GLINT_LIGHT', float(200)),
+    declare('GLINT_SHARE', float(0.2)),
     // How dark a fibre is behind the braid, against in front of it.
     declare('BACK', float(0.2)),
     declare('COOL', float(SHAPE.cool)),
-    // How much of the bloom adds back, and how bright the flare is where the cord ends.
-    declare('BLOOM', float(0.55)),
-    declare('FLARE_LIGHT', float(2.5)),
-    // How far the densest light burns toward white: partly, so the hottest crossings keep their colour.
-    declare('WHITE_HOT', float(0.35)),
+    // The share of all light that scatters into glare, and the bloom levels it spreads over.
+    declare('GLARE', float(0.06)),
+    declare('LEVELS', float(BLOOM_LEVELS)),
+    // How much more saturated than AgX's base look the tone map leaves colour.
+    declare('SATURATION', float(1.5)),
   ].join('\n')
 
 /** What every WGSL thread module and the tone pass share, for a scene of `vec4s` uniforms. */
@@ -143,7 +182,7 @@ fn fibre(i: f32, across: f32) -> vec3f {
 // How far from the spine a fibre lies, in braid radii, where its strand has turned twist and u along the fibre: its
 // strand's swing across the plait, and its place across its band. Mirrors band in geometry.ts.
 fn band(twist: f32, f: vec3f, u: f32) -> f32 {
-  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
+  return SWING * sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
 }
 // How near the viewer a strand is where it has turned twist, -1 to 1: a plait's strand passes over one neighbour and
 // under the other as it swings across, so its depth turns twice as fast as its swing.
@@ -154,11 +193,12 @@ fn braidLight(depth: f32, f: vec3f, own: f32) -> f32 {
   let front = 0.5 + 0.5 * depth;
   return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
 }
-// How brightly a fibre glints at depth: where its strand passes over its neighbour.
+// How brightly a fibre glints at depth: where its strand passes over its neighbour. Only some fibres glint: those whose
+// drift starts in the first GLINT_SHARE of its cycle, a random share.
 fn glintLight(depth: f32, f: vec3f) -> f32 {
   let facing = max(depth, 0.0);
   let f2 = facing * facing;
-  return GLINT_LIGHT * f2 * mix(0.2, 1.0, f.y);
+  return GLINT_LIGHT * f2 * mix(0.05, 1.0, f.y) * step(f.z, TAU * GLINT_SHARE);
 }
 // What a glint multiplies a fibre of this shade by, so it shines as bright as a band's edge whatever the fibre's own
 // light: a spark of its own, not a share of the fibre's.
@@ -167,13 +207,9 @@ fn spark(shade: f32) -> f32 { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05)
 // neighbours leans violet, as the concept's do, rather than darkening to brown. Shading only: the 2D renderers leave it
 // out (see warmth in geometry.ts).
 fn cool(w: f32, depth: f32, braided: f32) -> f32 { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
-// Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
-// of it, so dense light keeps its hue; only the densest, at the braid's crossings and where the cord ends, burns toward
-// a warm white, as hot filament does.
-fn tone(hdr: vec3f) -> vec3f {
-  let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[10].w;
-  return mix(hdr * U[10].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3f')}, smoothstep(2.5, 6.0, peak) * WHITE_HOT);
-}
+// A page colour (sRGB) as linear light.
+fn linear(c: vec3f) -> vec3f { return pow(c, vec3f(2.2)); }
+${agxWgsl}
 `
 
 const commonWgsl = commonWgslFor(UNIFORM_VEC4S)
@@ -201,7 +237,7 @@ fn pulse(phase: f32, light: f32) -> f32 {
 // A glint's light where a fibre is a phase of the way through its glints: short, sharp sparks.
 fn glint(phase: f32) -> f32 {
   var c = 0.5 + 0.5 * cos(TAU * phase);
-  c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
+  c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
   return c;
 }
 
@@ -219,13 +255,14 @@ fn fs(v: Out) -> @location(0) vec4f {
 export const threadWgsl = /* wgsl */ `${commonWgsl}
 ${fragmentWgsl}
 
-// What makes one thread itself: its lane, its label's place (or -1), where it joins the braid, its strand, its sway's
-// phase, its fibre (as fibre returns it), its ribbon, and its wander: how many bends, where they start, how far.
-// Mirrors thread in geometry.ts.
-struct Thread { lane: f32, pin: f32, joins: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32, wander: vec3f };
+// What makes one thread itself: its lane, its label's place (or -1), where it has joined the braid and how long it took,
+// its strand, its sway's phase, its fibre (as fibre returns it), its ribbon, and its wander: how many bends, where they
+// start, how far. Mirrors thread in geometry.ts.
+struct Thread { lane: f32, pin: f32, joins: f32, join: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32, wander: vec3f };
 
 fn threadOf(i: f32) -> Thread {
-  let braid = U[3].x;
+  let from = U[3].x; let to = U[11].x;
+  let join = JOIN * (to - from);
   let ribbon = ribbonOf(i);
   let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   var across = (hash(i + 0.5) - 0.5) * 2.0;
@@ -235,12 +272,12 @@ fn threadOf(i: f32) -> Thread {
   var pin = -1.0;
   if (i < U[3].w) { let label = U[4u + u32(i)]; pin = label.x; lane = label.y; side = label.y; across = sign(label.y); }
   let order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
-  var joins = braid + (JOINED - braid) * min(1.0, order);
-  if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
+  var joins = from + join + (to - from - join) * min(1.0, order);
+  if (pin >= 0.0) { joins = max(joins, min(to, pin + join * 1.5)); }
   var phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   if (pin >= 0.0) { phase = i * LABEL_PHASE; }
   let wander = vec3f(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, select(WANDER, 0.0, pin >= 0.0));
-  return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon, wander);
+  return Thread(lane, pin, joins, join, strandOf(side), phase, fibre(i, across), ribbon, wander);
 }
 
 // Where a thread is u along it: in CSS px, how far into the braid (0 to 1), and its strand's depth in the plait.
@@ -255,7 +292,7 @@ fn place(th: Thread, u: f32) -> Placed {
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   let radius = cord * (1.0 + SWELL * a);
-  let width = radius + spread * pow(max(1.0 - u / CLOSE, 0.0), TAPER);
+  let width = radius * (1.0 + (SWING + FRAY - 1.0) * ease(U[3].x, U[11].x, u)) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   var held = 1.0;
   if (th.pin >= 0.0) { let d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
@@ -266,7 +303,7 @@ fn place(th: Thread, u: f32) -> Placed {
   let turns = spine / (PITCH * cord * SWELL);
   let twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
   let braided = radius * band(twist, th.fibre, u);
-  let inBraid = ease(th.joins - JOIN, th.joins, u);
+  let inBraid = ease(th.joins - th.join, th.joins, u);
   return Placed(p + n * mix(current, braided, inBraid), inBraid, depthOf(twist));
 }
 
@@ -290,7 +327,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   var pick = hash(i + 4.4);
   if (hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
   let flow = u * GRADIENT * mix(1.0, BRAID_GRADIENT, here.braided) - U[0].w * FLOW;
-  let colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided));
+  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided)));
   var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   if (i < U[3].w) { own = LABELLED; }
   // Bands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
@@ -332,15 +369,6 @@ fn vs(@builtin(vertex_index) vi: u32) -> Screen {
 }
 `
 
-/** The blur's taps beside the centre, in source pixels, and their weights: a 9-tap Gaussian in five bilinear taps. */
-const BLUR = {
-  near: '1.3846',
-  far: '3.2308',
-  centre: '0.2270',
-  nearWeight: '0.3162',
-  farWeight: '0.0703',
-}
-
 /**
  * The most source pixels `shrink` reads across each axis: a quarter-size bloom target covers 8 at the field's highest
  * pixel ratio, 2, and one more when the ratio is fractional.
@@ -348,10 +376,15 @@ const BLUR = {
 const MAX_FOOTPRINT = 9
 
 /**
- * `shrink` draws the light into the bloom target, each pixel averaging the source pixels whose centres fall inside its
- * footprint, sampled at those centres. Neighbouring footprints tile the source, so at any pixel ratio, fractional ones
- * included, every source pixel counts exactly once; skipping any would let a thin thread's bloom flicker as it crosses
- * the grid. `across` and `down` blur the bloom target one way each.
+ * `shrink` draws the light into the first bloom target, each pixel averaging the source pixels whose centres fall
+ * inside its footprint, sampled at those centres. Neighbouring footprints tile the source, so at any pixel ratio,
+ * fractional ones included, every source pixel counts exactly once; skipping any would let a thin thread's bloom
+ * flicker as it crosses the grid.
+ *
+ * `down` halves a level with Jorge Jimenez's 13-tap filter (Call of Duty: Advanced Warfare): four overlapping 2×2
+ * boxes, weighted toward the centre, which keeps the halving free of aliasing. `up` reads the level below through a
+ * 3×3 tent and adds it to the one above (the pipeline blends it in), so each level carries everything below it, blurred
+ * once more. Both keep the light's total: their weights sum to 1.
  */
 export const bloomWgsl = /* wgsl */ `${fullscreenWgsl}
 @group(0) @binding(0) var source: texture_2d<f32>;
@@ -376,29 +409,29 @@ fn shrink(v: Screen) -> @location(0) vec4f {
   return vec4f(sum / max(count.x * count.y, 1.0), 1.0);
 }
 
-fn blur(uv: vec2f, direction: vec2f) -> vec4f {
-  let stride = direction / vec2f(textureDimensions(source));
-  let sum = textureSample(source, filtering, uv).rgb * ${BLUR.centre}
-    + (textureSample(source, filtering, uv + stride * ${BLUR.near}).rgb
-      + textureSample(source, filtering, uv - stride * ${BLUR.near}).rgb) * ${BLUR.nearWeight}
-    + (textureSample(source, filtering, uv + stride * ${BLUR.far}).rgb
-      + textureSample(source, filtering, uv - stride * ${BLUR.far}).rgb) * ${BLUR.farWeight};
-  return vec4f(sum, 1.0);
+fn tap(uv: vec2f, texel: vec2f, x: f32, y: f32) -> vec3f {
+  return textureSampleLevel(source, filtering, uv + texel * vec2f(x, y), 0.0).rgb;
 }
 
 @fragment
-fn across(v: Screen) -> @location(0) vec4f { return blur(v.uv, vec2f(1.0, 0.0)); }
+fn down(v: Screen) -> @location(0) vec4f {
+  let t = 1.0 / vec2f(textureDimensions(source));
+  let centre = tap(v.uv, t, 0.0, 0.0);
+  let inner = tap(v.uv, t, -1.0, -1.0) + tap(v.uv, t, 1.0, -1.0) + tap(v.uv, t, -1.0, 1.0) + tap(v.uv, t, 1.0, 1.0);
+  let edges = tap(v.uv, t, 0.0, -2.0) + tap(v.uv, t, -2.0, 0.0) + tap(v.uv, t, 2.0, 0.0) + tap(v.uv, t, 0.0, 2.0);
+  let corners = tap(v.uv, t, -2.0, -2.0) + tap(v.uv, t, 2.0, -2.0) + tap(v.uv, t, -2.0, 2.0) + tap(v.uv, t, 2.0, 2.0);
+  return vec4f(centre * 0.125 + inner * 0.125 + edges * 0.0625 + corners * 0.03125, 1.0);
+}
 
 @fragment
-fn down(v: Screen) -> @location(0) vec4f { return blur(v.uv, vec2f(0.0, 1.0)); }
+fn up(v: Screen) -> @location(0) vec4f {
+  let t = 1.0 / vec2f(textureDimensions(source));
+  let centre = tap(v.uv, t, 0.0, 0.0);
+  let edges = tap(v.uv, t, 0.0, -1.0) + tap(v.uv, t, -1.0, 0.0) + tap(v.uv, t, 1.0, 0.0) + tap(v.uv, t, 0.0, 1.0);
+  let corners = tap(v.uv, t, -1.0, -1.0) + tap(v.uv, t, 1.0, -1.0) + tap(v.uv, t, -1.0, 1.0) + tap(v.uv, t, 1.0, 1.0);
+  return vec4f((centre * 4.0 + edges * 2.0 + corners) / 16.0, 1.0);
+}
 `
-
-/**
- * Light where the cord ends, `r` cord radii away, in either language: a hot, near-white point the width of the cord
- * inside a wider violet glow.
- */
-const flare = (vec3: string) =>
-  `mix(U[8].rgb, mix(mix(U[8].rgb, U[9].rgb, 0.5), ${vec3}(1.0), 0.5), exp(-r * 0.6)) * FLARE_LIGHT * U[3].z * (2.0 * exp(-r * r * 0.5) + 0.5 * exp(-r * 0.35))`
 
 export const toneWgsl = /* wgsl */ `${commonWgsl}
 ${fullscreenWgsl}
@@ -406,25 +439,25 @@ ${fullscreenWgsl}
 @group(0) @binding(2) var bloom: texture_2d<f32>;
 @group(0) @binding(3) var filtering: sampler;
 
-fn flare(r: f32) -> vec3f { return ${flare('vec3f')}; }
-
 fn dither(at: vec2f) -> f32 { return (hash(at.x * 0.137 + at.y * 1.173) - 0.5) / 255.0; }
+
+// The light that reaches the eye at this pixel: what isn't scattered, and the glare. The first bloom level holds every
+// level's light, each kept whole, so it carries LEVELS times the light.
+fn seen(v: Screen) -> vec3f {
+  return textureLoad(light, vec2i(v.at.xy), 0).rgb * (1.0 - GLARE)
+    + textureSample(bloom, filtering, v.uv).rgb * (GLARE / LEVELS);
+}
 
 @fragment
 fn fs(v: Screen) -> @location(0) vec4f {
-  let css = v.at.xy / U[0].z;
-  let hdr = textureLoad(light, vec2i(v.at.xy), 0).rgb
-    + textureSample(bloom, filtering, v.uv).rgb * BLOOM
-    + flare(distance(css, U[2].xy) / U[2].w);
-  return vec4f(U[10].rgb + tone(hdr) + dither(v.at.xy), 1.0);
+  return vec4f(U[10].rgb + tone(seen(v)) + dither(v.at.xy), 1.0);
 }
 
 // Over the page: the light alone, premultiplied, as opaque as its brightest channel, so it lays over the page's ink
-// much as it would add to it. No flare.
+// much as it would add to it.
 @fragment
 fn over(v: Screen) -> @location(0) vec4f {
-  let hdr = textureLoad(light, vec2i(v.at.xy), 0).rgb + textureSample(bloom, filtering, v.uv).rgb * BLOOM;
-  let mapped = max(tone(hdr) + dither(v.at.xy), vec3f(0.0));
+  let mapped = max(tone(seen(v)) + dither(v.at.xy), vec3f(0.0));
   return vec4f(mapped, min(max(mapped.r, max(mapped.g, mapped.b)), 1.0));
 }
 `
@@ -454,7 +487,7 @@ vec3 fibre(float i, float across) {
   return vec3(jitter, edge ? 1.0 : 0.0, hash(i + 4.7) * TAU);
 }
 float band(float twist, vec3 f, float u) {
-  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
+  return SWING * sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
 }
 float depthOf(float twist) { return sin(2.0 * twist); }
 float braidLight(float depth, vec3 f, float own) {
@@ -464,14 +497,12 @@ float braidLight(float depth, vec3 f, float own) {
 float glintLight(float depth, vec3 f) {
   float facing = max(depth, 0.0);
   float f2 = facing * facing;
-  return GLINT_LIGHT * f2 * mix(0.2, 1.0, f.y);
+  return GLINT_LIGHT * f2 * mix(0.05, 1.0, f.y) * step(f.z, TAU * GLINT_SHARE);
 }
 float spark(float shade) { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
 float cool(float w, float depth, float braided) { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
-vec3 tone(vec3 hdr) {
-  float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[10].w;
-  return mix(hdr * U[10].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3')}, smoothstep(2.5, 6.0, peak) * WHITE_HOT);
-}
+vec3 linear(vec3 c) { return pow(c, vec3(2.2)); }
+${agxGlsl}
 `
 
 const commonGlsl = commonGlslFor(UNIFORM_VEC4S)
@@ -482,10 +513,11 @@ out float vAcross;
 out vec2 vPulse;
 out vec2 vGlint;
 
-struct Thread { float lane; float pin; float joins; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; };
+struct Thread { float lane; float pin; float joins; float join; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; };
 
 Thread threadOf(float i) {
-  float braid = U[3].x;
+  float from = U[3].x; float to = U[11].x;
+  float join = JOIN * (to - from);
   float ribbon = ribbonOf(i);
   float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   float across = (hash(i + 0.5) - 0.5) * 2.0;
@@ -499,11 +531,11 @@ Thread threadOf(float i) {
     }
   }
   float order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
-  float joins = braid + (JOINED - braid) * min(1.0, order);
-  if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
+  float joins = from + join + (to - from - join) * min(1.0, order);
+  if (pin >= 0.0) joins = max(joins, min(to, pin + join * 1.5));
   float phase = pin >= 0.0 ? i * LABEL_PHASE : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   vec3 wander = vec3(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, pin >= 0.0 ? 0.0 : WANDER);
-  return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon, wander);
+  return Thread(lane, pin, joins, join, strandOf(side), phase, fibre(i, across), ribbon, wander);
 }
 
 struct Placed { vec2 at; float braided; float depth; };
@@ -517,7 +549,7 @@ Placed place(Thread th, float u) {
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   float radius = cord * (1.0 + SWELL * a);
-  float width = radius + spread * pow(max(1.0 - u / CLOSE, 0.0), TAPER);
+  float width = radius * (1.0 + (SWING + FRAY - 1.0) * ease(U[3].x, U[11].x, u)) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   float held = 1.0;
   if (th.pin >= 0.0) { float d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
@@ -528,7 +560,7 @@ Placed place(Thread th, float u) {
   float turns = spine / (PITCH * cord * SWELL);
   float twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
   float braided = radius * band(twist, th.fibre, u);
-  float inBraid = ease(th.joins - JOIN, th.joins, u);
+  float inBraid = ease(th.joins - th.join, th.joins, u);
   return Placed(p + n * mix(current, braided, inBraid), inBraid, depthOf(twist));
 }
 
@@ -548,7 +580,7 @@ void main() {
 
   float pick = hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
   float flow = u * GRADIENT * mix(1.0, BRAID_GRADIENT, here.braided) - U[0].w * FLOW;
-  vec3 colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided));
+  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided)));
   float own = i < U[3].w ? LABELLED : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float shade = mix(own, braidLight(here.depth, th.fibre, own), here.braided) * smoothstep(0.0, 0.06, u);
 
@@ -579,7 +611,7 @@ float pulse(float phase, float light) {
 }
 float glint(float phase) {
   float c = 0.5 + 0.5 * cos(TAU * phase);
-  c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
+  c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
   return c;
 }
 void main() {
@@ -624,56 +656,55 @@ void main() {
 }
 `
 
-export const blurFragmentGlsl = /* glsl */ `#version 300 es
+/** A bloom pass reading `source` at `tap(x, y)`, in its texels from this pixel's centre: as `down` and `up` in bloomWgsl. */
+const bloomPassGlsl = (body: string) => /* glsl */ `#version 300 es
 precision highp float;
 uniform sampler2D source;
-uniform vec2 direction;
 in vec2 vUv;
 out vec4 colour;
+vec3 tap(float x, float y) { return textureLod(source, vUv + vec2(x, y) / vec2(textureSize(source, 0)), 0.0).rgb; }
 void main() {
-  vec2 stride = direction / vec2(textureSize(source, 0));
-  vec3 sum = texture(source, vUv).rgb * ${BLUR.centre}
-    + (texture(source, vUv + stride * ${BLUR.near}).rgb + texture(source, vUv - stride * ${BLUR.near}).rgb) * ${BLUR.nearWeight}
-    + (texture(source, vUv + stride * ${BLUR.far}).rgb + texture(source, vUv - stride * ${BLUR.far}).rgb) * ${BLUR.farWeight};
-  colour = vec4(sum, 1.0);
+${body}
 }
 `
 
-export const toneFragmentGlsl = /* glsl */ `${commonGlsl}
-uniform sampler2D light;
-uniform sampler2D bloom;
-in vec2 vUv;
-out vec4 colour;
+export const downFragmentGlsl = bloomPassGlsl(`
+  vec3 centre = tap(0.0, 0.0);
+  vec3 inner = tap(-1.0, -1.0) + tap(1.0, -1.0) + tap(-1.0, 1.0) + tap(1.0, 1.0);
+  vec3 edges = tap(0.0, -2.0) + tap(-2.0, 0.0) + tap(2.0, 0.0) + tap(0.0, 2.0);
+  vec3 corners = tap(-2.0, -2.0) + tap(2.0, -2.0) + tap(-2.0, 2.0) + tap(2.0, 2.0);
+  colour = vec4(centre * 0.125 + inner * 0.125 + edges * 0.0625 + corners * 0.03125, 1.0);`)
 
-vec3 flare(float r) { return ${flare('vec3')}; }
+export const upFragmentGlsl = bloomPassGlsl(`
+  vec3 centre = tap(0.0, 0.0);
+  vec3 edges = tap(0.0, -1.0) + tap(-1.0, 0.0) + tap(1.0, 0.0) + tap(0.0, 1.0);
+  vec3 corners = tap(-1.0, -1.0) + tap(1.0, -1.0) + tap(-1.0, 1.0) + tap(1.0, 1.0);
+  colour = vec4((centre * 4.0 + edges * 2.0 + corners) / 16.0, 1.0);`)
 
-void main() {
-  vec2 css = vec2(gl_FragCoord.x, float(textureSize(light, 0).y) - gl_FragCoord.y) / U[0].z;
-  vec3 hdr = texelFetch(light, ivec2(gl_FragCoord.xy), 0).rgb + texture(bloom, vUv).rgb * BLOOM + flare(distance(css, U[2].xy) / U[2].w);
-  vec3 mapped = tone(hdr);
-  float dither = (hash(gl_FragCoord.x * 0.137 + gl_FragCoord.y * 1.173) - 0.5) / 255.0;
-  colour = vec4(U[10].rgb + mapped + dither, 1.0);
-}
-`
-
-/** The tone pass for a canvas over the page, as `over` in toneWgsl. */
-export const toneOverFragmentGlsl = /* glsl */ `${commonGlsl}
+/** The tone pass, as `fs` in toneWgsl, or for a canvas `over` the page, as `over`. */
+const toneGlsl = (over: boolean) => /* glsl */ `${commonGlsl}
 uniform sampler2D light;
 uniform sampler2D bloom;
 in vec2 vUv;
 out vec4 colour;
 
 void main() {
-  vec3 hdr = texelFetch(light, ivec2(gl_FragCoord.xy), 0).rgb + texture(bloom, vUv).rgb * BLOOM;
+  vec3 seen = texelFetch(light, ivec2(gl_FragCoord.xy), 0).rgb * (1.0 - GLARE) + texture(bloom, vUv).rgb * (GLARE / LEVELS);
   float dither = (hash(gl_FragCoord.x * 0.137 + gl_FragCoord.y * 1.173) - 0.5) / 255.0;
-  vec3 mapped = max(tone(hdr) + dither, vec3(0.0));
-  colour = vec4(mapped, min(max(mapped.r, max(mapped.g, mapped.b)), 1.0));
+  ${
+    over
+      ? `vec3 mapped = max(tone(seen) + dither, vec3(0.0));
+  colour = vec4(mapped, min(max(mapped.r, max(mapped.g, mapped.b)), 1.0));`
+      : 'colour = vec4(U[10].rgb + tone(seen) + dither, 1.0);'
+  }
 }
 `
+
+export const toneFragmentGlsl = toneGlsl(false)
+export const toneOverFragmentGlsl = toneGlsl(true)
 
 /**
- * The cord's uniforms, packed by `paint` in cordRenderer.ts. The tone pass reads 0, 2, 3, and 8–10 as it does the
- * hero's, so 2 and 3.z leave its flare out:
+ * The cord's uniforms, packed by `paint` in cordRenderer.ts. The tone pass reads 10 as it does the hero's:
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  the canvas's top-left on the page (px), the tip's height on the page, intensity
  *   2  0, 0, how many prose boxes, 1
@@ -798,7 +829,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   if (hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
   let run = here.s / DRIFT_SPAN;
   let flow = run * GRADIENT * mix(1.0, BRAID_GRADIENT, braided) - U[0].w * FLOW;
-  let colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, knit));
+  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, knit)));
   let own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   let shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit);
   // The cord fades out over FADE above its tip, and dims behind prose.
@@ -903,7 +934,7 @@ void main() {
   float pick = hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
   float run = here.s / DRIFT_SPAN;
   float flow = run * GRADIENT * mix(1.0, BRAID_GRADIENT, braided) - U[0].w * FLOW;
-  vec3 colour = mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, knit));
+  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, knit)));
   float own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit);
   float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
