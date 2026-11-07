@@ -103,25 +103,27 @@ onMount(() => {
 </script>
 
 <div bind:this={box} class="weave" style:--height="{size.height}px" aria-hidden="true">
-  <div class="reveal threads">
-    <svg viewBox="0 0 {size.width} {size.height}" focusable="false">
-      <g id="weave-cord">
-        <path class="halo" d={woven.spine} />
-        {#each woven.strokes as stroke}
-          <path class="glow" d={stroke.d} stroke={COLOURS[stroke.colour]} />
-        {/each}
-        <!-- Light adds where fibres cross, as the hero's threads do, so the braid burns brightest at its crossings. -->
-        <g class="cores">
+  <div class="threads">
+    <div class="cord">
+      <svg viewBox="0 0 {size.width} {size.height}" focusable="false">
+        <g>
+          <path class="halo" d={woven.spine} />
           {#each woven.strokes as stroke}
-            <path d={stroke.d} stroke={COLOURS[stroke.colour]} stroke-opacity={stroke.opacity} />
+            <path class="glow" d={stroke.d} stroke={COLOURS[stroke.colour]} />
           {/each}
+          <!-- Light adds where fibres cross, as the hero's threads do, so the braid burns brightest at its crossings. -->
+          <g class="cores">
+            {#each woven.strokes as stroke}
+              <path d={stroke.d} stroke={COLOURS[stroke.colour]} stroke-opacity={stroke.opacity} />
+            {/each}
+          </g>
         </g>
-      </g>
-    </svg>
-  </div>
-  <!-- The cord's last stretch, where it fades out: the same cord, drawn again in a short box of its own. -->
-  <div class="reveal tip">
-    <svg viewBox="0 0 {size.width} {size.height}" focusable="false"><use href="#weave-cord" /></svg>
+      </svg>
+    </div>
+    <!-- The cord's last stretch, where it fades into the page: its route, painted over it in the page's paper. -->
+    <div class="tip">
+      <svg viewBox="0 0 {size.width} {size.height}" focusable="false"><path class="fade" d={woven.spine} /></svg>
+    </div>
   </div>
   <div class="reveal marks">
     <div class="hold">
@@ -141,13 +143,17 @@ onMount(() => {
     pointer-events: none;
     view-timeline: --weave block;
   }
-  .reveal {
+  .reveal,
+  .threads,
+  .cord {
     position: absolute;
     inset: 0;
+  }
+  .reveal,
+  .cord {
     overflow: clip;
   }
-  .threads,
-  .tip {
+  .threads {
     z-index: 0;
   }
   /* Drawn in full, without scroll timelines or with reduced motion, the cord needs no separate tip. */
@@ -182,6 +188,12 @@ onMount(() => {
   .cores path {
     stroke-width: 1;
     mix-blend-mode: plus-lighter;
+  }
+  /* Wider than the cord's halo, so it covers every fibre and its glow. */
+  .fade {
+    stroke: var(--paper);
+    stroke-width: 40;
+    stroke-linecap: round;
   }
 
   /* A knot on the cord where it enters a panel, and the event's name beside it, as the hero labels its threads. */
@@ -228,7 +240,10 @@ onMount(() => {
   @supports (animation-timeline: view()) {
     @media (prefers-reduced-motion: no-preference) {
       .reveal,
-      .reveal > * {
+      .reveal > *,
+      .threads,
+      .cord > svg,
+      .tip > svg {
         animation: linear both;
         animation-timeline: --weave;
         animation-range: cover 25vh cover calc(100% - 75vh);
@@ -239,29 +254,37 @@ onMount(() => {
       .reveal > * {
         animation-name: hold;
       }
-      /* The cord fades out over its last 14rem, as the hero's threads fade at their ends, rather than stopping at an
-         edge. A mask's cost grows with the box it covers, so only that stretch is masked: the cord's clip box, one
-         screen tall, stops 14rem above the tip, and the tip's own 14rem box below it carries the fade. Each box slides
-         down by `--height`, the page's height, while the cord inside slides back up by as much. */
+      /* The cord fades into the page over its last 14rem, as the hero's threads fade at their ends, rather than
+         stopping at an edge. Its window, one screen and 14rem tall with its bottom at the tip, slides down by
+         `--height`, the height of the box the weave fills, while the cord inside slides back up by as much. Over the
+         last 14rem, the tip's box paints the cord's route in the page's paper, fading in toward the tip. A mask's cost
+         grows with the box it covers, so only that short box is masked; and since it paints over the cord rather than
+         drawing a second cord beside it, no edge between two boxes can show. */
       .threads,
-      .tip {
+      .cord {
         bottom: auto;
+        height: calc(100vh + 14rem);
       }
       .threads {
-        height: 100vh;
         animation-name: clip-cord;
       }
       .tip {
         display: block;
-        height: 14rem;
-        mask-image: linear-gradient(#000, transparent);
-        animation-name: clip-tip;
+        position: absolute;
+        top: 100vh;
+        right: 0;
+        left: 0;
+        /* 2px past the cord's edge, opaque there, so the cord's last row, wherever it falls between pixels, is
+           covered. */
+        height: calc(14rem + 2px);
+        overflow: clip;
+        mask-image: linear-gradient(transparent, #000 calc(100% - 2px));
       }
-      .threads > svg,
+      .cord > svg,
       .tip > svg {
         height: var(--height);
       }
-      .threads > svg {
+      .cord > svg {
         animation-name: hold-cord;
       }
       .tip > svg {
@@ -283,14 +306,6 @@ onMount(() => {
     }
     to {
       transform: translateY(calc(100vh + 14rem - var(--height)));
-    }
-  }
-  @keyframes clip-tip {
-    from {
-      transform: translateY(-14rem);
-    }
-    to {
-      transform: translateY(calc(var(--height) - 14rem));
     }
   }
   @keyframes hold-tip {
