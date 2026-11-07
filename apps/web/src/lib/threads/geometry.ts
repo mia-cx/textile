@@ -44,13 +44,14 @@ export interface Field {
   readonly text?: ReadonlyArray<readonly [left: number, top: number, right: number, bottom: number]>
 }
 
-export const MAX_TEXT = 3
+/** The most text boxes a field dims behind: the hero's wordmark, headline, subline, buttons, and four labels. */
+export const MAX_TEXT = 8
 /**
  * How much of a thread's light shows behind text, and how its dimming fades out: from TEXT_FADE[0] px inside a text
- * box's edge to TEXT_FADE[1] px outside it.
+ * box's edge to TEXT_FADE[1] px outside it, so neither the threads nor their glare cross the letters.
  */
-export const TEXT_LIGHT = 0.25
-export const TEXT_FADE = [-8, 32] as const
+export const TEXT_LIGHT = 0.15
+export const TEXT_FADE = [-8, 48] as const
 
 /** How much of a thread's light shows at `x`, `y` on `field`: less behind its text. Mirrors `behindText` in the shaders. */
 export const behindText = (field: Field, x: number, y: number) =>
@@ -183,8 +184,8 @@ export const SHAPE = {
   fraying: 3,
   /** The share of threads that stray from their bundle onto a lane of their own and wander between the bundles. */
   stray: 0.06,
-  /** How much of its warmth a strand keeps right at the back of the braid. */
-  cool: 0.35,
+  /** How much of its warmth a strand keeps right at the back of the braid: most, so an amber band stays amber. */
+  cool: 0.6,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
@@ -202,11 +203,12 @@ export const SHAPE = {
   coherence: 0.9,
   /**
    * How many violet-to-amber cycles a thread runs per unit along it (its whole length in the hero, 1300px of the cord)
-   * in the loose current, and in the plait: a cycle spans hundreds of pixels either way, faster in the plait, so each
-   * band turns from violet through pink to amber and back as it winds, its neighbours a third of a cycle apart.
+   * in the loose current, and in the plait: a cycle spans hundreds of pixels on a loose strand, and about half the
+   * hero's plait, so each band turns from violet through pink to amber and back as it winds, its neighbours a third of a
+   * cycle apart, and every band shows amber somewhere along the plait at every moment.
    */
   gradient: 1.6,
-  braidGradient: 5,
+  braidGradient: 11,
   /** How fast the gradient flows toward the window, in cycles per second. */
   flow: 0.06,
   /**
@@ -553,14 +555,22 @@ const toLinear = (c: Vec3) => each(c, (x) => x ** GAMMA)
 const toPage = (c: Vec3) => each(c, (x) => Math.max(x, 0) ** (1 / GAMMA))
 
 /**
+ * How far the mix leans toward amber: OKLab holds violet's hue through the first third of the way to this amber and
+ * reaches amber's only in the last eighth, so the mix runs 1 − (1 − w)^AMBERWARD of the way, giving amber about as much
+ * of each cycle as violet, with a long stretch of magenta and pink between. Mirrors the shaders.
+ */
+export const AMBERWARD = 1.6
+
+/**
  * `violet` to `amber` (sRGB, 0 to 1) at `w`, as sRGB: mixed in OKLab with their chroma kept, so the way between runs
  * through magenta and pink rather than a muddy mauve. Mirrors `blend` in the shaders, which keep it as linear light.
  */
 export function blend(violet: Vec3, amber: Vec3, w: number): Vec3 {
   const a = oklab(toLinear(violet))
   const b = oklab(toLinear(amber))
-  const m: Vec3 = [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w]
-  const chroma = Math.hypot(a[1], a[2]) + (Math.hypot(b[1], b[2]) - Math.hypot(a[1], a[2])) * w
+  const t = 1 - (1 - w) ** AMBERWARD
+  const m: Vec3 = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+  const chroma = Math.hypot(a[1], a[2]) + (Math.hypot(b[1], b[2]) - Math.hypot(a[1], a[2])) * t
   const k = chroma / Math.max(Math.hypot(m[1], m[2]), 1e-5)
   return toPage(fromOklab([m[0], m[1] * k, m[2] * k]))
 }

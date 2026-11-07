@@ -11,6 +11,7 @@ import {
   UNBRAID,
 } from './cord'
 import {
+  AMBERWARD,
   CROWD,
   MAX_LABELS,
   MAX_TEXT,
@@ -55,9 +56,9 @@ const OKLAB_RGB = columns(OKLAB.rgb)
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
  *   11 where the plait is whole, where the bundles start to gather, how many text boxes, -
- *   12–14  text boxes over the field: left, top, right, bottom
+ *   12–19  text boxes over the field: left, top, right, bottom
  */
-export const UNIFORM_VEC4S = 15
+export const UNIFORM_VEC4S = 20
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
 /** The first bloom target's size, as a fraction of the canvas's CSS size: the same glare at every pixel ratio. */
 export const BLOOM_SCALE = 0.25
@@ -213,6 +214,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('LEVELS', float(BLOOM_LEVELS)),
     // How much more saturated than AgX's base look the tone map leaves colour.
     declare('SATURATION', float(1.5)),
+    declare('AMBERWARD', float(AMBERWARD)),
     // How much light shows behind text over the hero's field, and where its dimming fades: see behindText in geometry.ts.
     declare('TEXT_LIGHT', float(TEXT_LIGHT)),
     declare('TEXT_FADE_IN', float(TEXT_FADE[0])),
@@ -330,8 +332,9 @@ fn fromOklab(lab: vec3f) -> vec3f {
 fn blend(w: f32) -> vec3f {
   let a = oklab(linear(U[8].rgb));
   let b = oklab(linear(U[9].rgb));
-  let m = mix(a, b, w);
-  let chroma = mix(length(a.yz), length(b.yz), w);
+  let toward = 1.0 - pow(1.0 - clamp(w, 0.0, 1.0), AMBERWARD);
+  let m = mix(a, b, toward);
+  let chroma = mix(length(a.yz), length(b.yz), toward);
   return max(fromOklab(vec3f(m.x, m.yz * chroma / max(length(m.yz), 1e-5))), vec3f(0.0));
 }
 ${agxWgsl}
@@ -706,8 +709,9 @@ vec3 fromOklab(vec3 lab) {
 vec3 blend(float w) {
   vec3 a = oklab(linear(U[8].rgb));
   vec3 b = oklab(linear(U[9].rgb));
-  vec3 m = mix(a, b, w);
-  float chroma = mix(length(a.yz), length(b.yz), w);
+  float toward = 1.0 - pow(1.0 - clamp(w, 0.0, 1.0), AMBERWARD);
+  vec3 m = mix(a, b, toward);
+  float chroma = mix(length(a.yz), length(b.yz), toward);
   return max(fromOklab(vec3(m.x, m.yz * chroma / max(length(m.yz), 1e-5))), vec3(0.0));
 }
 ${agxGlsl}
@@ -1052,14 +1056,15 @@ fn place(th: Thread, k: f32) -> Placed {
   let wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
   let plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
   // Its strand as a loose rope: on its own third of the spread, still swinging around the others a little, its fibres
-  // close together until they fray out to their own lanes.
-  let home = (th.strand - 1.0) * 2.0 * b.z / 3.0;
+  // close together until they fray out to their own lanes within that third. The ropes part as far as loose spreads
+  // them, which the weave keeps to a gentle turn, so no rope leaves the plait at a corner.
+  let home = (th.strand - 1.0) * 2.0 / 3.0;
   var sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  let rope = home + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray)
-    + (th.lane * b.z - home + sway) * fray;
+  let rope = (b.z * mix(home, th.lane, fray) + sway * fray) * loose
+    + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   let drift = swayAt(a.y, t) * a.w;
   return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
 }
@@ -1187,13 +1192,13 @@ Placed place(Thread th, float k) {
   float twist = a.z + U[2].x - t * SPIN + th.strand * TAU / 3.0;
   float wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
   float plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
-  float home = (th.strand - 1.0) * 2.0 * b.z / 3.0;
+  float home = (th.strand - 1.0) * 2.0 / 3.0;
   float sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  float rope = home + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray)
-    + (th.lane * b.z - home + sway) * fray;
+  float rope = (b.z * mix(home, th.lane, fray) + sway * fray) * loose
+    + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   float drift = swayAt(a.y, t) * a.w;
   return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
 }

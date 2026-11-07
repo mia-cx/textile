@@ -100,6 +100,23 @@ function clearOfCopy(field: Field, label: Label) {
     top - below > copy.bottom - origin.top
   )
 }
+
+/**
+ * Where `label`'s name sits on `field` at rest, as a text box the field dims behind: beside its knot, above it or below
+ * on the current's lower half, widened by half as far as the knot sways, so the box keeps clear of the knot and of the
+ * label's own thread through it.
+ */
+function labelBox(field: Field, label: Label): NonNullable<Field['text']>[number] {
+  const [x, y] = position({ ...field, labels: [label] }, 0, label.at, 0)
+  const sway = reach(field, label.at) / 2
+  const [top, bottom] = label.lane > 0 ? [y, y + LABEL_SPAN] : [y - LABEL_SPAN, y]
+  return [
+    x + LABEL_INSET - sway,
+    top - sway,
+    x + LABEL_INSET + label.text.length * LABEL_CHAR + sway,
+    bottom + sway,
+  ]
+}
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 /**
@@ -147,13 +164,19 @@ function copyBox() {
 }
 
 /**
- * The hero's text, as boxes in the field's pixels: the headline, the subline, and the buttons. The field dims behind
- * each, only there, so the text reads over its light.
+ * The text over the hero's field, as boxes in the field's pixels: the header's wordmark, which the field reaches up
+ * behind, and the headline, the subline, and the buttons. The field dims behind each, only there, so the text reads
+ * over its light.
  */
 function textBoxes(): NonNullable<Field['text']> {
   if (!heroSection || !heroCopy) return []
   const origin = heroSection.getBoundingClientRect()
-  return [...heroCopy.querySelectorAll('h1, .lede, .actions')].map((element) => {
+  const wordmark = document.querySelector('.site-header .wordmark')
+  const text = [
+    ...(wordmark ? [wordmark] : []),
+    ...heroCopy.querySelectorAll('h1, .lede, .actions'),
+  ]
+  return text.map((element) => {
     const r = element.getBoundingClientRect()
     return [r.left - origin.left, r.top - origin.top, r.right - origin.left, r.bottom - origin.top]
   })
@@ -187,7 +210,13 @@ function hero(
     }
     seam = seamOf(field)
     const labelled = width >= LABELLED && height >= LABELLED_HEIGHT
-    return { ...field, labels: labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : [] }
+    const labels = labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : []
+    // The field dims behind each label's name too, as behind the copy.
+    return {
+      ...field,
+      labels,
+      text: [...(field.text ?? []), ...labels.map((label) => labelBox(field, label))],
+    }
   }
   // Stacked, the threads come down past the copy into the window's top.
   const end: Point = target

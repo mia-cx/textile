@@ -583,8 +583,9 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
   const plait =
     wide * band(twist, th.strand, th.jitter, th.edge, s / DRIFT_SPAN + cord.seam.drift, th.drift, 1)
   // Its strand as a loose rope: on its own third of the spread, still swinging around the others a little, its fibres
-  // close together until they fray out to their own lanes.
-  const home = ((th.strand - 1) * 2 * width) / 3
+  // close together until they fray out to their own lanes within that third. The ropes part as far as `loose` spreads
+  // them, which the weave keeps to a gentle turn (see MIN_TURN), so no rope leaves the plait at a corner.
+  const home = ((th.strand - 1) * 2) / 3
   const sway =
     th.path === 0
       ? width *
@@ -593,10 +594,9 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
           Math.sin(s * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4)
       : 0
   const rope =
-    home +
+    (width * (home + (th.lane - home) * fray) + sway * fray) * loose +
     UNBRAID.rope * wide * Math.sin(twist) * (1 - fray) +
-    th.jitter * SHAPE.fray * wide * UNBRAID.fat * (1 - fray) +
-    (th.lane * width - home + sway) * fray
+    th.jitter * SHAPE.fray * wide * UNBRAID.fat * (1 - fray)
   const offset = plait + (rope - plait) * apart
   const drift = swayAt(y, t) * sways
   const point: Point = [x + drift + ax * offset, y + ay * offset]
