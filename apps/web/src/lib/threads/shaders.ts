@@ -13,8 +13,8 @@ import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
 /**
  * The thread field's shaders, in WGSL for WebGPU and GLSL ES 3.00 for WebGL2. Both run `position` from geometry.ts per
  * vertex, with its SHAPE: each thread is one instance, a triangle strip of SEGMENTS + 1 pairs of vertices widened
- * across the curve. Pulses of light run along every thread toward the end, every strand breathes, and glints spark
- * along the fibres: now and then on a loose one, and in the braid, wherever a band turns toward the light.
+ * across the curve. Pulses of light run along every thread toward the end, every strand breathes, now and then a
+ * streak of light runs along a loose fibre, and in the braid, glints spark wherever a band turns toward the light.
  *
  * Light is linear, in units where a lone fibre in the current gives about 0.1 and a glint a few hundred times that. The
  * threads add their light into a half-float target, and a frame then scatters a share of it as glare, as a lens or the
@@ -160,19 +160,27 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PULSE_SPEED', float(0.16)),
     declare('PULSE_LIGHT', float(2.2)),
     declare('BRAID_PULSE_LIGHT', float(0.3)),
-    // Glints: specular sparkles where a fibre catches the light, at most `GLINTS` along each thread's length, travelling
-    // with the flow (thread lengths per second). In the braid they spark on GLINT_SHARE of the fibres where a strand
+    // Glints in the braid: specular sparkles where a fibre catches the light, `GLINTS` along each thread's length,
+    // travelling with the flow (thread lengths per second). They spark on GLINT_SHARE of the fibres where a strand
     // passes over its neighbour, brightest on its band's edge fibres, and burn a few hundred times a lone fibre's light.
-    // On loose fibres, LOOSE_GLINTS of the places a glint could be spark, at LOOSE_GLINT: a few glints at a time, each
-    // on a fibre of its own and alone hot enough to bloom, as the braid's do where many fibres spark together.
     declare('GLINTS', float(8)),
     declare('GLINT_SPEED', float(0.05)),
     declare('GLINT_LIGHT', float(200)),
     declare('GLINT_SHARE', float(0.2)),
-    // LOOSE_WHITE is how far toward white a loose glint's own colour leans: a little, so it reads as a hot fibre.
-    declare('LOOSE_GLINT', float(90)),
-    declare('LOOSE_GLINTS', float(0.01)),
-    declare('LOOSE_WHITE', float(0.1)),
+    // Streaks on loose fibres: light running along a fibre, a soft rise ahead of its head and a long tail fading behind
+    // it. At most STREAKS_ALONG on a thread at once, of which STREAK_SHARE light, so a streak is an event rather than
+    // texture; each travels STREAK_SPEED thread lengths a second, its tail STREAK_TAIL of the space between streaks
+    // long. In the hero they speed up and lengthen toward the braid, STREAK_ACCEL faster there, and hand off to its
+    // glints. Their peak, STREAK_LIGHT times the fibre's light, stays low enough not to blob, while their length
+    // carries the light that blooms; their colour is the fibre's own, STREAK_WHITE of the way to white.
+    declare('STREAKS_ALONG', float(3)),
+    declare('STREAK_SHARE', float(0.006)),
+    declare('STREAK_SPEED', float(0.12)),
+    declare('STREAK_RISE', float(0.015)),
+    declare('STREAK_TAIL', float(0.1)),
+    declare('STREAK_ACCEL', float(0.7)),
+    declare('STREAK_LIGHT', float(25)),
+    declare('STREAK_WHITE', float(0.15)),
     // How dark a fibre is behind the braid, against in front of it, and how much hotter it burns on a crossing's crest.
     declare('BACK', float(0.2)),
     declare('CREST', float(4)),
@@ -293,9 +301,10 @@ struct Out {
   @location(1) across: f32,
   // x: where the thread is in its pulses. y: how bright their crests are here.
   @location(2) pulse: vec2f,
-  // x: where the thread is in its glints. y: how bright its loose glints are here, of which LOOSE_GLINTS spark, picked
-  // by w, the thread's own seed. z: how bright its braid's glints are here.
-  @location(3) glint: vec4f,
+  // x: where the thread is in its braid glints. y: how bright they are here.
+  @location(3) glint: vec2f,
+  // x: where the thread is in its streaks. y: how bright they are here. z: the thread's own seed, which picks them.
+  @location(4) streak: vec3f,
 };
 
 // A thread's light where it is a phase of the way through its pulses: dim between them, as bright as light at their
@@ -306,13 +315,20 @@ fn pulse(phase: f32, light: f32) -> f32 {
   return 0.55 + light * crest4 * crest4 * crest4;
 }
 
-// A glint's light where a fibre is phase of the way through its glints (g: x its phase, y its loose light, z its braid
-// light, w its seed): short, sharp sparks, each centred on a whole phase. A loose fibre sparks at only LOOSE_GLINTS of
-// them, picked by its seed. Loose glints in x, the braid's in y.
-fn glint(g: vec4f) -> vec2f {
-  var c = 0.5 + 0.5 * cos(TAU * g.x);
+// A glint's light where a fibre is phase of the way through its glints: short, sharp sparks.
+fn glint(phase: f32) -> f32 {
+  var c = 0.5 + 0.5 * cos(TAU * phase);
   c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
-  return c * vec2f(g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS), g.z);
+  return c;
+}
+
+// A streak's light where a fibre is s.x of the way through its streaks, at s.y, for a thread of seed s.z. Each streak's
+// head sits on a whole phase and travels toward larger ones' places: ahead of it the light rises softly over
+// STREAK_RISE, behind it a long tail fades over STREAK_TAIL. Only STREAK_SHARE of them light, picked by the seed.
+fn streak(s: vec3f) -> f32 {
+  let ahead = s.x - floor(s.x);
+  let shape = select(exp(-(1.0 - ahead) / STREAK_TAIL), exp(-(ahead * ahead) / (STREAK_RISE * STREAK_RISE)), ahead < 0.5);
+  return shape * step(hash(round(s.x) * 0.731 + s.z), STREAK_SHARE) * s.y;
 }
 
 @fragment
@@ -320,13 +336,12 @@ fn fs(v: Out) -> @location(0) vec4f {
   let d = abs(v.across) * ${HALF_WIDTH};
   let core = exp(-(d * d) / 0.3);
   let halo = 0.1 * exp(-(d * d) / 1.6);
-  // A glint adds light of its own, as bright as the fibre's strongest channel: in the braid warm white, so it burns
-  // white over a band whose own colour is already saturated; on a loose fibre mostly the fibre's own hue, so it blooms
-  // violet or amber rather than flecking the current with grey.
+  // Glints and streaks add light of their own, as bright as the fibre's strongest channel: a braid glint warm white, so
+  // it burns white over a band whose own colour is already saturated; a streak mostly the fibre's own hue, so it runs
+  // along a loose fibre as violet or amber light.
   let peak = max(v.colour.r, max(v.colour.g, v.colour.b));
-  let g = glint(v.glint);
   let white = ${SPARK_WHITE('vec3f')};
-  let spark = peak * (mix(v.colour / max(peak, 1e-6), white, LOOSE_WHITE) * g.x + white * g.y);
+  let spark = peak * (white * glint(v.glint.x) * v.glint.y + mix(v.colour / max(peak, 1e-6), white, STREAK_WHITE) * streak(v.streak));
   return vec4f((v.colour * pulse(v.pulse.x, v.pulse.y) + spark) * (core + halo), 1.0);
 }`
 
@@ -435,10 +450,15 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
     u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
     mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, knit),
   );
-  out.glint = vec4f(
+  out.glint = vec2f(
     u * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
-    (1.0 - knit) * LOOSE_GLINT * spark(shade),
     knit * glintLight(here.depth, th.fibre) * spark(shade),
+  );
+  // Streaks run along the loose fibres toward the braid: fewer phases to a unit along as they near it, so they speed
+  // up and lengthen into it, STREAK_ACCEL faster at its end.
+  out.streak = vec3f(
+    STREAKS_ALONG * (u - 0.5 * STREAK_ACCEL * u * u) - t * STREAK_SPEED * STREAKS_ALONG + hash(i + 7.7),
+    (1.0 - knit) * STREAK_LIGHT * spark(shade),
     hash(i + 8.8) * 97.0,
   );
   return out;
@@ -627,7 +647,8 @@ export const threadVertexGlsl = /* glsl */ `${commonGlsl}
 out vec3 vColour;
 out float vAcross;
 out vec2 vPulse;
-out vec4 vGlint;
+out vec2 vGlint;
+out vec3 vStreak;
 
 struct Thread { float lane; float pin; float leaves; float joins; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; float lead; };
 
@@ -715,10 +736,10 @@ void main() {
     u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
     mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, knit)
   );
-  vGlint = vec4(
-    u * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
-    (1.0 - knit) * LOOSE_GLINT * spark(shade),
-    knit * glintLight(here.depth, th.fibre) * spark(shade),
+  vGlint = vec2(u * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7), knit * glintLight(here.depth, th.fibre) * spark(shade));
+  vStreak = vec3(
+    STREAKS_ALONG * (u - 0.5 * STREAK_ACCEL * u * u) - t * STREAK_SPEED * STREAKS_ALONG + hash(i + 7.7),
+    (1.0 - knit) * STREAK_LIGHT * spark(shade),
     hash(i + 8.8) * 97.0
   );
 }
@@ -729,7 +750,8 @@ precision highp float;
 in vec3 vColour;
 in float vAcross;
 in vec2 vPulse;
-in vec4 vGlint;
+in vec2 vGlint;
+in vec3 vStreak;
 out vec4 colour;
 ${constants((name, value) => `const float ${name} = ${value};`)}
 float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
@@ -738,17 +760,21 @@ float pulse(float phase, float light) {
   float crest4 = crest * crest * crest * crest;
   return 0.55 + light * crest4 * crest4 * crest4;
 }
-vec2 glint(vec4 g) {
-  float c = 0.5 + 0.5 * cos(TAU * g.x);
+float glint(float phase) {
+  float c = 0.5 + 0.5 * cos(TAU * phase);
   c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
-  return c * vec2(g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS), g.z);
+  return c;
+}
+float streak(vec3 s) {
+  float ahead = s.x - floor(s.x);
+  float shape = ahead < 0.5 ? exp(-(ahead * ahead) / (STREAK_RISE * STREAK_RISE)) : exp(-(1.0 - ahead) / STREAK_TAIL);
+  return shape * step(hash(round(s.x) * 0.731 + s.z), STREAK_SHARE) * s.y;
 }
 void main() {
   float d = abs(vAcross) * ${HALF_WIDTH};
   float peak = max(vColour.r, max(vColour.g, vColour.b));
-  vec2 g = glint(vGlint);
   vec3 white = ${SPARK_WHITE('vec3')};
-  vec3 spark = peak * (mix(vColour / max(peak, 1e-6), white, LOOSE_WHITE) * g.x + white * g.y);
+  vec3 spark = peak * (white * glint(vGlint.x) * vGlint.y + mix(vColour / max(peak, 1e-6), white, STREAK_WHITE) * streak(vStreak));
   colour = vec4((vColour * pulse(vPulse.x, vPulse.y) + spark) * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)), 1.0);
 }
 `
@@ -989,10 +1015,11 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
     run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0),
     mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose),
   );
-  out.glint = vec4f(
-    run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
-    (1.0 - knit) * LOOSE_GLINT * spark(shade),
-    knit * glintLight(here.depth, th.fibre) * spark(shade),
+  out.glint = vec2f(run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7), knit * glintLight(here.depth, th.fibre) * spark(shade));
+  // Streaks run down the loose strands, as along the hero's loose fibres.
+  out.streak = vec3f(
+    run * STREAKS_ALONG - t * STREAK_SPEED * STREAKS_ALONG + hash(i + 7.7),
+    (1.0 - knit) * STREAK_LIGHT * spark(shade),
     hash(i + 8.8) * 97.0,
   );
   return out;
@@ -1005,7 +1032,8 @@ uniform highp sampler2D data;
 out vec3 vColour;
 out float vAcross;
 out vec2 vPulse;
-out vec4 vGlint;
+out vec2 vGlint;
+out vec3 vStreak;
 
 struct Thread { float path; float lane; float strand; float phase; float ribbon; vec3 fibre; float lead; };
 
@@ -1096,11 +1124,7 @@ void main() {
   vColour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   vAcross = side;
   vPulse = vec2(run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0), mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
-  vGlint = vec4(
-    run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
-    (1.0 - knit) * LOOSE_GLINT * spark(shade),
-    knit * glintLight(here.depth, th.fibre) * spark(shade),
-    hash(i + 8.8) * 97.0
-  );
+  vGlint = vec2(run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7), knit * glintLight(here.depth, th.fibre) * spark(shade));
+  vStreak = vec3(run * STREAKS_ALONG - t * STREAK_SPEED * STREAKS_ALONG + hash(i + 7.7), (1.0 - knit) * STREAK_LIGHT * spark(shade), hash(i + 8.8) * 97.0);
 }
 `
