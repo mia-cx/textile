@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount, untrack } from 'svelte'
 import { advance, STILL_TIME } from './clock'
-import { type Box, type Cord, carry, NO_SEAM, type Stop, weave } from './cord'
+import { type Box, type Cord, carry, NO_SEAM, type Stop, swayAt, weave } from './cord'
 import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
 import type { Seam } from './geometry'
 import { hex, type Palette } from './renderer'
@@ -51,6 +51,8 @@ const MAX_GPU_RECOVERIES = 1
 let box: HTMLDivElement
 let canvas: HTMLCanvasElement
 let knots = $state<Cord['knots']>([])
+/** The knots' elements, which sway with the cord: each frame moves them, without a render. */
+const marks: HTMLElement[] = $state([])
 let kind = $state<CordRenderer['kind']>()
 /** Lays the cord out again, once mounted: as the hero measures its seam anew, the cord carries it on. */
 let remeasure: (() => void) | undefined
@@ -92,6 +94,11 @@ onMount(() => {
     const shown = view()
     canvas.style.translate = `0 ${shown.top}px`
     renderer.draw(palette, time, shown)
+    // Each knot rides the cord's sway where it crosses its gap, by the same math the shaders run.
+    for (const [i, knot] of cord.knots.entries()) {
+      const mark = marks[i]
+      if (mark) mark.style.translate = `${knot.x + swayAt(knot.y, time) * knot.sways}px ${knot.y}px`
+    }
     painted = true
   }
   /**
@@ -293,8 +300,8 @@ onMount(() => {
   <div class="threads"><canvas bind:this={canvas}></canvas></div>
   <div class="reveal marks">
     <div class="hold">
-      {#each knots as knot}
-        <span class="mark" data-side={knot.side} style:translate="{knot.x}px {knot.y}px"><span class="label">{knot.text}</span></span>
+      {#each knots as knot, i}
+        <span bind:this={marks[i]} class="mark" data-side={knot.side} style:translate="{knot.x}px {knot.y}px"><span class="label">{knot.text}</span></span>
       {/each}
     </div>
   </div>

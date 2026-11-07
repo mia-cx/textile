@@ -6,7 +6,9 @@ import {
   PEEL_LEAD,
   PEEL_THREADS,
   ROW,
+  SWAY,
   TEXELS,
+  UNBRAID,
 } from './cord'
 import { CROWD, MAX_LABELS, OKLAB, SEGMENTS, SHAPE } from './geometry'
 
@@ -930,13 +932,23 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     declare('FADE', float(224)),
     // How bright loose strands are, behind a section, and how much of that shows behind its prose.
     declare('LOOSE_LIGHT', float(0.55)),
-    // How soon a strand's pulses fall out of step with the braid's, and the braid's shading and glints fade, as it comes
-    // loose: early, so none of them line up in rows across the parting strands.
-    declare('PULSE_SPREAD', float(8)),
     declare('COPY_LIGHT', float(0.2)),
     declare('LOOSE_HUE', float(LOOSE_HUE)),
     // How many of a peeling strand's fibres, along its outer edge, carry the lead on when it peels from the cord.
     declare('PEEL_LEAD', float(PEEL_LEAD)),
+    // How the cord comes apart and sways: see UNBRAID, stages, SWAY, and swayAt in cord.ts.
+    declare('UNBRAID_LOOSEN', float(UNBRAID.loosen)),
+    declare('UNBRAID_APART_FROM', float(UNBRAID.apart[0])),
+    declare('UNBRAID_APART_TO', float(UNBRAID.apart[1])),
+    declare('UNBRAID_FRAY', float(UNBRAID.fray)),
+    declare('UNBRAID_WIDEN', float(UNBRAID.widen)),
+    declare('UNBRAID_ROPE', float(UNBRAID.rope)),
+    declare('UNBRAID_FAT', float(UNBRAID.fat)),
+    declare('SWAY_REACH', float(SWAY.reach)),
+    declare('SWAY_PERIOD_A', float(SWAY.periods[0])),
+    declare('SWAY_PERIOD_B', float(SWAY.periods[1])),
+    declare('SWAY_WAVE_A', float(SWAY.waves[0])),
+    declare('SWAY_WAVE_B', float(SWAY.waves[1])),
   ].join('\n')
 
 export const cordWgsl = /* wgsl */ `${commonWgslFor(CORD_VEC4S)}
@@ -978,27 +990,40 @@ fn span(path: f32) -> vec2f {
   return select(pair.xy, pair.zw, (p & 1u) == 1u);
 }
 
-// Where a thread is at sample k: on the page, how loose (0 braided to 1), its strand's depth in the plait, how far
-// along its path, how bright the path is there, its hue there (gradient cycles, as weave adds them up), and whether the
-// path carries the lead. Mirrors place in cord.ts.
-struct Placed { at: vec2f, loose: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32 };
+// The cord's slow sway across the page at height y and time t, in px, before its weight. Mirrors swayAt in cord.ts.
+fn swayAt(y: f32, t: f32) -> f32 {
+  return SWAY_REACH * (sin(TAU * t / SWAY_PERIOD_A + y * SWAY_WAVE_A) * 0.6 + sin(TAU * t / SWAY_PERIOD_B + y * SWAY_WAVE_B + 2.0) * 0.4);
+}
+
+// Where a thread is at sample k: on the page, how loose (0 braided to 1), how far its strands have drifted apart from
+// the plait (0 to 1), its strand's depth in the plait, how far along its path, how bright the path is there, its hue
+// there (gradient cycles, as weave adds them up), and whether the path carries the lead. Mirrors place in cord.ts.
+struct Placed { at: vec2f, loose: f32, apart: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32 };
 
 fn place(th: Thread, k: f32) -> Placed {
   let a = texel(k, 0.0); let b = texel(k, 1.0); let c = texel(k, 2.0);
   let t = U[0].w; let radius = U[3].x;
   let loose = b.y;
-  // The twist and drift carry on from where the hero's strands stood at the seam.
-  let twist = b.x / (PITCH * radius) * TAU + U[2].x - t * SPIN + th.strand * TAU / 3.0;
-  let braided = radius * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
+  // The cord comes apart in stages: the plait loosens, its strands drift apart as ropes, the ropes fray.
+  let loosen = ease(0.0, UNBRAID_LOOSEN, loose);
+  let apart = ease(UNBRAID_APART_FROM, UNBRAID_APART_TO, loose);
+  let fray = ease(UNBRAID_FRAY, 1.0, loose);
+  // The twist, as weave adds it up, and the drift carry on from where the hero's strands stood at the seam.
+  let twist = a.z + U[2].x - t * SPIN + th.strand * TAU / 3.0;
+  // The plait, swinging wider as it loosens.
+  let wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
+  let plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
+  // Its strand as a loose rope: on its own third of the spread, still swinging around the others a little, its fibres
+  // close together until they fray out to their own lanes.
+  let home = (th.strand - 1.0) * 2.0 * b.z / 3.0;
   var sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  let spread = th.lane * b.z + sway;
-  // The braid's swing fades as the strands part, gone once they are two braid radii apart, so a strand coming loose
-  // straightens rather than crimps.
-  let held = (1.0 - loose) * exp(-pow(loose * b.z / radius, 2.0));
-  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z, b.w, c.w);
+  let rope = home + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray)
+    + (th.lane * b.z - home + sway) * fray;
+  let drift = swayAt(a.y, t) * a.w;
+  return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
 }
 
 // How much light shows at p: less behind a section's prose, fading in over a few pixels around it.
@@ -1028,9 +1053,9 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let tangent = dir / max(length(dir), 1e-4);
   let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
 
-  // The braid's depth shading, its warm strands leaning violet behind, and its glints fade as soon as a strand starts
-  // to part, so the loose strands carry no rows of the braid's crossings.
-  let knit = 1.0 - min(here.loose * PULSE_SPREAD, 1.0);
+  // The braid's depth shading, its warm strands leaning violet behind, its glints, and its pulses in step hold while
+  // the plait loosens and fade as its strands drift apart, so the loose ropes carry no rows of the braid's crossings.
+  let knit = 1.0 - here.apart;
   // Each strand keeps its colour as it parts, its ribbons a little apart, and runs violet to amber and back along the
   // cord, faster where it is braided, carrying on the hero's gradient and breath from the seam.
   var pick = hash(i + 4.4);
@@ -1055,7 +1080,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   out.colour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   out.across = side;
   out.pulse = vec2f(
-    run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0),
+    run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * here.apart,
     mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose),
   );
   out.glint = vec2f(run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7), knit * glintLight(here.depth, th.fibre) * spark(shade));
@@ -1107,21 +1132,31 @@ vec2 span(float path) {
   return (p % 2) == 1 ? pair.zw : pair.xy;
 }
 
-struct Placed { vec2 at; float loose; float depth; float s; float light; float hue; float leads; };
+float swayAt(float y, float t) {
+  return SWAY_REACH * (sin(TAU * t / SWAY_PERIOD_A + y * SWAY_WAVE_A) * 0.6 + sin(TAU * t / SWAY_PERIOD_B + y * SWAY_WAVE_B + 2.0) * 0.4);
+}
+
+struct Placed { vec2 at; float loose; float apart; float depth; float s; float light; float hue; float leads; };
 
 Placed place(Thread th, float k) {
   vec4 a = texel(k, 0.0); vec4 b = texel(k, 1.0); vec4 c = texel(k, 2.0);
   float t = U[0].w; float radius = U[3].x;
   float loose = b.y;
-  float twist = b.x / (PITCH * radius) * TAU + U[2].x - t * SPIN + th.strand * TAU / 3.0;
-  float braided = radius * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
+  float loosen = ease(0.0, UNBRAID_LOOSEN, loose);
+  float apart = ease(UNBRAID_APART_FROM, UNBRAID_APART_TO, loose);
+  float fray = ease(UNBRAID_FRAY, 1.0, loose);
+  float twist = a.z + U[2].x - t * SPIN + th.strand * TAU / 3.0;
+  float wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
+  float plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
+  float home = (th.strand - 1.0) * 2.0 * b.z / 3.0;
   float sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  float spread = th.lane * b.z + sway;
-  float held = (1.0 - loose) * exp(-pow(loose * b.z / radius, 2.0));
-  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z, b.w, c.w);
+  float rope = home + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray)
+    + (th.lane * b.z - home + sway) * fray;
+  float drift = swayAt(a.y, t) * a.w;
+  return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
 }
 
 float behindCopy(vec2 p) {
@@ -1149,7 +1184,7 @@ void main() {
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
 
-  float knit = 1.0 - min(here.loose * PULSE_SPREAD, 1.0);
+  float knit = 1.0 - here.apart;
   float pick = th.lead > 0.0 || hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
   float t = U[0].w;
   float run = here.s / DRIFT_SPAN;
@@ -1166,7 +1201,7 @@ void main() {
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   vColour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   vAcross = side;
-  vPulse = vec2(run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0), mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
+  vPulse = vec2(run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * here.apart, mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
   vGlint = vec2(run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7), knit * glintLight(here.depth, th.fibre) * spark(shade));
   vStreak = vec3(run * STREAKS_ALONG - t * STREAK_SPEED * STREAKS_ALONG + hash(i + 7.7), (1.0 - knit) * STREAK_LIGHT * spark(shade), hash(i + 8.8) * 97.0);
 }

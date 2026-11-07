@@ -123,8 +123,17 @@ export interface Cord {
   /** The cord's samples' heights, rising: the part on screen is a binary search away. */
   readonly heights: Float32Array
   readonly copy: ReadonlyArray<Box>
-  /** Where each section's name sits: on the knot where the cord gathers, on the side it doesn't come in from. */
-  readonly knots: ReadonlyArray<{ text: string; x: number; y: number; side: 'left' | 'right' }>
+  /**
+   * Where each section's name sits: on the knot where the cord crosses its gap, on the side it doesn't come in from, at
+   * rest; it sways with the cord there by `sways` of `swayAt`.
+   */
+  readonly knots: ReadonlyArray<{
+    text: string
+    x: number
+    y: number
+    sways: number
+    side: 'left' | 'right'
+  }>
   readonly radius: number
   /** Where its strands stand where it leaves the window. */
   readonly seam: Seam
@@ -133,22 +142,65 @@ export interface Cord {
 }
 
 /**
- * One sample: where the spine is and its unit normal; how far along the path it is (`s`), how far the strands have come
- * apart there (`open`, 0 braided to 1 loose), and the half-width they spread across (`width`), along `axis`; and how
- * bright the strands are there (`light`). Packed with the hue its strands have reached there and whether its path
- * carries the lead: see `pack`.
+ * One sample: where the spine is; how far along the path it is (`s`), how far the strands have come apart there
+ * (`open`, 0 braided to 1 loose), and the half-width they spread across (`width`), along `axis`, which the plait swings
+ * across too, so a strand keeps its side as it parts; how bright the strands are there (`light`); and how much of the
+ * cord's slow sway moves it (`sways`, 0 to 1). Packed with the twist and hue its strands have reached there and whether
+ * its path carries the lead, `TEXELS` texels to a sample:
+ *   0  x, y, twist (radians, strand 0 at time 0), sways
+ *   1  s, open, width, hue (gradient cycles)
+ *   2  axis x, axis y, light, carries the lead (0 or 1)
  */
 interface Sample {
   readonly x: number
   readonly y: number
-  readonly nx: number
-  readonly ny: number
   readonly s: number
   readonly open: number
   readonly width: number
   readonly axis: Point
   readonly light: number
+  readonly sways: number
 }
+
+/**
+ * How the cord comes apart as `open` runs from 0 to 1, in three overlapping stages, so it never pinches: the plait
+ * loosens (`loosen`: its swing widens and its pitch lengthens), its three strands drift apart as loose ropes that still
+ * twist around each other a little (`apart`), and only then does each rope fray into its fibres and spread (`fray`).
+ * Gathering runs the same stages back. Mirrors `stages` in the shaders.
+ */
+export const stages = (open: number) => ({
+  loosen: easeIn(0, UNBRAID.loosen, open),
+  apart: easeIn(UNBRAID.apart[0], UNBRAID.apart[1], open),
+  fray: easeIn(UNBRAID.fray, 1, open),
+})
+/**
+ * Where each stage of coming apart runs, in `open`; how much wider the plait swings and how much longer its pitch is,
+ * fully loosened; how far a loose rope swings around its neighbours, and how fat it is, in loosened braid radii.
+ */
+export const UNBRAID = {
+  loosen: 0.35,
+  apart: [0.15, 0.6],
+  fray: 0.45,
+  widen: 1.5,
+  stretch: 2,
+  rope: 0.5,
+  fat: 0.7,
+} as const
+const easeIn = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
+  return t * t * t * (t * (t * 6 - 15) + 10)
+}
+
+/**
+ * The cord's slow sway across the page at height `y` and time `t`, in px, before its weight: a rope drifting, two long
+ * slow waves, never a jitter. Mirrors `swayAt` in the shaders.
+ */
+export const swayAt = (y: number, t: number) =>
+  SWAY.reach *
+  (Math.sin((TAU * t) / SWAY.periods[0] + y * SWAY.waves[0]) * 0.6 +
+    Math.sin((TAU * t) / SWAY.periods[1] + y * SWAY.waves[1] + 2) * 0.4)
+/** How far the cord sways at most, in px; over how many seconds; and in how many radians per px down the page. */
+export const SWAY = { reach: 0, periods: [11, 17], waves: [0.0021, 0.0013] } as const
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
@@ -156,17 +208,59 @@ const smoothstep = (a: number, b: number, x: number) => {
 }
 
 /**
- * Eases from 0 to 1 with no slope and no curvature at either end, so curves joined end to end turn without a kink.
+ * The share of the way to the next gap (or a section's foot) the cord takes to reach a section's centre after its gap,
+ * at most LAG_MAX px: it crosses the gap still on its way there, as a rope would, rather than turning on the gap.
  */
-const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
+const LAG = 0
+const LAG_MAX = 320
+/**
+ * How far the cord wanders off its course on its own, in px, in two slow waves (px per cycle), and over how many px it
+ * eases into the wander from where it leaves the window and out of it where it ends.
+ */
+const WANDER = 0
+const WANDER_WAVES = [1100, 1900] as const
+const WANDER_EASE = 400
+/** How far above a knot, in px, the cord's course is read to tell which side it comes in from. */
+const KNOT_LOOK = 80
 
-/** Points from `a` down to `b`, leaving and arriving straight down, easing across between without a kink. */
-function drop(a: Point, b: Point): Point[] {
-  const steps = Math.max(1, Math.ceil((b[1] - a[1]) / STEP))
-  return Array.from({ length: steps }, (_, k): Point => {
-    const t = k / steps
-    return [a[0] + (b[0] - a[0]) * smootherstep(t), a[1] + (b[1] - a[1]) * t]
-  })
+/**
+ * The cord's course across the page, x as a function of y: a smooth curve through `anchors` (rising in y), each crossed
+ * on a tangent its neighbours set, so it bends more and less as a hanging rope does, never on a fixed diagonal, plus
+ * a slow wander that eases in after the first anchor and out before the last, where the cord must meet the window and
+ * the demo it ends in. Returns the course and how much the cord sways at each height (0 at its ends).
+ */
+function course(anchors: ReadonlyArray<Point>) {
+  const ys = anchors.map(([, y]) => y)
+  const top = ys[0] ?? 0
+  const bottom = ys.at(-1) ?? 0
+  const tangent = (k: number) => {
+    const previous = anchors[k - 1]
+    const next = anchors[k + 1]
+    return previous && next ? (next[0] - previous[0]) / (next[1] - previous[1]) : 0
+  }
+  /** How far into the cord's free stretch `y` is, 0 at its ends to 1 a WANDER_EASE in. */
+  const free = (y: number) =>
+    Math.min(easeIn(top, top + WANDER_EASE, y), 1 - easeIn(bottom - WANDER_EASE, bottom, y))
+  const x = (y: number) => {
+    // The segment whose anchors span y; at or past the last anchor, the last segment.
+    const above = ys.findIndex((at) => at > y)
+    const k = Math.max(0, above < 0 ? anchors.length - 2 : above - 1)
+    const [x0, y0] = anchors[k] ?? [0, 0]
+    const [x1, y1] = anchors[k + 1] ?? [x0, y0 + 1]
+    const h = y1 - y0 || 1
+    const t = Math.min(1, Math.max(0, (y - y0) / h))
+    // A cubic Hermite segment: through both anchors, on their tangents.
+    const h00 = 2 * t ** 3 - 3 * t ** 2 + 1
+    const h10 = t ** 3 - 2 * t ** 2 + t
+    const h01 = -2 * t ** 3 + 3 * t ** 2
+    const h11 = t ** 3 - t ** 2
+    const wander =
+      WANDER *
+      (Math.sin((TAU * y) / WANDER_WAVES[0] + 1.3) * 0.6 +
+        Math.sin((TAU * y) / WANDER_WAVES[1] + 4.1) * 0.4)
+    return h00 * x0 + h10 * h * tangent(k) + h01 * x1 + h11 * h * tangent(k + 1) + wander * free(y)
+  }
+  return { x, sways: free }
 }
 
 /**
@@ -202,17 +296,21 @@ function strandLine(from: Point, to: Point, lead: Point): Point[] {
   )
 }
 
-/** Normals and distances along `points`, from their neighbours. */
+/**
+ * Distances along `points` and the axis across them, from their neighbours: the unit normal on the right of a path
+ * running down the page, so strands spread and swing across it the same way all along.
+ */
 function frame(points: ReadonlyArray<Point>) {
   let s = 0
   return points.map(([x, y], i) => {
-    const previous = points[Math.max(0, i - 1)] as Point
-    const next = points[Math.min(points.length - 1, i + 1)] as Point
+    const previous = points[Math.max(0, i - 1)] ?? [x, y]
+    const next = points[Math.min(points.length - 1, i + 1)] ?? [x, y]
     const tx = next[0] - previous[0]
     const ty = next[1] - previous[1]
     const length = Math.hypot(tx, ty) || 1
     if (i > 0) s += Math.hypot(x - previous[0], y - previous[1])
-    return { x, y, nx: -ty / length, ny: tx / length, s }
+    const axis: Point = [ty / length, -tx / length]
+    return { x, y, s, axis }
   })
 }
 
@@ -230,79 +328,79 @@ export function weave(
   width: number,
   seam: Seam = NO_SEAM,
 ): Cord {
-  const spine: Point[] = []
-  /** For each spine point, the section it comes apart behind, between the gaps `from` and `to`. */
-  const spans: Array<{ box: Box; from: number; to: number; closes: boolean } | undefined> = []
+  /** The points the cord's course passes: where it leaves the window, then near each section's centre, then its end. */
+  const anchors: Point[] = [start]
+  /** The sections the cord comes apart behind, each between the gaps `from` and `to`. */
+  const spans: Array<{ box: Box; from: number; to: number; closes: boolean }> = []
   /** Strands peeling off, and whether each carries the lead on: the lead's strand, where the cord comes apart. */
   const strands: Array<{ line: Point[]; leads: boolean }> = []
-  const knots: Array<Cord['knots'][number]> = []
-  let at = start
-  let behind: { box: Box; from: number; to: number; closes: boolean } | undefined
+  const gaps: Array<{ text: string; y: number }> = []
+  // It reaches each section's centre a little after its gap, on its way down.
+  const after = (pinch: Point, to: number): Point => [
+    pinch[0],
+    pinch[1] + Math.min((to - pinch[1]) * LAG, LAG_MAX),
+  ]
   for (const [k, stop] of stops.entries()) {
-    const points = drop(at, stop.pinch)
-    spine.push(...points)
-    spans.push(...points.map(() => behind))
-    knots.push({
-      text: stop.label,
-      x: stop.pinch[0],
-      y: stop.pinch[1],
-      side: labelSide(
-        stop.label,
-        stop.pinch[0],
-        at[0] > stop.pinch[0] + 1 ? 'left' : 'right',
-        width,
-      ),
-    })
-    at = stop.pinch
-
+    gaps.push({ text: stop.label, y: stop.pinch[1] })
     const { split } = stop
     if (split) {
       const beside = stop.ends.filter(([x]) => x > split[0])
       for (const end of beside) strands.push({ line: strandLine(split, end, [1, 0]), leads: false })
     } else if (stop.ends.length > 0) {
-      // The cord runs braided into the demo and comes apart there into the strands that reach each end. A peel's strand
-      // is its place among all the peels, a third of a turn apart (see `cordThread`).
-      const into = drop(at, stop.enter)
-      spine.push(...into, stop.enter)
-      spans.push(...into.map(() => undefined), undefined)
+      // The cord runs braided into the demo and comes apart there into the strands that reach each end: straight on to
+      // where it enters, over all the height it has, so it never sweeps across flat. A peel's strand is its place among
+      // all the peels, a third of a turn apart (see `cordThread`).
+      anchors.push(stop.enter)
       for (const end of stop.ends)
         strands.push({
           line: strandLine(stop.enter, end, [0, 1]),
           leads: strands.length % 3 === LEAD_STRAND,
         })
-      behind = undefined
       break
     }
     const next = stops[k + 1]
-    behind = {
-      box: stop.box,
-      from: stop.pinch[1],
-      to: next ? next.pinch[1] : stop.box.bottom,
-      closes: !!next,
-    }
-    if (!next) {
-      // The last section's strands come apart behind it and fade out at its foot.
-      const points = drop(at, [at[0], stop.box.bottom])
-      spine.push(...points, [at[0], stop.box.bottom])
-      spans.push(...points.map(() => behind), behind)
-    }
+    const to = next ? next.pinch[1] : stop.box.bottom
+    anchors.push(after(stop.pinch, to))
+    spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
+    // The last section's strands come apart behind it and fade out at its foot.
+    if (!next) anchors.push([stop.pinch[0], stop.box.bottom])
   }
 
-  const cord: Sample[] = frame(spine).map((p, i) => {
-    const span = spans[i]
-    if (!span) return { ...p, open: 0, width: 0, axis: [1, 0], light: 1 }
+  const path = course(anchors)
+  const bottom = anchors.at(-1)?.[1] ?? start[1]
+  const steps = Math.max(1, Math.ceil((bottom - start[1]) / STEP))
+  const spine = Array.from({ length: steps + 1 }, (_, k): Point => {
+    const y = start[1] + ((bottom - start[1]) * k) / steps
+    return [path.x(y), y]
+  })
+  // Each section's name sits on its knot, where the cord crosses its gap, on the side the cord doesn't come in from.
+  const knots = gaps.map(({ text, y }) => {
+    const x = path.x(y)
+    const from = path.x(y - KNOT_LOOK)
+    return {
+      text,
+      x,
+      y,
+      sways: path.sways(y),
+      side: labelSide(text, x, from > x + 1 ? 'left' : 'right', width),
+    }
+  })
+
+  const cord: Sample[] = frame(spine).map((p) => {
+    const span = spans.find(({ from, to }) => p.y >= from && p.y < to)
+    const base = { ...p, sways: path.sways(p.y) }
+    if (!span) return { ...base, open: 0, width: 0, light: 1 }
     const t = Math.min(1, Math.max(0, (p.y - span.from) / (span.to - span.from)))
     const open = swell(t, span.closes)
     // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
     const height = (span.to - span.from) * (span.closes ? 1 : 2)
     return {
-      ...p,
+      ...base,
       open,
       width: Math.min(
         ((span.box.right - span.box.left) / 2) * SPREAD,
         height ** 2 / (2 * Math.PI ** 2 * MIN_TURN),
       ),
-      axis: [1, 0],
       // Behind the last section the strands fade out toward its foot.
       light: span.closes ? 1 : 1 - open,
     }
@@ -316,10 +414,26 @@ export function weave(
       open: 1,
       // Fibres splay apart mid-way and gather again at each end.
       width: radius * 0.6 * (0.4 + Math.sin((p.s / total) * Math.PI)),
-      axis: [p.nx, p.ny],
       light: smoothstep(0, 24, p.s),
+      // Peels start where the cord holds still: at a panel's edge, or at the cord's end.
+      sways: 0,
     }))
   })
+
+  // How far each path's strands have turned at each sample: one turn per `pitch` braid radii, lengthening as the plait
+  // loosens. Added up here, as the hue is below, so a changing pitch never sweeps the twist.
+  const twists = (path: ReadonlyArray<Sample>, from: number) => {
+    let twist = from
+    return path.map((p, k) => {
+      const previous = path[k - 1]
+      if (previous)
+        twist +=
+          ((p.s - previous.s) /
+            (SHAPE.pitch * radius * (1 + UNBRAID.stretch * stages(p.open).loosen))) *
+          TAU
+      return twist
+    })
+  }
 
   // The hue each path's strands have reached at each sample, in gradient cycles: they turn faster where braided. Added
   // up here, so the shaders read it, rather than multiply a changing rate by the distance, which would sweep the colour
@@ -344,10 +458,11 @@ export function weave(
       )
     ] ?? 0
   const all = [
-    { path: cord, hue: cordHues, leads: true },
+    { path: cord, hue: cordHues, twist: twists(cord, 0), leads: true },
     ...peels.map((path, n) => ({
       path,
       hue: hues(path, hueAt(path[0]?.y ?? 0)),
+      twist: twists(path, 0),
       leads: peeling[n]?.leads ?? false,
     })),
   ]
@@ -356,14 +471,14 @@ export function weave(
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   const paths: Span[] = []
   let first = 0
-  for (const { path, hue, leads } of all) {
+  for (const { path, hue, twist, leads } of all) {
     for (const [k, p] of path.entries()) {
       data.set(
         [
           p.x,
           p.y,
-          p.nx,
-          p.ny,
+          twist[k] ?? 0,
+          p.sways,
           p.s,
           p.open,
           p.width,
@@ -459,18 +574,17 @@ export const cordThread = (i: number) => {
 export function place(cord: Cord, i: number, k: number, t: number, th = cordThread(i)) {
   const o = k * TEXELS * 4
   const d = cord.data
-  const [x = 0, y = 0, nx = 0, ny = 0, s = 0, loose = 0, width = 0, , ax = 0, ay = 0] = d.subarray(
-    o,
-    o + 10,
-  )
-  const twist =
-    (s / (SHAPE.pitch * cord.radius)) * TAU +
-    cord.seam.twist -
-    t * SHAPE.spin +
-    (th.strand * TAU) / 3
-  const braided =
-    cord.radius *
-    band(twist, th.strand, th.jitter, th.edge, s / DRIFT_SPAN + cord.seam.drift, th.drift, 1)
+  const [x = 0, y = 0, turned = 0, sways = 0, s = 0, loose = 0, width = 0, , ax = 0, ay = 0] =
+    d.subarray(o, o + 10)
+  const { loosen, apart, fray } = stages(loose)
+  const twist = turned + cord.seam.twist - t * SHAPE.spin + (th.strand * TAU) / 3
+  // The plait, swinging wider as it loosens.
+  const wide = cord.radius * (1 + UNBRAID.widen * loosen)
+  const plait =
+    wide * band(twist, th.strand, th.jitter, th.edge, s / DRIFT_SPAN + cord.seam.drift, th.drift, 1)
+  // Its strand as a loose rope: on its own third of the spread, still swinging around the others a little, its fibres
+  // close together until they fray out to their own lanes.
+  const home = ((th.strand - 1) * 2 * width) / 3
   const sway =
     th.path === 0
       ? width *
@@ -478,15 +592,15 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
         (Math.sin(s * 0.004 + t * 0.35 + th.phase) * 0.6 +
           Math.sin(s * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4)
       : 0
-  const spread = th.lane * width + sway
-  // The braid's swing fades as the strands part, gone once they are two braid radii apart, so a strand coming loose
-  // straightens rather than crimps.
-  const held = (1 - loose) * Math.exp(-(((loose * width) / cord.radius) ** 2))
-  const point: Point = [
-    x + nx * braided * held + ax * spread * loose,
-    y + ny * braided * held + ay * spread * loose,
-  ]
-  return { point, loose, twist, s }
+  const rope =
+    home +
+    UNBRAID.rope * wide * Math.sin(twist) * (1 - fray) +
+    th.jitter * SHAPE.fray * wide * UNBRAID.fat * (1 - fray) +
+    (th.lane * width - home + sway) * fray
+  const offset = plait + (rope - plait) * apart
+  const drift = swayAt(y, t) * sways
+  const point: Point = [x + drift + ax * offset, y + ay * offset]
+  return { point, loose, apart, twist, s }
 }
 
 /**
