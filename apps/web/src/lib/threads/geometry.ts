@@ -117,6 +117,11 @@ export const SHAPE = {
   scatter: 0.3,
   /** The share of the current's sway a labelled thread keeps at its knot: the knot rides it, but stays near home. */
   pinned: 0.35,
+  /**
+   * A labelled thread's sway phase, in radians per label: set, not hashed, because the label's knot rides the thread on
+   * the CPU while the GPU draws it, and the two compute the hash with different float precision.
+   */
+  labelPhase: 2.4,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
@@ -180,7 +185,7 @@ export const thread = (field: Field, i: number) => {
     pin: label ? label.at : -1,
     joins: label ? Math.max(joins, Math.min(SHAPE.joined, label.at + SHAPE.join * 1.5)) : joins,
     strand: strandOf(side),
-    phase: hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
+    phase: label ? i * SHAPE.labelPhase : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
     ...fibre(i, across),
     ribbon,
   }

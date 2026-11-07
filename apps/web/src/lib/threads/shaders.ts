@@ -62,6 +62,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('STAGGER', float(SHAPE.stagger)),
     declare('SCATTER', float(SHAPE.scatter)),
     declare('PINNED', float(SHAPE.pinned)),
+    declare('LABEL_PHASE', float(SHAPE.labelPhase)),
     declare('HUE', float(SHAPE.hue)),
     declare('SPIN', float(SHAPE.spin)),
     declare('LABELLED', float(SHAPE.labelled)),
@@ -205,7 +206,8 @@ fn threadOf(i: f32) -> Thread {
   let order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
   var joins = braid + (JOINED - braid) * min(1.0, order);
   if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
-  let phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
+  var phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
+  if (pin >= 0.0) { phase = i * LABEL_PHASE; }
   return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon);
 }
 
@@ -459,7 +461,7 @@ Thread threadOf(float i) {
   float order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
   float joins = braid + (JOINED - braid) * min(1.0, order);
   if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
-  float phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
+  float phase = pin >= 0.0 ? i * LABEL_PHASE : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon);
 }
 

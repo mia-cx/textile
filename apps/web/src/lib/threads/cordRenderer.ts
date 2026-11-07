@@ -89,53 +89,89 @@ export function cordWebgl2(canvas: HTMLCanvasElement): CordRenderer | undefined 
   return painter && cordOn(canvas, painter)
 }
 
-/** Every how many of the cord's threads the 2D fallback strokes: it redraws as the page scrolls, so it draws few. */
+/** Every how many of the cord's threads the 2D fallback strokes, and how many samples long each piece of one is. */
 const STILL_EVERY = 3
+const STILL_PIECE = 96
 
-/** The fallback without a GPU: the same cord as canvas 2D strokes, each thread one colour, still. */
+/** A stretch of one thread, as the 2D fallback strokes it: how far up and down it reaches, its path, and its colour. */
+interface Piece {
+  readonly top: number
+  readonly bottom: number
+  readonly path: Path2D
+  readonly style: string
+}
+
+/**
+ * The fallback without a GPU: the same cord as canvas 2D strokes, each thread one colour, still. It lays its strokes
+ * out once per layout, in short pieces, and as the page scrolls strokes only the pieces on screen.
+ */
 export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
   const context = canvas.getContext('2d')
   if (!context) return undefined
   let cord: Cord | undefined
+  let pieces: Piece[] | undefined
+  let laidOut: { palette: Palette; time: number } | undefined
   const css = (rgb: RGB, alpha: number) =>
     `rgb(${rgb.map((c) => Math.round(c * 255)).join(' ')} / ${alpha.toFixed(3)})`
+
+  const layOut = (laid: Cord, palette: Palette, time: number) => {
+    const [violet, amber] = palette.threads
+    const peels = Math.min(laid.paths.length - 1, MAX_PEELS)
+    const threads = [
+      ...Array.from({ length: Math.ceil(CORD_THREADS / STILL_EVERY) }, (_, n) => n * STILL_EVERY),
+      ...Array.from({ length: peels * PEEL_THREADS }, (_, n) => CORD_THREADS + n),
+    ]
+    return threads.flatMap((i) => {
+      const th = cordThread(i)
+      const span = laid.paths[th.path]
+      if (!span || span.count < 2) return []
+      const warm = th.strand / 3 + hash(i + 4.4) * 0.2 >= 0.5
+      const style = css(warm ? amber : violet, 0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2)))
+      const points = Array.from(
+        { length: span.count },
+        (_, k) => place(laid, i, span.first + k, time, th).point,
+      )
+      // Neighbouring pieces share their end point, so the thread runs on unbroken.
+      return Array.from({ length: Math.ceil((points.length - 1) / STILL_PIECE) }, (_, n) => {
+        const run = points.slice(n * STILL_PIECE, (n + 1) * STILL_PIECE + 1)
+        const path = new Path2D()
+        for (const [k, [x, y]] of run.entries()) k === 0 ? path.moveTo(x, y) : path.lineTo(x, y)
+        const heights = run.map(([, y]) => y)
+        return { top: Math.min(...heights), bottom: Math.max(...heights), path, style }
+      })
+    })
+  }
+
   return {
     kind: '2d',
     load(next) {
       cord = next
+      pieces = undefined
     },
     draw(palette, time, view) {
       if (!cord) return
+      if (!pieces || laidOut?.palette !== palette || laidOut.time !== time) {
+        pieces = layOut(cord, palette, time)
+        laidOut = { palette, time }
+      }
       const dpr = canvas.width / Math.max(canvas.clientWidth, 1)
+      const width = canvas.width / dpr
+      const bottom = Math.min(view.top + canvas.height / dpr, view.tip)
       context.setTransform(dpr, 0, 0, dpr, -view.left * dpr, -view.top * dpr)
-      context.clearRect(view.left, view.top, canvas.width / dpr, canvas.height / dpr)
+      context.clearRect(view.left, view.top, width, canvas.height / dpr)
+      if (bottom <= view.top) return
+      context.save()
+      context.beginPath()
+      context.rect(view.left, view.top, width, bottom - view.top)
+      context.clip()
       context.globalCompositeOperation = 'lighter'
       context.lineWidth = 0.8
-      const [violet, amber] = palette.threads
-      const shown = visible(cord, view.top, Math.min(view.top + canvas.height / dpr, view.tip))
-      const paths = [shown, ...cord.paths.slice(1, 1 + MAX_PEELS)]
-      const threads = [
-        ...Array.from({ length: Math.ceil(CORD_THREADS / STILL_EVERY) }, (_, n) => n * STILL_EVERY),
-        ...Array.from({ length: (paths.length - 1) * PEEL_THREADS }, (_, n) => CORD_THREADS + n),
-      ]
-      for (const i of threads) {
-        const th = cordThread(i)
-        const span = paths[th.path]
-        if (!span || span.count < 2) continue
-        const warm = th.strand / 3 + hash(i + 4.4) * 0.2 < 0.5 ? 0 : 1
-        context.strokeStyle = css(
-          warm ? amber : violet,
-          0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2)),
-        )
-        context.beginPath()
-        for (let k = span.first; k < span.first + span.count; k++) {
-          const [x, y] = place(cord, i, k, time).point
-          if (y > view.tip) break
-          if (k === span.first) context.moveTo(x, y)
-          else context.lineTo(x, y)
-        }
-        context.stroke()
+      for (const piece of pieces) {
+        if (piece.bottom < view.top || piece.top > bottom) continue
+        context.strokeStyle = piece.style
+        context.stroke(piece.path)
       }
+      context.restore()
     },
     destroy() {},
   }

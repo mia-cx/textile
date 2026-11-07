@@ -75,6 +75,8 @@ export interface Cord {
   /** Where each section's name sits: on the knot where the cord gathers, on the side it doesn't come in from. */
   readonly knots: ReadonlyArray<{ text: string; x: number; y: number; side: 'left' | 'right' }>
   readonly radius: number
+  /** How far up and down the page anything of the cord reaches, its braid and its peels included. */
+  readonly extent: { readonly top: number; readonly bottom: number }
 }
 
 /**
@@ -258,8 +260,15 @@ export function weave(start: Point, stops: ReadonlyArray<Stop>, radius: number):
     copy: stops.slice(0, MAX_COPY).map((stop) => stop.copy),
     knots,
     radius,
+    extent: {
+      top: Math.min(...all.map((path) => Math.min(...path.map((p) => p.y)))) - margin(radius),
+      bottom: Math.max(...all.map((path) => Math.max(...path.map((p) => p.y)))) + margin(radius),
+    },
   }
 }
+
+/** How far a strand strays up or down from its path's samples: the braid's radius, and its glow. */
+const margin = (radius: number) => radius * 4 + STEP
 
 /** The cord's samples from `top` to `bottom`, and a little beyond, so its braid and sway reach the edges. */
 export function visible(cord: Cord, top: number, bottom: number): Span {
@@ -273,9 +282,8 @@ export function visible(cord: Cord, top: number, bottom: number): Span {
     }
     return lo
   }
-  const margin = cord.radius * 4 + STEP
-  const first = Math.max(0, below(top - margin) - 1)
-  const last = Math.min(cord.heights.length, below(bottom + margin) + 1)
+  const first = Math.max(0, below(top - margin(cord.radius)) - 1)
+  const last = Math.min(cord.heights.length, below(bottom + margin(cord.radius)) + 1)
   return { first, count: Math.max(0, last - first) }
 }
 
@@ -327,14 +335,14 @@ export const LOOSEN = 0.8
 
 /**
  * Thread `i` at its path's sample `k` at time `t`: where it is, and how loose it is there (0 braided, 1 loose). Reads
- * the sample from `cord.data`. Mirrors `place` in `cordWgsl`.
+ * the sample from `cord.data`; `th` is the thread, as `cordThread` makes it, for callers placing many of its points.
+ * Mirrors `place` in `cordWgsl`.
  */
-export function place(cord: Cord, i: number, k: number, t: number) {
+export function place(cord: Cord, i: number, k: number, t: number, th = cordThread(i)) {
   const o = k * TEXELS * 4
   const d = cord.data
   const [x = 0, y = 0, nx = 0, ny = 0, s = 0, open = 0, width = 0, centre = 0, ax = 0, ay = 0] =
     d.subarray(o, o + 10)
-  const th = cordThread(i)
   const loose = smoothstep(th.leave, th.leave + LOOSEN, open)
   const twist = (s / (SHAPE.pitch * cord.radius)) * TAU - t * SHAPE.spin + (th.strand * TAU) / 3
   const braided = cord.radius * Math.sin(band(twist, th.jitter, th.edge, s / DRIFT_SPAN, th.drift))

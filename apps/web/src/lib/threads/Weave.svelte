@@ -61,6 +61,8 @@ onMount(() => {
   let time = STILL_TIME
   let last = 0
   let destroyed = false
+  /** Whether the renderer holds the current cord: a new layout waits to upload until the cord next draws. */
+  let loaded = false
 
   /** The part of the cord the screen shows now, with the canvas's margin, and how far down it is drawn. */
   const view = () => {
@@ -71,11 +73,21 @@ onMount(() => {
   }
   const draw = () => {
     if (!renderer || !cord || !palette) return
+    if (!loaded) renderer.load(cord)
+    loaded = true
     const shown = view()
     canvas.style.translate = `0 ${shown.top}px`
     renderer.draw(palette, time, shown)
   }
-  const live = () => visible && !document.hidden && wide.matches && cord !== undefined
+  /** Whether any of the cord is drawn on the canvas where it is now: above the tip, within the screen and its margin. */
+  const shows = (laid: Cord) => {
+    const { top, tip } = view()
+    const bottom = Math.min(top + innerHeight * (1 + 2 * MARGIN), tip)
+    return top < laid.extent.bottom && bottom > laid.extent.top
+  }
+  /** The cord draws only while the tab shows it, side by side, with some of it on screen. */
+  const live = () =>
+    visible && !document.hidden && wide.matches && cord !== undefined && shows(cord)
   const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
   const tick = (now: number) => {
     frame = 0
@@ -167,8 +179,7 @@ onMount(() => {
     }
     cord = weave([(from.left + from.right) / 2, from.bottom], stops, CORD)
     knots = cord.knots
-    renderer?.load(cord)
-    draw()
+    loaded = false
     wake()
   }
 
