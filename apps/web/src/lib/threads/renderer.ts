@@ -1,8 +1,8 @@
 import {
   along,
   brightness,
-  ease,
   type Field,
+  knit,
   MAX_LABELS,
   position,
   SEGMENTS,
@@ -44,13 +44,13 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
   u.set([canvas.width / dpr, canvas.height / dpr, dpr, time], 0)
   u.set([...field.start, ...field.control], 4)
   u.set([...field.end, field.spread, field.cord], 8)
-  const [from, to] = field.braid
-  u.set([from, field.count, field.intensity, Math.min(field.labels.length, MAX_LABELS)], 12)
+  const [gathers, forms, whole] = field.braid
+  u.set([forms, field.count, field.intensity, Math.min(field.labels.length, MAX_LABELS)], 12)
   for (const [i, label] of field.labels.slice(0, MAX_LABELS).entries())
     u.set([label.at, label.lane], 16 + i * 4)
   for (const [i, rgb] of palette.threads.entries()) u.set(rgb, 32 + i * 4)
   u.set([...palette.background, EXPOSURE], 40)
-  u.set([to], 44)
+  u.set([whole, gathers], 44)
   return u
 }
 
@@ -128,14 +128,15 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       }
       const count = Math.min(field.count, STILL_THREADS)
       for (let i = 0; i < count; i++) {
-        const { joins, join } = thread(field, i)
-        // In short pieces, so its colour follows the gradient along it. As it joins the braid it eases into its
-        // strand's colour and gives less light, as hundreds share it there.
+        const th = thread(field, i)
+        // In short pieces, so its colour follows the gradient along it. As it gathers it eases into its strand's
+        // colour, and in the plait it gives less light, as hundreds share it there.
         for (let s = 0; s < STILL_SEGMENTS; s += STILL_PIECE) {
           const to = Math.min(s + STILL_PIECE, STILL_SEGMENTS)
           const u = along((s + to) / 2 / STILL_SEGMENTS)
-          const braided = ease(joins - join, joins, u)
-          const light = brightness(field, i, braided) * (1 + (BRAID_STILL - 1) * braided)
+          const { braided, plait } = knit(field, th, u)
+          const knitted = braided * plait
+          const light = brightness(field, i, knitted) * (1 + (BRAID_STILL - 1) * knitted)
           stroke(i, s, to, blend(warmth(field, i, u, time, braided)), 0.8 * light * field.intensity)
         }
       }

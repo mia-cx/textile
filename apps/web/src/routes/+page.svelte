@@ -12,7 +12,15 @@ import Section from '$lib/components/Section.svelte'
 import Seo from '$lib/components/Seo.svelte'
 import { CRON, ROUTE, STANDUP_POST, standupReply } from '$lib/landing'
 import { GITHUB_URL, ORIGIN, page } from '$lib/site'
-import { type Field, type Label, type Point, position, reach } from '$lib/threads/geometry'
+import {
+  type Field,
+  type Label,
+  type Point,
+  position,
+  reach,
+  type Seam,
+  seamOf,
+} from '$lib/threads/geometry'
 import ThreadField from '$lib/threads/ThreadField.svelte'
 import Weave from '$lib/threads/Weave.svelte'
 
@@ -95,11 +103,11 @@ function clearOfCopy(field: Field, label: Label) {
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 /**
- * The hero's braid forms in the open gap between the copy and the window, at every width: threads start to leave the
- * current at the copy's edge, and the braid is whole for the last BRAIDED share of the gap. Each thread eases in over a
- * share of the gap, with no corner.
+ * The hero's bundles start to gather GATHER times the gap's width before the copy's edge, behind the copy, so they
+ * converge over a long stretch. The plait forms only in the open gap between the copy and the window, at every width:
+ * its strands start to wind at the copy's edge and wind tighter all the way to the window, where the plait is whole.
  */
-const BRAIDED = 0.1
+const GATHER = 1.2
 
 type Spine = Pick<Field, 'start' | 'control' | 'end'>
 
@@ -117,13 +125,16 @@ function crossing(field: Spine, axis: 0 | 1, value: number) {
 }
 
 /**
- * Where `field` braids: from where its spine leaves the copy, at `copyEdge` on `axis`, to the braid's whole, short of
- * the window's edge at `windowEdge`.
+ * Where `field` braids: its bundles gather from well behind the copy, its plait forms where its spine leaves the copy,
+ * at `copyEdge` on `axis`, and it is whole where it meets the window, at `windowEdge`.
  */
 function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number, windowEdge: number) {
-  const whole = windowEdge - (windowEdge - copyEdge) * BRAIDED
-  return [crossing(field, axis, copyEdge), crossing(field, axis, whole)] as const
+  const gathers = crossing(field, axis, copyEdge - (windowEdge - copyEdge) * GATHER)
+  return [gathers, crossing(field, axis, copyEdge), 1] as const
 }
+
+/** Where the hero's strands stand where they meet the window, so the page's cord carries them on below it. */
+let seam = $state<Seam>()
 
 /** The hero copy's box in the field's pixels, or undefined before it mounts. */
 function copyBox() {
@@ -158,6 +169,7 @@ function hero(
       ...shape,
       braid: braidBetween(shape, 0, copy?.right ?? width * 0.45, end[0] + TIP_GAP),
     }
+    seam = seamOf(field)
     const labelled = width >= LABELLED && height >= LABELLED_HEIGHT
     return { ...field, labels: labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : [] }
   }
@@ -195,7 +207,7 @@ function close(
     end,
     spread: height * 0.5,
     cord: 9,
-    braid: [0.32, 0.85],
+    braid: [0.15, 0.35, 0.92],
     count: 520,
     intensity: 0.85,
     labels: [],
@@ -307,7 +319,7 @@ function close(
     </div>
   </section>
 
-  <Weave />
+  <Weave {seam} />
 </div>
 
 <style>

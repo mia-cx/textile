@@ -1,11 +1,11 @@
-import { CORD_THREADS, DRIFT_SPAN, MAX_COPY, PEEL_THREADS, ROW, TEXELS } from './cord'
+import { CORD_THREADS, DRIFT_SPAN, MAX_COPY, PEEL_LEAD, PEEL_THREADS, ROW, TEXELS } from './cord'
 import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
 
 /**
  * The thread field's shaders, in WGSL for WebGPU and GLSL ES 3.00 for WebGL2. Both run `position` from geometry.ts per
  * vertex, with its SHAPE: each thread is one instance, a triangle strip of SEGMENTS + 1 pairs of vertices widened
- * across the curve. Pulses of light run along every thread toward the end, and in the braid, glints spark along each
- * fibre where its band turns toward the light.
+ * across the curve. Pulses of light run along every thread toward the end, every strand breathes, and glints spark
+ * along the fibres: now and then on a loose one, and in the braid, wherever a band turns toward the light.
  *
  * Light is linear, in units where a lone fibre in the current gives about 0.1 and a glint a few hundred times that. The
  * threads add their light into a half-float target, and a frame then scatters a share of it as glare, as a lens or the
@@ -19,11 +19,11 @@ import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  start.xy, control.xy
  *   2  end.xy, spread, cord
- *   3  braid from, count, intensity, label count
+ *   3  where the plait forms, count, intensity, label count
  *   4–7  labels: at, lane
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
- *   11 braid to, -, -, -
+ *   11 where the plait is whole, where the bundles start to gather, -, -
  */
 export const UNIFORM_VEC4S = 12
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
@@ -102,14 +102,33 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('WEAVE', float(SHAPE.weave)),
     declare('RIBBONS', float(SHAPE.ribbons)),
     declare('RIBBON', float(SHAPE.ribbon)),
-    declare('JOIN', float(SHAPE.join)),
+    declare('RIBBON_SPREAD', float(SHAPE.ribbonSpread)),
+    declare('LEAVE', float(SHAPE.leave)),
+    declare('JOINED', float(SHAPE.joined)),
+    declare('JOINING', float(SHAPE.joining)),
+    declare('PLAIT', float(SHAPE.plait)),
+    declare('CLEAR', float(SHAPE.clear)),
     declare('SWING', float(SHAPE.swing)),
+    declare('SPLAY', float(SHAPE.splay)),
     declare('INWARD', float(SHAPE.inward)),
     declare('STAGGER', float(SHAPE.stagger)),
     declare('SCATTER', float(SHAPE.scatter)),
     declare('WANDER', float(SHAPE.wander)),
     declare('BENDS', float(SHAPE.bends)),
+    declare('FRAYING', float(SHAPE.fraying)),
     declare('STRAY', float(SHAPE.stray)),
+    declare('BREATH', float(SHAPE.breath)),
+    declare('BREATH_WAVES', float(SHAPE.breathWaves)),
+    declare('BREATH_LIGHT', float(SHAPE.breathLight)),
+    declare('BREATH_WARMTH', float(SHAPE.breathWarmth)),
+    declare('TRACE_FIRST', float(SHAPE.traceFirst)),
+    declare('TRACE_COUNT', float(SHAPE.traceCount)),
+    declare('TRACE_RIBBON', float(SHAPE.traceRibbon)),
+    declare('TRACE_LANE', float(SHAPE.traceLane)),
+    declare('TRACE_HALF', float(SHAPE.traceHalf)),
+    declare('TRACE', float(SHAPE.trace)),
+    declare('TRACE_STEP', float(SHAPE.traceStep)),
+    declare('TRACED', float(SHAPE.traced)),
     declare('PINNED', float(SHAPE.pinned)),
     declare('LABEL_PHASE', float(SHAPE.labelPhase)),
     declare('HUE', float(SHAPE.hue)),
@@ -132,13 +151,17 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PULSE_SPEED', float(0.16)),
     declare('PULSE_LIGHT', float(2.2)),
     declare('BRAID_PULSE_LIGHT', float(0.3)),
-    // Glints in the braid: specular sparkles where a fibre catches the light, `GLINTS` along each thread's length,
-    // travelling with the flow (thread lengths per second), on GLINT_SHARE of the fibres. They show where a strand
+    // Glints: specular sparkles where a fibre catches the light, at most `GLINTS` along each thread's length, travelling
+    // with the flow (thread lengths per second). In the braid they spark on GLINT_SHARE of the fibres where a strand
     // passes over its neighbour, brightest on its band's edge fibres, and burn a few hundred times a lone fibre's light.
+    // On loose fibres, LOOSE_GLINTS of the places a glint could be spark, at LOOSE_GLINT: a few glints at a time, each
+    // on a fibre of its own, as bright as the braid's, so they bloom too.
     declare('GLINTS', float(8)),
     declare('GLINT_SPEED', float(0.05)),
     declare('GLINT_LIGHT', float(200)),
     declare('GLINT_SHARE', float(0.2)),
+    declare('LOOSE_GLINT', float(260)),
+    declare('LOOSE_GLINTS', float(0.01)),
     // How dark a fibre is behind the braid, against in front of it, and how much hotter it burns on a crossing's crest.
     declare('BACK', float(0.2)),
     declare('CREST', float(4)),
@@ -155,14 +178,45 @@ export const commonWgslFor = (vec4s: number) => /* wgsl */ `
 @group(0) @binding(0) var<uniform> U: array<vec4f, ${vec4s}>;
 ${constants((name, value) => `const ${name} = ${value};`)}
 fn hash(n: f32) -> f32 { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
-fn ribbonOf(i: f32) -> f32 { return floor(hash(i + 1.3) * RIBBONS); }
+// Whether thread i is one of the lead's fibres. Mirrors isTraced in geometry.ts.
+fn traced(i: f32) -> bool { return i >= TRACE_FIRST && i < TRACE_FIRST + TRACE_COUNT; }
+// Thread i's ribbon and its place across it, -1 to 1. Mirrors ribbonOf in geometry.ts.
+fn ribbonOf(i: f32) -> vec2f {
+  if (traced(i)) { return vec2f(TRACE_RIBBON, TRACE - (i - TRACE_FIRST) * TRACE_STEP); }
+  return vec2f(floor(hash(i + 1.3) * RIBBONS), (hash(i + 0.5) - 0.5) * 2.0);
+}
+// Where a ribbon's centre runs across the funnel, -1 to 1, and its half-width. Mirrors ribbonLane in geometry.ts.
+fn ribbonLane(ribbon: f32) -> vec2f {
+  return vec2f(
+    (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15,
+    RIBBON * (1.0 + RIBBON_SPREAD * (hash(ribbon + 2.9) - 0.5)) / 2.0,
+  );
+}
+// Where thread i's bundle runs across the funnel, and its half-width: the lead's lane, or its ribbon's. Mirrors laneOf
+// in geometry.ts.
+fn laneOf(i: f32, ribbon: f32) -> vec2f {
+  if (traced(i)) { return vec2f(TRACE_LANE, TRACE_HALF); }
+  return ribbonLane(ribbon);
+}
 fn along(fraction: f32) -> f32 { return 1.0 - pow(1.0 - fraction, CROWD); }
 // Eases from 0 at a to 1 at b with no slope and no curvature at either end. Mirrors ease in geometry.ts.
 fn ease(a: f32, b: f32, x: f32) -> f32 {
   let t = clamp((x - a) / (b - a), 0.0, 1.0);
   return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
-// How warm a thread is at a phase (in gradient cycles): 0 violet, 1 amber. Mirrors warmth in geometry.ts.
+// How much ease(a, b, …) has gathered from a up to x: its integral. Mirrors eased in geometry.ts.
+fn eased(a: f32, b: f32, x: f32) -> f32 {
+  let t = clamp((x - a) / (b - a), 0.0, 1.0);
+  return (b - a) * t * t * t * t * (t * (t - 3.0) + 2.5) + max(x - b, 0.0);
+}
+// How far through its breath a strand is along its path (in gradient units) at time t, -1 to 1. Mirrors breath in
+// geometry.ts.
+fn breath(strand: f32, at: f32, t: f32) -> f32 { return sin(TAU * (t * BREATH - at * BREATH_WAVES) + strand * TAU / 3.0); }
+// How far through its violet-to-amber cycle a thread is, in cycles. Mirrors hueOf in geometry.ts.
+fn hueOf(at: f32, wound: f32, pick: f32, t: f32, breathing: f32) -> f32 {
+  return at * GRADIENT + wound * (BRAID_GRADIENT - GRADIENT) - t * FLOW + pick + BREATH_WARMTH * breathing;
+}
+// How warm a thread is at a phase (in gradient cycles): 0 violet, 1 amber. Mirrors warmthAt in geometry.ts.
 fn warmth(phase: f32) -> f32 { return smoothstep(-TURN, TURN, sin(TAU * phase) + WARM); }
 // The braid strand a ribbon centred at side (-1 to 1 across its current) joins. Mirrors strandOf in geometry.ts.
 fn strandOf(side: f32) -> f32 { return clamp(floor((side + 1.0) * 1.5), 0.0, 2.0); }
@@ -180,10 +234,13 @@ fn fibre(i: f32, across: f32) -> vec3f {
   );
   return vec3f(jitter, select(0.0, 1.0, edge), hash(i + 4.7) * TAU);
 }
-// How far from the spine a fibre lies, in braid radii, where its strand has turned twist and u along the fibre: its
-// strand's swing across the plait, and its place across its band. Mirrors band in geometry.ts.
-fn band(twist: f32, f: vec3f, u: f32) -> f32 {
-  return SWING * sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
+// How far from the spine a fibre lies, in braid radii, where its strand has turned twist, u along the fibre, with the
+// plait grown plait (0 to 1): its strand's place, side by side or swinging across the plait, and its place across its
+// band. Mirrors band in geometry.ts.
+fn band(twist: f32, strand: f32, f: vec3f, u: f32, plait: f32) -> f32 {
+  let centre = (strand - 1.0) * SPLAY;
+  let across = FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist));
+  return mix(centre, SWING * sin(twist), plait) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * mix(1.0, across, plait);
 }
 // How near the viewer a strand is where it has turned twist, -1 to 1: a plait's strand passes over one neighbour and
 // under the other as it swings across, so its depth turns twice as fast as its swing.
@@ -225,8 +282,9 @@ struct Out {
   @location(1) across: f32,
   // x: where the thread is in its pulses. y: how bright their crests are here.
   @location(2) pulse: vec2f,
-  // x: where the thread is in its glints. y: how bright they are here.
-  @location(3) glint: vec2f,
+  // x: where the thread is in its glints. y: how bright its loose glints are here, of which LOOSE_GLINTS spark, picked
+  // by w, the thread's own seed. z: how bright its braid's glints are here.
+  @location(3) glint: vec4f,
 };
 
 // A thread's light where it is a phase of the way through its pulses: dim between them, as bright as light at their
@@ -237,11 +295,13 @@ fn pulse(phase: f32, light: f32) -> f32 {
   return 0.55 + light * crest4 * crest4 * crest4;
 }
 
-// A glint's light where a fibre is a phase of the way through its glints: short, sharp sparks.
-fn glint(phase: f32) -> f32 {
-  var c = 0.5 + 0.5 * cos(TAU * phase);
+// A glint's light where a fibre is phase of the way through its glints (g: x its phase, y its loose light, z its braid
+// light, w its seed): short, sharp sparks, each centred on a whole phase. A loose fibre sparks at only LOOSE_GLINTS of
+// them, picked by its seed.
+fn glint(g: vec4f) -> f32 {
+  var c = 0.5 + 0.5 * cos(TAU * g.x);
   c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
-  return c;
+  return c * (g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS) + g.z);
 }
 
 @fragment
@@ -251,41 +311,46 @@ fn fs(v: Out) -> @location(0) vec4f {
   let halo = 0.1 * exp(-(d * d) / 1.6);
   // A glint adds warm-white light of its own, as bright as the fibre's strongest channel, so it burns white over a band
   // whose own colour is already saturated, rather than adding more of that colour.
-  let spark = ${SPARK_WHITE('vec3f')} * max(v.colour.r, max(v.colour.g, v.colour.b)) * glint(v.glint.x) * v.glint.y;
+  let spark = ${SPARK_WHITE('vec3f')} * max(v.colour.r, max(v.colour.g, v.colour.b)) * glint(v.glint);
   return vec4f((v.colour * pulse(v.pulse.x, v.pulse.y) + spark) * (core + halo), 1.0);
 }`
 
 export const threadWgsl = /* wgsl */ `${commonWgsl}
 ${fragmentWgsl}
 
-// What makes one thread itself: its lane, its label's place (or -1), where it has joined the braid and how long it took,
-// its strand, its sway's phase, its fibre (as fibre returns it), its ribbon, and its wander: how many bends, where they
-// start, how far. Mirrors thread in geometry.ts.
-struct Thread { lane: f32, pin: f32, joins: f32, join: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32, wander: vec3f };
+// What makes one thread itself: its lane, its label's place (or -1), where it starts to gather into its strand and
+// where it is wholly in it, its strand, its sway's phase, its fibre (as fibre returns it), its ribbon, its wander (how
+// many bends, where they start, how far), and how much brighter it burns: the lead's fibres do. Mirrors thread in
+// geometry.ts.
+struct Thread { lane: f32, pin: f32, leaves: f32, joins: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32, wander: vec3f, lead: f32 };
 
 fn threadOf(i: f32) -> Thread {
-  // Where the braid starts to form and where it is whole. (WGSL reserves from.)
-  let forms = U[3].x; let whole = U[11].x;
-  let join = JOIN * (whole - forms);
-  let ribbon = ribbonOf(i);
-  let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
-  var across = (hash(i + 0.5) - 0.5) * 2.0;
-  let stray = hash(i + 12.7) < STRAY;
-  var lane = select(centre + across * RIBBON / 2.0, hash(i + 13.1) * 2.0 - 1.0, stray);
-  var side = select(centre, lane, stray);
+  // Where the bundles start to gather, where the plait forms, and where it is whole.
+  let gathers = U[11].y; let forms = U[3].x; let whole = U[11].x;
+  let r = ribbonOf(i);
+  let ribbon = r.x;
+  let lanes = laneOf(i, ribbon);
+  var across = r.y;
+  let lead = traced(i);
+  let stray = !lead && hash(i + 12.7) < STRAY;
+  var lane = select(lanes.x + across * lanes.y, hash(i + 13.1) * 2.0 - 1.0, stray);
+  var side = select(lanes.x, lane, stray);
   var pin = -1.0;
   if (i < U[3].w) { let label = U[4u + u32(i)]; pin = label.x; lane = label.y; side = label.y; across = sign(label.y); }
-  let order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
-  var joins = forms + join + (whole - forms - join) * min(1.0, order);
-  if (pin >= 0.0) { joins = max(joins, min(whole, pin + join * 1.5)); }
+  let order = min(1.0, INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1));
+  var leaves = gathers + (forms - gathers) * LEAVE * order;
+  if (pin >= 0.0) { leaves = max(leaves, pin + CLEAR); }
+  let joins = max(forms + (whole - forms) * (JOINED + JOINING * order), leaves + (whole - forms) * JOINED);
   var phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   if (pin >= 0.0) { phase = i * LABEL_PHASE; }
-  let wander = vec3f(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, select(WANDER, 0.0, pin >= 0.0));
-  return Thread(lane, pin, joins, join, strandOf(side), phase, fibre(i, across), ribbon, wander);
+  let reach = select(WANDER * select(pow(hash(i + 5.9), FRAYING), 1.0, stray), 0.0, pin >= 0.0 || lead);
+  let wander = vec3f(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, reach);
+  return Thread(lane, pin, leaves, joins, strandOf(side), phase, fibre(i, across), ribbon, wander, select(1.0, TRACED, lead));
 }
 
-// Where a thread is u along it: in CSS px, how far into the braid (0 to 1), and its strand's depth in the plait.
-struct Placed { at: vec2f, braided: f32, depth: f32 };
+// Where a thread is u along it: in CSS px, how far it has gathered into its strand (0 to 1), how far the plait has
+// grown, and its strand's depth in the plait.
+struct Placed { at: vec2f, braided: f32, plait: f32, depth: f32 };
 
 fn place(th: Thread, u: f32) -> Placed {
   let p0 = U[1].xy; let p1 = U[1].zw; let p2 = U[2].xy;
@@ -296,7 +361,9 @@ fn place(th: Thread, u: f32) -> Placed {
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   let radius = cord * (1.0 + SWELL * a);
-  let width = radius * (1.0 + (SWING + FRAY - 1.0) * ease(U[3].x, U[11].x, u)) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+  // The strands' swing grows over the first PLAIT of the stretch from where the plait forms to where it is whole.
+  let plait = ease(U[3].x, mix(U[3].x, U[11].x, PLAIT), u);
+  let width = radius * (1.0 + (SWING + FRAY - 1.0) * plait) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   var held = 1.0;
   if (th.pin >= 0.0) { let d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
@@ -306,9 +373,9 @@ fn place(th: Thread, u: f32) -> Placed {
   let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   let turns = spine / (PITCH * cord * SWELL);
   let twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
-  let braided = radius * band(twist, th.fibre, u);
-  let inBraid = ease(th.joins - th.join, th.joins, u);
-  return Placed(p + n * mix(current, braided, inBraid), inBraid, depthOf(twist));
+  let inBand = radius * band(twist, th.strand, th.fibre, u, plait);
+  let braided = ease(th.leaves, th.joins, u);
+  return Placed(p + n * mix(current, inBand, braided), braided, plait, depthOf(twist));
 }
 
 @vertex
@@ -326,17 +393,22 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let tangent = dir / max(length(dir), 1e-4);
   let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  // Each thread runs violet to amber and back along its length, the gradient flowing toward the window. In the funnel
-  // most threads share their ribbon's phase; in the braid, each takes its strand's.
+  // How far into the plait itself the thread is: gathered into its strand, where the strands have wound.
+  let knit = here.braided * here.plait;
+  // Each thread runs violet to amber and back along its length, the gradient flowing toward the window, faster in the
+  // plait. In the current most threads share their ribbon's phase; as they gather, each takes its strand's, a third of
+  // a cycle from its neighbours'. Each strand breathes, a slow swell of light and warmth travelling along it.
   var pick = hash(i + 4.4);
-  if (hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
-  let flow = u * GRADIENT * mix(1.0, BRAID_GRADIENT, here.braided) - U[0].w * FLOW;
-  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided)));
+  if (th.lead > 1.0 || hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
+  let t = U[0].w;
+  let breathing = breath(th.strand, u, t);
+  let hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
+  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
   var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   if (i < U[3].w) { own = LABELLED; }
   // Bands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
   // each gives less light there, its band's edges more than its inside.
-  let shade = mix(own, braidLight(here.depth, th.fibre, own), here.braided) * smoothstep(0.0, 0.06, u);
+  let shade = mix(own, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
 
   var out: Out;
   let res = U[0].xy;
@@ -344,12 +416,14 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   out.colour = colour * shade * U[3].z;
   out.across = side;
   out.pulse = vec2f(
-    u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
-    mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, here.braided),
+    u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
+    mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, knit),
   );
-  out.glint = vec2f(
-    u * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7),
-    glintLight(here.depth, th.fibre) * here.braided * spark(shade),
+  out.glint = vec4f(
+    u * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
+    (1.0 - knit) * LOOSE_GLINT * spark(shade),
+    knit * glintLight(here.depth, th.fibre) * spark(shade),
+    hash(i + 8.8) * 97.0,
   );
   return out;
 }
@@ -472,11 +546,30 @@ precision highp float;
 uniform vec4 U[${vec4s}];
 ${constants((name, value) => `const float ${name} = ${value};`)}
 float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
-float ribbonOf(float i) { return floor(hash(i + 1.3) * RIBBONS); }
+bool traced(float i) { return i >= TRACE_FIRST && i < TRACE_FIRST + TRACE_COUNT; }
+vec2 ribbonOf(float i) {
+  if (traced(i)) return vec2(TRACE_RIBBON, TRACE - (i - TRACE_FIRST) * TRACE_STEP);
+  return vec2(floor(hash(i + 1.3) * RIBBONS), (hash(i + 0.5) - 0.5) * 2.0);
+}
+vec2 ribbonLane(float ribbon) {
+  return vec2(
+    (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15,
+    RIBBON * (1.0 + RIBBON_SPREAD * (hash(ribbon + 2.9) - 0.5)) / 2.0
+  );
+}
+vec2 laneOf(float i, float ribbon) { return traced(i) ? vec2(TRACE_LANE, TRACE_HALF) : ribbonLane(ribbon); }
 float along(float fraction) { return 1.0 - pow(1.0 - fraction, CROWD); }
 float ease(float a, float b, float x) {
   float t = clamp((x - a) / (b - a), 0.0, 1.0);
   return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+float eased(float a, float b, float x) {
+  float t = clamp((x - a) / (b - a), 0.0, 1.0);
+  return (b - a) * t * t * t * t * (t * (t - 3.0) + 2.5) + max(x - b, 0.0);
+}
+float breath(float strand, float at, float t) { return sin(TAU * (t * BREATH - at * BREATH_WAVES) + strand * TAU / 3.0); }
+float hueOf(float at, float wound, float pick, float t, float breathing) {
+  return at * GRADIENT + wound * (BRAID_GRADIENT - GRADIENT) - t * FLOW + pick + BREATH_WARMTH * breathing;
 }
 float warmth(float phase) { return smoothstep(-TURN, TURN, sin(TAU * phase) + WARM); }
 float strandOf(float side) { return clamp(floor((side + 1.0) * 1.5), 0.0, 2.0); }
@@ -490,8 +583,10 @@ vec3 fibre(float i, float across) {
     : INNER * (bundle * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * SPILL);
   return vec3(jitter, edge ? 1.0 : 0.0, hash(i + 4.7) * TAU);
 }
-float band(float twist, vec3 f, float u) {
-  return SWING * sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist)));
+float band(float twist, float strand, vec3 f, float u, float plait) {
+  float centre = (strand - 1.0) * SPLAY;
+  float across = FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist));
+  return mix(centre, SWING * sin(twist), plait) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * mix(1.0, across, plait);
 }
 float depthOf(float twist) { return sin(2.0 * twist); }
 float braidLight(float depth, vec3 f, float own) {
@@ -516,34 +611,37 @@ export const threadVertexGlsl = /* glsl */ `${commonGlsl}
 out vec3 vColour;
 out float vAcross;
 out vec2 vPulse;
-out vec2 vGlint;
+out vec4 vGlint;
 
-struct Thread { float lane; float pin; float joins; float join; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; };
+struct Thread { float lane; float pin; float leaves; float joins; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; float lead; };
 
 Thread threadOf(float i) {
-  float forms = U[3].x; float whole = U[11].x;
-  float join = JOIN * (whole - forms);
-  float ribbon = ribbonOf(i);
-  float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
-  float across = (hash(i + 0.5) - 0.5) * 2.0;
-  bool stray = hash(i + 12.7) < STRAY;
-  float lane = stray ? hash(i + 13.1) * 2.0 - 1.0 : centre + across * RIBBON / 2.0;
-  float side = stray ? lane : centre;
+  float gathers = U[11].y; float forms = U[3].x; float whole = U[11].x;
+  vec2 r = ribbonOf(i);
+  float ribbon = r.x;
+  vec2 lanes = laneOf(i, ribbon);
+  float across = r.y;
+  bool lead = traced(i);
+  bool stray = !lead && hash(i + 12.7) < STRAY;
+  float lane = stray ? hash(i + 13.1) * 2.0 - 1.0 : lanes.x + across * lanes.y;
+  float side = stray ? lane : lanes.x;
   float pin = -1.0;
   for (int k = 0; k < ${MAX_LABELS}; k++) {
     if (float(k) < U[3].w && float(k) == i) {
       pin = U[4 + k].x; lane = U[4 + k].y; side = U[4 + k].y; across = sign(U[4 + k].y);
     }
   }
-  float order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
-  float joins = forms + join + (whole - forms - join) * min(1.0, order);
-  if (pin >= 0.0) joins = max(joins, min(whole, pin + join * 1.5));
+  float order = min(1.0, INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1));
+  float leaves = gathers + (forms - gathers) * LEAVE * order;
+  if (pin >= 0.0) leaves = max(leaves, pin + CLEAR);
+  float joins = max(forms + (whole - forms) * (JOINED + JOINING * order), leaves + (whole - forms) * JOINED);
   float phase = pin >= 0.0 ? i * LABEL_PHASE : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
-  vec3 wander = vec3(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, pin >= 0.0 ? 0.0 : WANDER);
-  return Thread(lane, pin, joins, join, strandOf(side), phase, fibre(i, across), ribbon, wander);
+  float reach = pin >= 0.0 || lead ? 0.0 : WANDER * (stray ? 1.0 : pow(hash(i + 5.9), FRAYING));
+  vec3 wander = vec3(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, reach);
+  return Thread(lane, pin, leaves, joins, strandOf(side), phase, fibre(i, across), ribbon, wander, lead ? TRACED : 1.0);
 }
 
-struct Placed { vec2 at; float braided; float depth; };
+struct Placed { vec2 at; float braided; float plait; float depth; };
 
 Placed place(Thread th, float u) {
   vec2 p0 = U[1].xy; vec2 p1 = U[1].zw; vec2 p2 = U[2].xy;
@@ -554,7 +652,8 @@ Placed place(Thread th, float u) {
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   float radius = cord * (1.0 + SWELL * a);
-  float width = radius * (1.0 + (SWING + FRAY - 1.0) * ease(U[3].x, U[11].x, u)) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+  float plait = ease(U[3].x, mix(U[3].x, U[11].x, PLAIT), u);
+  float width = radius * (1.0 + (SWING + FRAY - 1.0) * plait) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   float held = 1.0;
   if (th.pin >= 0.0) { float d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
@@ -564,9 +663,9 @@ Placed place(Thread th, float u) {
   float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   float turns = spine / (PITCH * cord * SWELL);
   float twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
-  float braided = radius * band(twist, th.fibre, u);
-  float inBraid = ease(th.joins - th.join, th.joins, u);
-  return Placed(p + n * mix(current, braided, inBraid), inBraid, depthOf(twist));
+  float inBand = radius * band(twist, th.strand, th.fibre, u, plait);
+  float braided = ease(th.leaves, th.joins, u);
+  return Placed(p + n * mix(current, inBand, braided), braided, plait, depthOf(twist));
 }
 
 void main() {
@@ -583,21 +682,29 @@ void main() {
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  float pick = hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
-  float flow = u * GRADIENT * mix(1.0, BRAID_GRADIENT, here.braided) - U[0].w * FLOW;
-  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, here.braided)), here.depth, here.braided)));
+  float knit = here.braided * here.plait;
+  float pick = th.lead > 1.0 || hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
+  float t = U[0].w;
+  float breathing = breath(th.strand, u, t);
+  float hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
+  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
   float own = i < U[3].w ? LABELLED : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
-  float shade = mix(own, braidLight(here.depth, th.fibre, own), here.braided) * smoothstep(0.0, 0.06, u);
+  float shade = mix(own, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
 
   vec2 res = U[0].xy;
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   vColour = colour * shade * U[3].z;
   vAcross = side;
   vPulse = vec2(
-    u * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
-    mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, here.braided)
+    u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
+    mix(PULSE_LIGHT, BRAID_PULSE_LIGHT, knit)
   );
-  vGlint = vec2(u * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * here.braided * spark(shade));
+  vGlint = vec4(
+    u * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
+    (1.0 - knit) * LOOSE_GLINT * spark(shade),
+    knit * glintLight(here.depth, th.fibre) * spark(shade),
+    hash(i + 8.8) * 97.0
+  );
 }
 `
 
@@ -606,22 +713,23 @@ precision highp float;
 in vec3 vColour;
 in float vAcross;
 in vec2 vPulse;
-in vec2 vGlint;
+in vec4 vGlint;
 out vec4 colour;
 ${constants((name, value) => `const float ${name} = ${value};`)}
+float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
 float pulse(float phase, float light) {
   float crest = 0.5 + 0.5 * cos(TAU * phase);
   float crest4 = crest * crest * crest * crest;
   return 0.55 + light * crest4 * crest4 * crest4;
 }
-float glint(float phase) {
-  float c = 0.5 + 0.5 * cos(TAU * phase);
+float glint(vec4 g) {
+  float c = 0.5 + 0.5 * cos(TAU * g.x);
   c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
-  return c;
+  return c * (g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS) + g.z);
 }
 void main() {
   float d = abs(vAcross) * ${HALF_WIDTH};
-  vec3 spark = ${SPARK_WHITE('vec3')} * max(vColour.r, max(vColour.g, vColour.b)) * glint(vGlint.x) * vGlint.y;
+  vec3 spark = ${SPARK_WHITE('vec3')} * max(vColour.r, max(vColour.g, vColour.b)) * glint(vGlint);
   colour = vec4((vColour * pulse(vPulse.x, vPulse.y) + spark) * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)), 1.0);
 }
 `
@@ -712,7 +820,7 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  * The cord's uniforms, packed by `paint` in cordRenderer.ts. The tone pass reads 10 as it does the hero's:
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  the canvas's top-left on the page (px), the tip's height on the page, intensity
- *   2  -, -, how many prose boxes, -
+ *   2  the seam: strand 0's twist and hue where the cord leaves the window, how many prose boxes, the seam's drift
  *   3  braid radius, cord threads, -, the cord's first sample on screen
  *   4  how many of its samples are on screen, peels, -, -
  *   5–7  peels: first sample and count, two to a vec4
@@ -738,6 +846,11 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     // loose: early, so none of them line up in rows across the parting strands.
     declare('PULSE_SPREAD', float(8)),
     declare('COPY_LIGHT', float(0.2)),
+    // How far apart, in gradient cycles, a loose strand's ribbons run: a little, so each strand stays one colour run
+    // as it parts and its fibres vary within it.
+    declare('LOOSE_HUE', float(0.15)),
+    // How many of a peeling strand's fibres, along its outer edge, carry the lead on when it peels from the cord.
+    declare('PEEL_LEAD', float(PEEL_LEAD)),
   ].join('\n')
 
 export const cordWgsl = /* wgsl */ `${commonWgslFor(CORD_VEC4S)}
@@ -745,22 +858,23 @@ ${cordConstants((name, value) => `const ${name} = ${value};`)}
 ${fragmentWgsl}
 @group(0) @binding(1) var paths: texture_2d<f32>;
 
-// What makes one cord thread itself: its path (0 the cord, then the peels), its lane, its strand, its sway's phase, its ribbon, and its fibre. Mirrors cordThread in cord.ts.
-struct Thread { path: f32, lane: f32, strand: f32, phase: f32, ribbon: f32, fibre: vec3f };
+// What makes one cord thread itself: its path (0 the cord, then the peels), its lane, its strand, its sway's phase, its
+// ribbon, its fibre, and whether it is one of the lead's fibres, where its path carries the lead. Mirrors cordThread in
+// cord.ts.
+struct Thread { path: f32, lane: f32, strand: f32, phase: f32, ribbon: f32, fibre: vec3f, lead: f32 };
 
 fn threadOf(i: f32) -> Thread {
   if (i >= CORD_THREADS) {
     let peel = floor((i - CORD_THREADS) / PEEL_THREADS);
     let j = i - CORD_THREADS - peel * PEEL_THREADS;
     let across = (j + 0.5) / PEEL_THREADS * 2.0 - 1.0;
-    return Thread(1.0 + peel, across, peel - 3.0 * floor(peel / 3.0), 0.0, peel, fibre(i, across));
+    return Thread(1.0 + peel, across, peel - 3.0 * floor(peel / 3.0), 0.0, peel, fibre(i, across), step(PEEL_THREADS - PEEL_LEAD, j));
   }
-  let ribbon = ribbonOf(i);
-  let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
-  let across = (hash(i + 0.5) - 0.5) * 2.0;
+  let r = ribbonOf(i);
+  let lanes = laneOf(i, r.x);
   return Thread(
-    0.0, centre + across * RIBBON / 2.0, strandOf(centre),
-    hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER, ribbon, fibre(i, across),
+    0.0, lanes.x + r.y * lanes.y, strandOf(lanes.x),
+    hash(r.x + 3.3) * TAU + hash(i + 3.3) * SCATTER, r.x, fibre(i, r.y), select(0.0, 1.0, traced(i)),
   );
 }
 
@@ -778,16 +892,18 @@ fn span(path: f32) -> vec2f {
   return select(pair.xy, pair.zw, (p & 1u) == 1u);
 }
 
-// Where a thread is at sample k: on the page, how loose (0 braided to 1), its strand's depth in the plait, how far along its path,
-// and how bright the path is there. Mirrors place in cord.ts.
-struct Placed { at: vec2f, loose: f32, depth: f32, s: f32, light: f32 };
+// Where a thread is at sample k: on the page, how loose (0 braided to 1), its strand's depth in the plait, how far
+// along its path, how bright the path is there, its hue there (gradient cycles, as weave adds them up), and whether the
+// path carries the lead. Mirrors place in cord.ts.
+struct Placed { at: vec2f, loose: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32 };
 
 fn place(th: Thread, k: f32) -> Placed {
   let a = texel(k, 0.0); let b = texel(k, 1.0); let c = texel(k, 2.0);
   let t = U[0].w; let radius = U[3].x;
   let loose = b.y;
-  let twist = b.x / (PITCH * radius) * TAU - t * SPIN + th.strand * TAU / 3.0;
-  let braided = radius * band(twist, th.fibre, b.x / DRIFT_SPAN);
+  // The twist and drift carry on from where the hero's strands stood at the seam.
+  let twist = b.x / (PITCH * radius) * TAU + U[2].x - t * SPIN + th.strand * TAU / 3.0;
+  let braided = radius * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
   var sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
@@ -796,7 +912,7 @@ fn place(th: Thread, k: f32) -> Placed {
   // The braid's swing fades as the strands part, gone once they are two braid radii apart, so a strand coming loose
   // straightens rather than crimps.
   let held = (1.0 - loose) * exp(-pow(loose * b.z / radius, 2.0));
-  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
+  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z, b.w, c.w);
 }
 
 // How much light shows at p: less behind a section's prose, fading in over a few pixels around it.
@@ -826,17 +942,22 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let tangent = dir / max(length(dir), 1e-4);
   let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
 
-  let braided = 1.0 - here.loose;
   // The braid's depth shading, its warm strands leaning violet behind, and its glints fade as soon as a strand starts
   // to part, so the loose strands carry no rows of the braid's crossings.
   let knit = 1.0 - min(here.loose * PULSE_SPREAD, 1.0);
+  // Each strand keeps its colour as it parts, its ribbons a little apart, and runs violet to amber and back along the
+  // cord, faster where it is braided, carrying on the hero's gradient and breath from the seam.
   var pick = hash(i + 4.4);
-  if (hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
+  if (th.lead > 0.0 || hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
+  let t = U[0].w;
   let run = here.s / DRIFT_SPAN;
-  let flow = run * GRADIENT * mix(1.0, BRAID_GRADIENT, braided) - U[0].w * FLOW;
-  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, knit)));
+  let breathing = breath(th.strand, run + U[2].w, t);
+  let hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
+  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
   let own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
-  let shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit);
+  // The lead burns brighter all the way down, on the cord and on the strand that carries it on where the cord ends.
+  let lead = 1.0 + (TRACED - 1.0) * th.lead * here.leads;
+  let shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
   // The cord fades out over FADE above its tip, and dims behind prose.
   let tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
 
@@ -846,10 +967,15 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   out.colour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   out.across = side;
   out.pulse = vec2f(
-    run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0),
+    run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0),
     mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose),
   );
-  out.glint = vec2f(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * knit * spark(shade));
+  out.glint = vec4f(
+    run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
+    (1.0 - knit) * LOOSE_GLINT * spark(shade),
+    knit * glintLight(here.depth, th.fibre) * spark(shade),
+    hash(i + 8.8) * 97.0,
+  );
   return out;
 }
 `
@@ -860,23 +986,22 @@ uniform highp sampler2D data;
 out vec3 vColour;
 out float vAcross;
 out vec2 vPulse;
-out vec2 vGlint;
+out vec4 vGlint;
 
-struct Thread { float path; float lane; float strand; float phase; float ribbon; vec3 fibre; };
+struct Thread { float path; float lane; float strand; float phase; float ribbon; vec3 fibre; float lead; };
 
 Thread threadOf(float i) {
   if (i >= CORD_THREADS) {
     float peel = floor((i - CORD_THREADS) / PEEL_THREADS);
     float j = i - CORD_THREADS - peel * PEEL_THREADS;
     float across = (j + 0.5) / PEEL_THREADS * 2.0 - 1.0;
-    return Thread(1.0 + peel, across, mod(peel, 3.0), 0.0, peel, fibre(i, across));
+    return Thread(1.0 + peel, across, mod(peel, 3.0), 0.0, peel, fibre(i, across), step(PEEL_THREADS - PEEL_LEAD, j));
   }
-  float ribbon = ribbonOf(i);
-  float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
-  float across = (hash(i + 0.5) - 0.5) * 2.0;
+  vec2 r = ribbonOf(i);
+  vec2 lanes = laneOf(i, r.x);
   return Thread(
-    0.0, centre + across * RIBBON / 2.0, strandOf(centre),
-    hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER, ribbon, fibre(i, across)
+    0.0, lanes.x + r.y * lanes.y, strandOf(lanes.x),
+    hash(r.x + 3.3) * TAU + hash(i + 3.3) * SCATTER, r.x, fibre(i, r.y), traced(i) ? 1.0 : 0.0
   );
 }
 
@@ -892,21 +1017,21 @@ vec2 span(float path) {
   return (p % 2) == 1 ? pair.zw : pair.xy;
 }
 
-struct Placed { vec2 at; float loose; float depth; float s; float light; };
+struct Placed { vec2 at; float loose; float depth; float s; float light; float hue; float leads; };
 
 Placed place(Thread th, float k) {
   vec4 a = texel(k, 0.0); vec4 b = texel(k, 1.0); vec4 c = texel(k, 2.0);
   float t = U[0].w; float radius = U[3].x;
   float loose = b.y;
-  float twist = b.x / (PITCH * radius) * TAU - t * SPIN + th.strand * TAU / 3.0;
-  float braided = radius * band(twist, th.fibre, b.x / DRIFT_SPAN);
+  float twist = b.x / (PITCH * radius) * TAU + U[2].x - t * SPIN + th.strand * TAU / 3.0;
+  float braided = radius * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
   float sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
   float spread = th.lane * b.z + sway;
   float held = (1.0 - loose) * exp(-pow(loose * b.z / radius, 2.0));
-  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
+  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z, b.w, c.w);
 }
 
 float behindCopy(vec2 p) {
@@ -934,21 +1059,28 @@ void main() {
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
 
-  float braided = 1.0 - here.loose;
   float knit = 1.0 - min(here.loose * PULSE_SPREAD, 1.0);
-  float pick = hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
+  float pick = th.lead > 0.0 || hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
+  float t = U[0].w;
   float run = here.s / DRIFT_SPAN;
-  float flow = run * GRADIENT * mix(1.0, BRAID_GRADIENT, braided) - U[0].w * FLOW;
-  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(flow + mix(pick, th.strand / 3.0, braided)), here.depth, knit)));
+  float breathing = breath(th.strand, run + U[2].w, t);
+  float hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
+  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
   float own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
-  float shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit);
+  float lead = 1.0 + (TRACED - 1.0) * th.lead * here.leads;
+  float shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
   float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
 
   vec2 res = U[0].xy;
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
   vColour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
   vAcross = side;
-  vPulse = vec2(run * PULSES - U[0].w * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0), mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
-  vGlint = vec2(run * GLINTS - U[0].w * GLINT_SPEED * GLINTS + hash(i + 7.7), glintLight(here.depth, th.fibre) * knit * spark(shade));
+  vPulse = vec2(run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * min(here.loose * PULSE_SPREAD, 1.0), mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
+  vGlint = vec4(
+    run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7),
+    (1.0 - knit) * LOOSE_GLINT * spark(shade),
+    knit * glintLight(here.depth, th.fibre) * spark(shade),
+    hash(i + 8.8) * 97.0
+  );
 }
 `

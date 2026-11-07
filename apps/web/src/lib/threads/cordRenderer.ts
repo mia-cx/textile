@@ -66,7 +66,10 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       uniforms.fill(0)
       uniforms.set([width, height, dpr, time], 0)
       uniforms.set([view.left, view.top, view.tip, INTENSITY], 4)
-      uniforms.set([0, 0, Math.min(cord.copy.length, MAX_COPY)], 8)
+      uniforms.set(
+        [cord.seam.twist, cord.seam.hue, Math.min(cord.copy.length, MAX_COPY), cord.seam.drift],
+        8,
+      )
       uniforms.set([cord.radius, CORD_THREADS, 0, shown.first], 12)
       uniforms.set([shown.count, peels.length], 16)
       for (const [p, peel] of peels.entries()) uniforms.set([peel.first, peel.count], 20 + p * 2)
@@ -130,7 +133,14 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
       const span = laid.paths[th.path]
       if (!span || span.count < 2) return []
       const warm = th.strand / 3 + hash(i + 4.4) * 0.2 >= 0.5
-      const style = css(warm ? amber : violet, 0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2)))
+      const lead = th.lead && (laid.data[(span.first * TEXELS + 2) * 4 + 3] ?? 0) > 0
+      const style = css(
+        warm ? amber : violet,
+        Math.min(
+          1,
+          0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2)) * (lead ? SHAPE.traced : 1),
+        ),
+      )
       const points = Array.from(
         { length: span.count },
         (_, k) => place(laid, i, span.first + k, time, th).point,

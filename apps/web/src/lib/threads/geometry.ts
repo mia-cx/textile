@@ -2,11 +2,10 @@
  * The thread field's shape, shared by every renderer: the WGSL and GLSL shaders run the same math per vertex, and this
  * module runs it on the CPU to place the event labels and to draw the 2D fallback.
  *
- * Threads stream from `start` along a quadratic curve through `control` to `end`, inside a funnel whose nearly straight
- * edges close in steadily from where they enter, `spread` pixels either side, until they meet the braid. Across `braid`
- * (fractions of the way along), threads keep leaving the funnel to join a three-strand braid inside it, the innermost
- * first and the outermost last. The braid narrows to a cord of radius `cord` and twists tighter as it goes,
- * so it ends at `end` at its thinnest.
+ * Threads stream from `start` along a quadratic curve through `control` to `end`, in loose bundles inside a funnel whose
+ * nearly straight edges close in steadily from where they enter, `spread` pixels either side. Across `braid` (fractions
+ * of the way along) the bundles gather into three strands side by side, and the strands wind into a three-strand plait
+ * that narrows to a cord of radius `cord` and twists tighter as it goes, so it ends at `end` at its thinnest.
  */
 
 export type Point = readonly [x: number, y: number]
@@ -28,10 +27,11 @@ export interface Field {
   /** The braid's radius at `end`, its thinnest. */
   readonly cord: number
   /**
-   * Where the braid forms, as fractions of the way along (0 to 1): the first threads start to leave the current at
-   * `from`, and the last have joined the braid by `to`.
+   * Where the braid forms, as fractions of the way along (0 to 1): the first bundles start to gather into their strands
+   * at `gathers`, the strands start to wind into a plait at `forms`, and the plait is whole and the last threads have
+   * joined it by `whole`.
    */
-  readonly braid: readonly [from: number, to: number]
+  readonly braid: readonly [gathers: number, forms: number, whole: number]
   readonly count: number
   /** Overall brightness, 0 to 1. */
   readonly intensity: number
@@ -62,9 +62,8 @@ export const SHAPE = {
   /** How many cord radii the braid widens by from `end` back to `start`: it narrows linearly to `cord`. */
   swell: 9,
   /**
-   * How the funnel narrows: its width beyond the braid's outline goes as (1 - u / to)^taper, nearly straight edges that
-   * close in steadily from the left edge and meet the braid's outline, tangent to it, where the braid is whole (`to`
-   * in the field's `braid`).
+   * How the funnel narrows: its width beyond the braid's outline goes as (1 - u / whole)^taper, nearly straight edges
+   * that close in steadily from the left edge and meet the braid's outline, tangent to it, where the braid is whole.
    */
   taper: 1.3,
   /** How far the current sways, as a fraction of the funnel's width. */
@@ -78,6 +77,11 @@ export const SHAPE = {
   swing: 1.2,
   fray: 0.75,
   flat: 0.5,
+  /**
+   * Before they wind, the three strands run side by side, `splay` braid radii apart: the bundles gather into them, and
+   * the plait grows out of them as their swing grows, so it has no visible start.
+   */
+  splay: 1.6,
   /**
    * The share of a band's fibres that run along its two edges, in `edgeLanes` close lanes `edgeStep` apart (in the
    * band's -1 to 1): crisp, bright lines, each fibre still visible, around the dimmer fibres inside. Those spread over
@@ -103,34 +107,44 @@ export const SHAPE = {
   drift: 0.12,
   weave: 24,
   /**
-   * How many ribbons the threads travel in, and how wide each is, as a fraction of the whole funnel: narrower than the
-   * gaps between them, so the current reads as separate strands of fibre on the dark.
+   * How many bundles the threads travel in, how wide each is on average, as a fraction of the whole funnel, and how
+   * much their widths vary about that: narrow bundles and wide ones, with dark between them.
    */
   ribbons: 11,
-  ribbon: 0.18,
+  ribbon: 0.11,
+  ribbonSpread: 1.1,
   /**
    * Where the ribbons' colours start in their golden-ratio steps: from the top, violet, orchid, violet, amber, violet,
-   * violet, amber, violet, amber, orchid, violet. Amber runs high, low, and through the middle, among violet, and the
-   * outermost ribbons stay violet, darkest where they pass the page's header.
+   * violet, amber, violet, amber, orchid, violet. Amber runs high, low, and through the middle, among violet.
    */
   hue: 0,
   /**
-   * How much of the field's `braid` a thread takes to join it: long, so each ribbon eases from its lane into the plait
-   * over a good share of that stretch, rather than turning in at once.
+   * How the plait forms between `forms` and `whole`: the strands' swing grows over the first `plait` of that stretch,
+   * and the plait keeps tightening after, all the way to `whole`.
    */
-  join: 0.7,
+  plait: 0.5,
   /**
-   * How strictly ribbons join in order from the inner lanes out: 1 by lane alone, 0 at random. Between, the braid fills
-   * out as soon as it forms, while the outermost ribbons still join last. And how far apart, in the same units, a
-   * ribbon's own threads join: a little, so it peels in as one bundle.
+   * When a bundle starts to gather, as a share of the stretch from `gathers` to `forms`; and when its threads have all
+   * joined their strand, as a share of the stretch from `forms` to `whole`: from `joined`, for the inner bundles, to
+   * `joined + joining` for the outer. Each bundle takes a long stretch to gather, so the plait grows out of the current
+   * with no visible start, and the last stretch is all plait.
+   */
+  leave: 0.7,
+  joined: 0.3,
+  joining: 0.4,
+  /** How far past its label, at least, a labelled thread starts to gather, so its knot rides it in the current. */
+  clear: 0.04,
+  /**
+   * How strictly ribbons gather in order from the inner lanes out: 1 by lane alone, 0 at random. And how far apart, in
+   * the same units, a ribbon's own threads gather: a little, so it comes in as one loose bundle.
    */
   inward: 0.5,
-  stagger: 0.06,
+  stagger: 0.12,
   /**
-   * How far out of step with its ribbon a thread sways, in radians: enough that a ribbon's fibres fan apart and drift
-   * at slightly different angles, as the concept's loose streams do.
+   * How far out of step with its ribbon a thread sways, in radians: a little, so a bundle stays a bundle while its
+   * fibres drift at slightly different angles.
    */
-  scatter: 1.4,
+  scatter: 0.5,
   /** The share of the current's sway a labelled thread keeps at its knot: the knot rides it, but stays near home. */
   pinned: 0.35,
   /**
@@ -139,14 +153,15 @@ export const SHAPE = {
    */
   labelPhase: 2.4,
   /**
-   * How far each thread wanders off its lane on a slow curve of its own, as a share of the funnel's width, and how many
-   * such curves it can run along its length, at most: each fibre bends a little differently, so streams thin out,
-   * split, and cross softly. It narrows with the funnel, so where the ribbons meet they cross at shallow angles.
+   * How far a thread frays off its bundle on a slow curve of its own, at most, as a share of the funnel's width, and
+   * how many such curves it can run along its length, at most. Each thread's reach is that times a random number to the
+   * power `fraying`: most fibres hug their bundle and a few fray far from it, so bundles fray at their edges.
    */
-  wander: 0.06,
+  wander: 0.07,
   bends: 9,
-  /** The share of threads that stray from their ribbon onto a lane of their own and wander between the streams. */
-  stray: 0.1,
+  fraying: 3,
+  /** The share of threads that stray from their bundle onto a lane of their own and wander between the bundles. */
+  stray: 0.06,
   /** How much of its warmth a strand keeps right at the back of the braid. */
   cool: 0.35,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
@@ -155,14 +170,15 @@ export const SHAPE = {
   labelled: 2,
   /** The dimmest thread's brightness, against 1 for the brightest: low, so the dark shows between bright fibres. */
   dim: 0.1,
-  /** The share of threads that take their ribbon's colour phase, not their own: high, so colours run in streams. */
+  /** The share of threads that take their ribbon's colour phase, not their own: high, so colours run in bundles. */
   coherence: 0.9,
   /**
-   * How many violet-to-amber cycles each thread runs along its length, and the share of that rate it keeps in the
-   * braid: low, so each band holds one colour across the braid, violet beside amber.
+   * How many violet-to-amber cycles a thread runs per unit along it (its whole length in the hero) in the loose
+   * current, and in the plait: faster there, so each band turns from violet to amber and back as it winds, its
+   * neighbours a third of a cycle apart.
    */
-  gradient: 1.4,
-  braidGradient: 0.3,
+  gradient: 2.4,
+  braidGradient: 10,
   /** How fast the gradient flows toward the window, in cycles per second. */
   flow: 0.06,
   /**
@@ -172,6 +188,30 @@ export const SHAPE = {
    */
   warm: -0.12,
   turn: 0.45,
+  /**
+   * The strands breathe: a slow swell of light and warmth, `breath` cycles per second, that travels toward the window
+   * in `breathWaves` waves per unit along, a third of a cycle apart between strands. `breathLight` is how much brighter
+   * a thread is at its crest, and `breathWarmth` how far its colour leans (in gradient cycles).
+   */
+  breath: 0.17,
+  breathWaves: 1.2,
+  breathLight: 0.22,
+  breathWarmth: 0.035,
+  /**
+   * The lead: a few fibres that burn `traced` times brighter than the brightest of the rest, all the way along, so the
+   * eye can follow one strand from the current through the braid and down the page. They are threads `traceFirst` on,
+   * `traceCount` of them, with ribbon `traceRibbon`'s colour, on a lane of their own between the bundles, `traceLane`
+   * across the current and `traceHalf` wide, so the dark shows either side of them; in the braid they ride their
+   * strand's edge, `trace` across its band and inward in steps of `traceStep`.
+   */
+  traceFirst: 4,
+  traceCount: 6,
+  traceRibbon: 1,
+  traceLane: -0.6,
+  traceHalf: 0.02,
+  trace: 0.98,
+  traceStep: 0.04,
+  traced: 3,
 } as const
 
 /** The same hash the shaders use: a thread's index to a stable pseudo-random number in [0, 1). */
@@ -189,30 +229,62 @@ export const ease = (a: number, b: number, x: number) => {
   return t * t * t * (t * (t * 6 - 15) + 10)
 }
 
+/**
+ * How much `ease(a, b, …)` has gathered from `a` up to `x`: its integral, so a rate that eases from one value to another
+ * accumulates smoothly, with no sweep where it changes. Mirrors `eased` in the shaders.
+ */
+export const eased = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
+  return (b - a) * t * t * t * t * (t * (t - 3) + 2.5) + Math.max(x - b, 0)
+}
+
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return t * t * (3 - 2 * t)
 }
 
+/** Whether thread `i` is one of the lead's fibres. Mirrors `traced` in the shaders. */
+export const isTraced = (i: number) =>
+  i >= SHAPE.traceFirst && i < SHAPE.traceFirst + SHAPE.traceCount
+
 /**
- * What makes one thread itself. Threads travel in ribbons (`SHAPE.ribbons` of them) that share a lane, a sway, and
- * mostly a colour, so the funnel reads as a current. Each ribbon joins the braid whole, at about `joins` (inner ribbons
- * early, outer ones late, labelled threads only after their label), as one bundle into the strand on its side: the
- * upper ribbons make one band, the middle ones another, the lower ones the third. A thread keeps its place across its
- * ribbon (`across`, -1 to 1) as its place across its band, so the ribbons converge in order.
+ * Thread `i`'s ribbon and its place across it (-1 to 1): a lead fibre's are set, the rest hashed. Mirrors `ribbonOf`
+ * and the start of `threadOf` in the shaders.
+ */
+export const ribbonOf = (i: number) =>
+  isTraced(i)
+    ? {
+        ribbon: SHAPE.traceRibbon,
+        across: SHAPE.trace - (i - SHAPE.traceFirst) * SHAPE.traceStep,
+      }
+    : { ribbon: Math.floor(hash(i + 1.3) * SHAPE.ribbons), across: (hash(i + 0.5) - 0.5) * 2 }
+
+/** Where ribbon `ribbon`'s centre runs across the funnel (-1 to 1), and its half-width. Mirrors the shaders. */
+export const ribbonLane = (ribbon: number) => ({
+  centre: ((ribbon + 0.5) / SHAPE.ribbons) * 2 - 1 + (hash(ribbon + 11) - 0.5) * 0.15,
+  half: (SHAPE.ribbon * (1 + SHAPE.ribbonSpread * (hash(ribbon + 2.9) - 0.5))) / 2,
+})
+
+/** Where thread `i`'s bundle runs across the funnel, and its half-width: the lead's lane, or its ribbon's. */
+export const laneOf = (i: number, ribbon: number) =>
+  isTraced(i) ? { centre: SHAPE.traceLane, half: SHAPE.traceHalf } : ribbonLane(ribbon)
+
+/**
+ * What makes one thread itself. Threads travel in loose bundles (`SHAPE.ribbons` of them) that share a lane, a sway,
+ * and mostly a colour; each fibre frays from its bundle a little, a few a lot, and some stray between bundles. Each
+ * bundle gathers, starting at `leaves` (inner ribbons early, outer ones late, labelled threads only after their label),
+ * into the strand on its side, and is wholly in it by `joins`: the upper ribbons make one strand, the middle ones
+ * another, the lower ones the third. A thread keeps its place across its ribbon (`across`, -1 to 1) as its place
+ * across its band, so the ribbons converge in order.
  */
 export const thread = (field: Field, i: number) => {
   const label = field.labels[i]
-  const ribbon = Math.floor(hash(i + 1.3) * SHAPE.ribbons)
-  const centre = ((ribbon + 0.5) / SHAPE.ribbons) * 2 - 1 + (hash(ribbon + 11) - 0.5) * 0.15
+  const { ribbon, across: hashed } = ribbonOf(i)
+  const { centre, half } = laneOf(i, ribbon)
   // A labelled thread rides its ribbon's outer edge, at its label's lane.
-  const across = label ? Math.sign(label.lane) : (hash(i + 0.5) - 0.5) * 2
-  const stray = !label && hash(i + 12.7) < SHAPE.stray
-  const lane = label
-    ? label.lane
-    : stray
-      ? hash(i + 13.1) * 2 - 1
-      : centre + (across * SHAPE.ribbon) / 2
+  const across = label ? Math.sign(label.lane) : hashed
+  const stray = !label && !isTraced(i) && hash(i + 12.7) < SHAPE.stray
+  const lane = label ? label.lane : stray ? hash(i + 13.1) * 2 - 1 : centre + across * half
   const side = label || stray ? lane : centre
   const order = Math.min(
     1,
@@ -220,22 +292,23 @@ export const thread = (field: Field, i: number) => {
       (1 - SHAPE.inward) * hash(ribbon + 7.1) +
       SHAPE.stagger * hash(i + 7.1),
   )
-  const [from, to] = field.braid
-  const join = SHAPE.join * (to - from)
-  const joins = from + join + (to - from - join) * order
+  const [gathers, forms, whole] = field.braid
+  const leaves = gathers + (forms - gathers) * SHAPE.leave * order
+  const joins = forms + (whole - forms) * (SHAPE.joined + SHAPE.joining * order)
+  const after = label ? Math.max(leaves, label.at + SHAPE.clear) : leaves
   return {
     lane,
     pin: label ? label.at : -1,
-    /** Where the thread has joined the braid, having left its lane `join` before. */
-    joins: label ? Math.max(joins, Math.min(to, label.at + join * 1.5)) : joins,
-    join,
+    /** Where the thread starts to leave its lane for its strand, and where it is wholly in it. */
+    leaves: after,
+    joins: Math.max(joins, after + (whole - forms) * SHAPE.joined),
     strand: strandOf(side),
     phase: label ? i * SHAPE.labelPhase : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
-    // A labelled thread doesn't wander: its knot rides it, placed on the CPU.
+    // A labelled thread and the lead don't fray: a knot rides the one, and the eye follows the other.
     wander: {
       bends: 3 + (SHAPE.bends - 3) * hash(i + 5.5),
       phase: hash(i + 6.7) * TAU,
-      reach: label ? 0 : SHAPE.wander,
+      reach: label || isTraced(i) ? 0 : SHAPE.wander * (stray ? 1 : hash(i + 5.9) ** SHAPE.fraying),
     },
     ...fibre(i, across),
     ribbon,
@@ -243,7 +316,7 @@ export const thread = (field: Field, i: number) => {
 }
 
 /** The braid strand a ribbon centred at `side` (-1 to 1 across the funnel) joins: 0 above, 1 in the middle, 2 below. */
-const strandOf = (side: number) => Math.min(2, Math.max(0, Math.floor((side + 1) * 1.5)))
+export const strandOf = (side: number) => Math.min(2, Math.max(0, Math.floor((side + 1) * 1.5)))
 
 /**
  * Where thread `i` runs in its band, -1 to 1, from its place `across` its ribbon: on one of the band's edges, in one
@@ -279,25 +352,49 @@ export const fibre = (i: number, across: number) => {
 export const reach = (field: Field, at: number) =>
   funnelWidth(field, at) * SHAPE.wave * SHAPE.pinned
 
-/**
- * The funnel's half-width `u` along it: the braid's radius, narrowing toward `cord`, and the current's beyond it.
- * Where the braid forms, the braid's part widens to its outline, so the current meets the plait without a waist.
- * Mirrors `width` in `place` in the shaders.
- */
-const funnelWidth = ({ spread, cord, braid: [from, to] }: Field, u: number) =>
-  cord * (1 + SHAPE.swell * (1 - u)) * (1 + (SHAPE.swing + SHAPE.fray - 1) * ease(from, to, u)) +
-  spread * Math.max(1 - u / to, 0) ** SHAPE.taper
+/** Where the plait has grown whole, its strands swinging their full width: `plait` of the way from `forms` to `whole`. */
+const plaited = ({ braid: [, forms, whole] }: Field) => forms + SHAPE.plait * (whole - forms)
+
+/** How far the plait has grown `u` along `field`, 0 to 1. Mirrors `plait` in `place` in the shaders. */
+const plaitAt = (field: Field, u: number) => ease(field.braid[1], plaited(field), u)
 
 /**
- * How far from the braid's spine a fibre at `jitter` across its band lies, in braid radii, where its strand has turned
- * `twist`: its strand's swing across the plait, and its place across the band, which is widest where the strand
- * passes in front and thinnest behind. Mirrors `band` in the shaders.
+ * The funnel's half-width `u` along it: the braid's radius, narrowing toward `cord`, and the current's beyond it.
+ * Where the plait forms, the braid's part widens to its outline, so the current meets the plait without a waist.
+ * Mirrors `width` in `place` in the shaders.
  */
-export const band = (twist: number, jitter: number, edge: boolean, along: number, drift: number) =>
-  SHAPE.swing * Math.sin(twist) +
-  (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
-    SHAPE.fray *
-    (SHAPE.flat + ((1 - SHAPE.flat) * (1 + Math.sin(2 * twist))) / 2)
+const funnelWidth = (field: Field, u: number) =>
+  field.cord *
+    (1 + SHAPE.swell * (1 - u)) *
+    (1 + (SHAPE.swing + SHAPE.fray - 1) * plaitAt(field, u)) +
+  field.spread * Math.max(1 - u / field.braid[2], 0) ** SHAPE.taper
+
+/**
+ * How far from the braid's spine a fibre at `jitter` across its band lies, in braid radii, where strand `strand` has
+ * turned `twist` and the plait has grown `plait` (0 to 1): before it grows, the strands run side by side, `splay`
+ * apart; grown, each swings across the plait, and its band is widest where it passes in front and thinnest behind.
+ * Mirrors `band` in the shaders.
+ */
+export const band = (
+  twist: number,
+  strand: number,
+  jitter: number,
+  edge: boolean,
+  along: number,
+  drift: number,
+  plait: number,
+) => {
+  const centre = (strand - 1) * SHAPE.splay
+  const swung = SHAPE.swing * Math.sin(twist)
+  const across = SHAPE.flat + ((1 - SHAPE.flat) * (1 + Math.sin(2 * twist))) / 2
+  return (
+    centre +
+    (swung - centre) * plait +
+    (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
+      SHAPE.fray *
+      (1 + (across - 1) * plait)
+  )
+}
 
 /** About how long the spine is, in pixels: between its chord and its control polygon. Mirrors the shaders. */
 const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
@@ -317,10 +414,20 @@ const twistOf = (field: Field, strand: number, u: number, t: number) =>
   t * SHAPE.spin +
   (strand * TAU) / 3
 
+/**
+ * How far into the braid thread `th` is `u` along `field`: `braided`, how far it has gathered from its lane into its
+ * strand, and `plait`, how far the strands have wound. Mirrors `place` in the shaders.
+ */
+export const knit = (field: Field, th: ReturnType<typeof thread>, u: number) => ({
+  braided: ease(th.leaves, th.joins, u),
+  plait: plaitAt(field, u),
+})
+
 /** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
 export function position(field: Field, i: number, u: number, t: number): Point {
   const { start: p0, control: p1, end: p2, cord } = field
-  const { lane, pin, joins, join, strand, phase, wander, jitter, drift, edge } = thread(field, i)
+  const th = thread(field, i)
+  const { lane, pin, strand, phase, wander, jitter, drift, edge } = th
   const a = 1 - u
   const x = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0]
   const y = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1]
@@ -339,8 +446,9 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const bend = wander.reach * Math.sin(u * wander.bends + t * 0.12 + wander.phase)
   const current = width * (lane + SHAPE.wave * held * sway + bend)
 
-  const braided = radius * band(twistOf(field, strand, u, t), jitter, edge, u, drift)
-  const offset = current + (braided - current) * ease(joins - join, joins, u)
+  const { braided, plait } = knit(field, th, u)
+  const inBand = radius * band(twistOf(field, strand, u, t), strand, jitter, edge, u, drift, plait)
+  const offset = current + (inBand - current) * braided
   return [x + nx * offset, y + ny * offset]
 }
 
@@ -353,29 +461,71 @@ const ribbonPick = (ribbon: number) => {
 }
 
 /**
+ * How far through its breath strand `strand` is `along` (in gradient units) at time `t`, -1 to 1: a slow wave
+ * travelling toward the end. Mirrors `breath` in the shaders.
+ */
+export const breath = (strand: number, along: number, t: number) =>
+  Math.sin(TAU * (t * SHAPE.breath - along * SHAPE.breathWaves) + (strand * TAU) / 3)
+
+/**
+ * How far through its violet-to-amber cycle a thread is, in cycles: `along` its path in gradient units, of which
+ * `wound` were spent in the plait, `pick` its own phase, at time `t`, breathing at `breathing`. Mirrors `hueOf` in the
+ * shaders.
+ */
+export const hueOf = (along: number, wound: number, pick: number, t: number, breathing: number) =>
+  along * SHAPE.gradient +
+  wound * (SHAPE.braidGradient - SHAPE.gradient) -
+  t * SHAPE.flow +
+  pick +
+  SHAPE.breathWarmth * breathing
+
+/** How warm a thread is at hue `phase` (in cycles): 0 violet, 1 amber. Mirrors `warmth` in the shaders. */
+export const warmthAt = (phase: number) =>
+  smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
+
+/**
  * How warm thread `i` is at `u` along it and time `t`: 0 violet, 1 amber. Every thread runs violet to amber and back,
- * the gradient flowing toward the end; in the funnel most share their ribbon's phase, in the braid their strand's.
- * Mirrors `warmth` and its use in the shaders; `braided` is how far into the braid `u` is, 0 to 1. The shaders then
- * shade the braid by depth, leaning a gold strand violet behind its neighbours (`cool`), lighting the bands in front,
- * and sparking glints; the 2D renderers stroke in pieces too long to follow the braid's depth, so they leave all of that
- * out rather than band the braid into seams.
+ * the gradient flowing toward the end, faster in the plait; in the current most share their ribbon's phase, and as
+ * they gather, their strand's. Mirrors the colour in the shaders; `braided` is how far it has gathered, 0 to 1. The
+ * shaders then shade the braid by depth, leaning a gold strand violet behind its neighbours (`cool`), lighting the bands
+ * in front, and sparking glints; the 2D renderers stroke in pieces too long to follow the braid's depth, so they leave
+ * all of that out rather than band the braid into seams.
  */
 export const warmth = (field: Field, i: number, u: number, t: number, braided: number) => {
   const { ribbon, strand } = thread(field, i)
-  const pick = hash(i + 9.7) < SHAPE.coherence ? ribbonPick(ribbon) : hash(i + 4.4)
-  const rate = SHAPE.gradient * (1 + (SHAPE.braidGradient - 1) * braided)
-  const phase = u * rate - t * SHAPE.flow + pick + (strand / 3 - pick) * braided
-  return smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
+  const pick = isTraced(i) || hash(i + 9.7) < SHAPE.coherence ? ribbonPick(ribbon) : hash(i + 4.4)
+  return warmthAt(
+    hueOf(
+      u,
+      eased(field.braid[1], plaited(field), u),
+      pick + (strand / 3 - pick) * braided,
+      t,
+      breath(strand, u, t),
+    ),
+  )
 }
 
 /**
- * A thread's brightness, as the shaders pick it, `braided` (0 to 1) of the way into the braid: there a band's edge
- * fibres burn brighter and its inner ones dimmer.
+ * A thread's brightness, as the shaders pick it, `knitted` (0 to 1) of the way into the plait: there a band's edge
+ * fibres burn brighter and its inner ones dimmer. The lead burns brighter all the way. Breathing is left out: the 2D
+ * renderers draw one still frame.
  */
-export const brightness = (field: Field, i: number, braided = 0) => {
+export const brightness = (field: Field, i: number, knitted = 0) => {
   const own =
     i < field.labels.length ? SHAPE.labelled : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** 3
   // Inside a band the fibres glow more evenly than in the funnel: the cube root of their own brightness.
   const inBand = thread(field, i).edge ? SHAPE.edgeLight : SHAPE.innerLight * Math.cbrt(own)
-  return own + (inBand - own) * braided
+  return (own + (inBand - own) * knitted) * (isTraced(i) ? SHAPE.traced : 1)
 }
+
+/**
+ * Where the hero's strands stand where it ends, at time 0, so the page's cord can carry them on: strand 0's twist (the
+ * others are a third of a turn on each), its hue (in gradient cycles, before its strand's third), and how far its
+ * fibres have drifted (in units along).
+ */
+export const seamOf = (field: Field) => ({
+  twist: twistOf(field, 0, 1, 0),
+  hue: hueOf(1, eased(field.braid[1], plaited(field), 1), 0, 0, 0),
+  drift: 1,
+})
+export type Seam = ReturnType<typeof seamOf>

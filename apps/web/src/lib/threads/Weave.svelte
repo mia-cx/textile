@@ -1,7 +1,8 @@
 <script lang="ts">
-import { onMount } from 'svelte'
-import { type Box, type Cord, type Stop, weave } from './cord'
+import { onMount, untrack } from 'svelte'
+import { type Box, type Cord, carry, NO_SEAM, type Stop, weave } from './cord'
 import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
+import type { Seam } from './geometry'
 import { hex, type Palette } from './renderer'
 
 /**
@@ -20,7 +21,11 @@ import { hex, type Palette } from './renderer'
  * page; without scroll timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds still.
  * Without a GPU it is drawn in canvas 2D. It is drawn only side by side; stacked, each section names its event above
  * its demo instead. Decorative.
+ *
+ * `seam` is where the hero's strands stand where they meet the window's left edge: the cord carries each on, as itself,
+ * from there behind the window to its bottom, and down the page.
  */
+let { seam }: { seam?: Seam | undefined } = $props()
 
 /** Wide enough for the side-by-side layouts the cord runs between. */
 const WIDE = '(min-width: 64rem)'
@@ -49,6 +54,12 @@ let box: HTMLDivElement
 let canvas: HTMLCanvasElement
 let knots = $state<Cord['knots']>([])
 let kind = $state<CordRenderer['kind']>()
+/** Lays the cord out again, once mounted: as the hero measures its seam anew, the cord carries it on. */
+let remeasure: (() => void) | undefined
+$effect(() => {
+  void seam
+  untrack(() => remeasure?.())
+})
 
 onMount(() => {
   const root = box.parentElement
@@ -194,7 +205,15 @@ onMount(() => {
       })
       above = content.bottom
     }
-    cord = weave([(from.left + from.right) / 2, from.bottom], stops, CORD, origin.width)
+    // Behind the window, the hero's strands run from its left edge's middle to its bottom's middle.
+    const hidden = (from.right - from.left) / 2 + (from.bottom - from.top) / 2
+    cord = weave(
+      [(from.left + from.right) / 2, from.bottom],
+      stops,
+      CORD,
+      origin.width,
+      seam ? carry(seam, hidden, CORD) : NO_SEAM,
+    )
     knots = cord.knots
     loaded = false
     wake()
@@ -236,6 +255,7 @@ onMount(() => {
     measure()
   }
 
+  remeasure = measure
   const resize = new ResizeObserver(measure)
   resize.observe(root)
   const seen = new IntersectionObserver(([entry]) => {
@@ -259,6 +279,7 @@ onMount(() => {
 
   return () => {
     destroyed = true
+    remeasure = undefined
     cancelAnimationFrame(frame)
     resize.disconnect()
     seen.disconnect()
