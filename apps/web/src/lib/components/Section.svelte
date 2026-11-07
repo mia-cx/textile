@@ -48,7 +48,7 @@ let {
   .section {
     display: grid;
     gap: 2.5rem;
-    padding: clamp(5rem, 9vw, 10rem) var(--gutter) 0;
+    padding: clamp(5rem, 9vw, 10rem) var(--inset) 0;
     view-timeline-name: --section;
   }
   .prose,

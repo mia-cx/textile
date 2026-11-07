@@ -416,7 +416,7 @@ function close(
     align-items: center;
     min-height: clamp(34rem, 80svh, 56rem);
     margin-top: clamp(6rem, 10vw, 12rem);
-    padding: 4rem var(--gutter);
+    padding: 4rem var(--inset);
   }
   .close-copy {
     position: relative;

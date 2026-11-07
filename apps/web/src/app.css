@@ -128,10 +128,10 @@
     color: var(--ink);
     font-size: 0.88em;
   }
-  /* A page of reading (access, legal, errors): aligned to the header's gutter, at a readable measure. */
+  /* A page of reading (access, legal, errors): aligned to the header's inset, at a readable measure. */
   .page {
-    max-width: calc(48rem + 2 * var(--gutter));
-    padding: clamp(3rem, 8vw, 7rem) var(--gutter) 0;
+    max-width: calc(48rem + var(--gutter) + var(--inset));
+    padding: clamp(3rem, 8vw, 7rem) var(--gutter) 0 var(--inset);
   }
   .page-title {
     font-size: clamp(2.75rem, 1.6rem + 3.4vw, 5rem);

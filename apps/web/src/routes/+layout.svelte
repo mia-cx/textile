@@ -69,7 +69,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
   main:focus {
     outline: none;
   }
-  /* Full width, like the page under it: the header sits over the landing page's thread field. */
+  /* Full width, like the hero it sits over; everything below the hero sits in the container. */
   .site-header {
     position: relative;
     z-index: 3;
@@ -80,9 +80,13 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     height: var(--header-height);
     padding-inline: var(--gutter);
   }
+  /* `--inset` is the side padding that holds a full-width block's content to the container: the gutter, or wider
+     where the screen is wider than the container. Its percentage resolves against the block it pads. */
   :global(:root) {
     --header-height: 5.5rem;
     --gutter: clamp(1.25rem, 4vw, 4.5rem);
+    --container: 96rem;
+    --inset: max(var(--gutter), (100% - var(--container)) / 2);
   }
   .wordmark {
     display: inline-flex;
@@ -145,7 +149,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     align-items: center;
     gap: 0.5rem 2.5rem;
     margin-top: 8rem;
-    padding: 2rem var(--gutter) 2.5rem;
+    padding: 2rem var(--inset) 2.5rem;
     border-top: 1px solid var(--rule);
     font-size: 1rem;
   }
