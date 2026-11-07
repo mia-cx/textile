@@ -34,7 +34,9 @@ const COLOURS = [
 ]
 
 let box: HTMLDivElement
-let woven = $state<ReturnType<typeof weave>>({ strokes: [], spine: '', knots: [] })
+/** Nothing to draw: stacked, and before the page is measured. */
+const UNWOVEN: ReturnType<typeof weave> = { strokes: [], spine: '', lines: '', knots: [] }
+let woven = $state(UNWOVEN)
 let size = $state({ width: 0, height: 0 })
 
 onMount(() => {
@@ -79,7 +81,7 @@ onMount(() => {
 
     const start = root.querySelector('[data-weave-start]')
     if (!wide.matches || !start) {
-      woven = { strokes: [], spine: '', knots: [] }
+      woven = UNWOVEN
       return
     }
     const from = rect(start)
@@ -120,9 +122,10 @@ onMount(() => {
         </g>
       </svg>
     </div>
-    <!-- The cord's last stretch, where it fades into the page: its route, painted over it in the page's paper. -->
+    <!-- The cord's last stretch, where it fades into the page: its route and its strands' lines, painted over them in
+         the page's paper. -->
     <div class="tip">
-      <svg viewBox="0 0 {size.width} {size.height}" focusable="false"><path class="fade" d={woven.spine} /></svg>
+      <svg viewBox="0 0 {size.width} {size.height}" focusable="false"><path class="fade" d={woven.lines} /></svg>
     </div>
   </div>
   <div class="reveal marks">
@@ -257,9 +260,9 @@ onMount(() => {
       /* The cord fades into the page over its last 14rem, as the hero's threads fade at their ends, rather than
          stopping at an edge. Its window, one screen and 14rem tall with its bottom at the tip, slides down by
          `--height`, the height of the box the weave fills, while the cord inside slides back up by as much. Over the
-         last 14rem, the tip's box paints the cord's route in the page's paper, fading in toward the tip. A mask's cost
-         grows with the box it covers, so only that short box is masked; and since it paints over the cord rather than
-         drawing a second cord beside it, no edge between two boxes can show. */
+         last 14rem, the tip's box paints the cord's route and its strands' lines in the page's paper, fading in toward
+         the tip. A mask's cost grows with the box it covers, so only that short box is masked; and since it paints over
+         the cord rather than drawing a second cord beside it, no edge between two boxes can show. */
       .threads,
       .cord {
         bottom: auto;
