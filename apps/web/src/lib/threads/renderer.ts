@@ -1,7 +1,7 @@
 import {
   along,
   brightness,
-  CROWD,
+  ease,
   type Field,
   MAX_LABELS,
   position,
@@ -129,23 +129,14 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       const count = Math.min(field.count, STILL_THREADS)
       for (let i = 0; i < count; i++) {
         const { joins, join } = thread(field, i)
-        // From halfway into the braid, a thread gives less light, as hundreds share it. `into` is the point there:
-        // `along` inverted.
-        const into = Math.ceil((1 - (1 - (joins - join / 2)) ** (1 / CROWD)) * STILL_SEGMENTS)
-        // In short pieces, so its colour follows the gradient along it.
+        // In short pieces, so its colour follows the gradient along it. As it joins the braid it eases into its
+        // strand's colour and gives less light, as hundreds share it there.
         for (let s = 0; s < STILL_SEGMENTS; s += STILL_PIECE) {
           const to = Math.min(s + STILL_PIECE, STILL_SEGMENTS)
-          const braided = s >= into ? 1 : 0
-          const colour = blend(
-            warmth(field, i, along((s + to) / 2 / STILL_SEGMENTS), time, braided),
-          )
-          stroke(
-            i,
-            s,
-            to,
-            colour,
-            0.8 * brightness(field, i, braided) * field.intensity * (braided ? BRAID_STILL : 1),
-          )
+          const u = along((s + to) / 2 / STILL_SEGMENTS)
+          const braided = ease(joins - join, joins, u)
+          const light = brightness(field, i, braided) * (1 + (BRAID_STILL - 1) * braided)
+          stroke(i, s, to, blend(warmth(field, i, u, time, braided)), 0.8 * light * field.intensity)
         }
       }
       // The flare where the cord ends.

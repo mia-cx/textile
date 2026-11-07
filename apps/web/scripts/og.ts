@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import {
   along,
   brightness,
+  ease,
   type Field,
   position,
   thread,
@@ -47,13 +48,12 @@ const threads = Array.from({ length: field.count }, (_, i) => {
   const points = Array.from({ length: POINTS + 1 }, (_, s) =>
     position(field, i, along(s / POINTS), STILL_TIME),
   )
-  // From halfway into the braid on, a thread is braided: it takes its strand's colour and its band's light.
+  // As a thread joins the braid it eases into its strand's colour and its band's light, as the shaders do.
   const { joins, join } = thread(field, i)
-  const into = joins - join / 2
   return Array.from({ length: POINTS / PIECE }, (_, n) => {
     const piece = points.slice(n * PIECE, (n + 1) * PIECE + 1)
     const u = along((n + 0.5) / (POINTS / PIECE))
-    const braided = u >= into ? 1 : 0
+    const braided = ease(joins - join, joins, u)
     const d = piece
       .map(([x, y], s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
       .join('')
