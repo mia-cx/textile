@@ -234,7 +234,13 @@ onMount(() => {
     font-size: 0.9375rem;
     letter-spacing: 0.01em;
     white-space: nowrap;
-    text-shadow: 0 0 12px var(--paper), 0 0 4px var(--paper);
+    /* A tight halo of the page's ink around each glyph, as a map labels over its roads: threads sway, so now and then
+       one passes behind a name, and there it runs under the letters instead of striking them through. */
+    text-shadow:
+      0 0 1px var(--paper),
+      0 0 2px var(--paper),
+      0 0 3px var(--paper),
+      0 0 12px var(--paper);
   }
   /* On the current's lower half the threads rise toward the braid through the space above a knot, so the name hangs
      below it instead, out under the current. */

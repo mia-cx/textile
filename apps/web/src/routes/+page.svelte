@@ -43,11 +43,11 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
  * pair mirrors the upper: the edge rises as the current narrows, so its label nearer the braid sits higher. (The
  * concept puts cron lower; there, its thread would leave the current.) Within a pair, one thread rides about a tenth of
  * the current further in than the other, so each label has a strand of its own, and none rides past 1.05, where a
- * thread leaves the current to run alone. The labels nearer the braid take the outer strands, so no labelled thread
- * passes through the other label's name: above the headline names sit over their knots, below the buttons they hang
- * under them (ThreadField). They are placed as fractions of the hero while the copy scales on its own, so they show
- * only from LABELLED pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall, and each only where it keeps
- * clear of the copy (`clearOfCopy`).
+ * thread leaves the current to run alone. Above the headline names sit over their knots; below the buttons they hang
+ * under them, clear of their own threads rising toward the braid (ThreadField, which also haloes each name so a thread
+ * swaying behind it runs under its letters). They are placed as fractions of the hero while the copy scales on its
+ * own, so they show only from LABELLED pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall, and each
+ * only where it keeps clear of the copy (`clearOfCopy`).
  */
 const LABELS: ReadonlyArray<Label> = [
   { text: 'messageCreate', at: 0.45, lane: -0.93 },
