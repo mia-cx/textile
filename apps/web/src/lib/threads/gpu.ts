@@ -168,11 +168,11 @@ export async function webgpuPainter(
       format: HDR,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     })
-  const sampling = (pipeline: GPURenderPipeline, source: GPUTexture) =>
+  const sampling = (pipeline: GPURenderPipeline, source: GPUTextureView) =>
     gpu.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: source.createView() },
+        { binding: 0, resource: source },
         { binding: 1, resource: filtering },
       ],
     })
@@ -183,11 +183,12 @@ export async function webgpuPainter(
    * canvas changes size.
    */
   const targets = () => {
-    const light = texture(canvas.width, canvas.height)
-    const level = (k: number) => {
-      const target = texture(...bloomSize(canvas, k))
-      return { texture: target, view: target.createView() }
+    const target = (width: number, height: number) => {
+      const made = texture(width, height)
+      return { texture: made, view: made.createView() }
     }
+    const light = target(canvas.width, canvas.height)
+    const level = (k: number) => target(...bloomSize(canvas, k))
     const first = level(0)
     const levels = [first, ...LEVELS.slice(1).map(level)]
     // Each level from the one above it, then, from the smallest up, each level's light added into the one above.
@@ -198,13 +199,13 @@ export async function webgpuPainter(
     const bloom = [
       ...pairs.map(({ above, below }) => ({
         pipeline: down,
-        bindings: sampling(down, above.texture),
+        bindings: sampling(down, above.view),
         into: below.view,
         load: false,
       })),
       ...pairs.reverse().map(({ above, below }) => ({
         pipeline: up,
-        bindings: sampling(up, below.texture),
+        bindings: sampling(up, below.view),
         into: above.view,
         load: true,
       })),
@@ -212,14 +213,14 @@ export async function webgpuPainter(
     return {
       light,
       glow: first,
-      levels: levels.map(({ texture }) => texture),
-      shrink: sampling(shrink, light),
+      textures: [light, ...levels].map(({ texture }) => texture),
+      shrink: sampling(shrink, light.view),
       bloom,
       tone: gpu.createBindGroup({
         layout: tone.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: { buffer: uniforms } },
-          { binding: 1, resource: light.createView() },
+          { binding: 1, resource: light.view },
           { binding: 2, resource: first.view },
           { binding: 3, resource: filtering },
         ],
@@ -228,8 +229,8 @@ export async function webgpuPainter(
   }
   let current: Targets | undefined
   const sized = () => {
-    if (current && !resized(canvas, current.light, current.glow.texture)) return current
-    for (const old of [current?.light, ...(current?.levels ?? [])]) old?.destroy()
+    if (current && !resized(canvas, current.light.texture, current.glow.texture)) return current
+    for (const old of current?.textures ?? []) old.destroy()
     current = targets()
     return current
   }
@@ -266,7 +267,7 @@ export async function webgpuPainter(
       const t = sized()
       gpu.queue.writeBuffer(uniforms, 0, packed)
       const encoder = gpu.createCommandEncoder()
-      run(encoder, threads, threadBindings, t.light.createView(), { count: vertices, instances })
+      run(encoder, threads, threadBindings, t.light.view, { count: vertices, instances })
       run(encoder, shrink, t.shrink, t.glow.view)
       for (const { pipeline, bindings, into, load } of t.bloom)
         run(encoder, pipeline, bindings, into, { load })
@@ -287,7 +288,7 @@ export async function webgpuPainter(
       bindThreads()
     },
     destroy() {
-      for (const old of [current?.light, ...(current?.levels ?? []), data]) old?.destroy()
+      for (const old of [...(current?.textures ?? []), data]) old?.destroy()
       uniforms.destroy()
       context.unconfigure()
     },

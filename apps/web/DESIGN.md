@@ -76,23 +76,29 @@ rail.
 for event labels, the 2D fallback, the section strands, and the social card.
 
 - Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel whose
-  nearly straight edges close in steadily until they meet the braid, tangent to it, so there is no knee, no pinch, and
-  no straight run. They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a
+  nearly straight edges close in steadily until they meet the braid's outline, tangent to it, where the braid is whole,
+  so there is no knee, no waist, and no straight run. They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a
   colour (golden-ratio steps, so neighbours differ: silver at the edges, amber among violet toward the middle), so the funnel
   reads as separate strands of fibre on the dark.
-- From `braid`, past the hero's headline, threads keep leaving the funnel for a three-strand braid inside it, inner
-  lanes mostly first and the outermost last, all by `joined`, so the braid is full as soon as it forms. Its strands are
-  violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one helix angle (about 40°,
-  like rope), so it twists tighter as it goes and meets the target at its thinnest and brightest. The hero's cord stops
-  just short of the window; the window drops its black shadow there, so the cord's end stays bright, and a frame
-  around it, which the window's clipping can't cut, lights its rim with a narrow flare where the cord arrives.
-- The threads emit light. Each is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the
-  braid twists tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its
-  own phase in the funnel and in step within the braid, so they travel along it. Threads add their light into a
-  half-float target. The bloom shrinks that to a quarter of the CSS size, averaging every pixel it covers, and blurs it
-  both ways; the tone pass adds it back, with a near-white flare where the cord ends. The tone map keeps hue: the
-  brightest channel saturates as `1 − e^(−1.25x)`, the others keep their share, and only the densest light burns toward
-  white. Dithered, over the ink.
+- Across `braid`, threads keep leaving the funnel for a three-strand braid inside it, inner lanes mostly first and the
+  outermost last. The hero measures it from its layout: threads behind the headline, subline, and buttons stay loose,
+  the braid forms in the open gap between the copy's right edge and the window's left edge, and it is whole only for
+  the last fifth of that gap. A gap too narrow to turn in gently borrows a little from behind the copy's edge. Its
+  strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one long helix
+  angle (11 radii per twist), so each crossing has room, twisting tighter as it goes to meet the target at its
+  thinnest. The hero's cord stops just short of the window; the window drops its black shadow there, so the cord's end
+  stays bright, and a frame around it, which the window's clipping can't cut, takes the cord's light: on its rim, which
+  faces the cord, and faintly across its face, falling off as the inverse square of the distance from the cord's end.
+- The threads emit light, in linear units with real range: a lone fibre in the current gives about 0.1, the braid's
+  bands a few times that, and glints, sparks on a fifth of the braid's fibres, a few hundred times. Each thread is one
+  instance, a triangle strip of 201 point pairs (crowded toward the end, where the braid twists tightest) widened 2px
+  for its own halo. Pulses of light run along every thread toward the target, at its own phase in the funnel and in
+  step within the braid, so they travel along it. Threads add their light into a half-float target.
+- 6% of the light scatters into glare, as in a lens or the air: a chain of seven bloom targets from a quarter of the
+  CSS size down, each halving the last with a 13-tap filter, then added back up through a tent, an equal share per
+  octave. That sums to a glare falling off as `1 / (1 + (r / 4.7px)²)` out to about 500px: a tight core, a long faint
+  tail, no visible edge, so only light hot enough to matter visibly blooms. AgX maps it to the screen: hues stay
+  saturated as light brightens, and only the hottest burns toward white. Dithered, over the ink.
 - Labelled threads glow twice as bright as the rest and leave the current's outer edge onto clear dark, where the
   concept places them; they join the braid only after their label. They are pinned where the label sits, so labels are
   placed once per resize, never per frame. Labels are placed as fractions of the hero while its copy scales on its own,

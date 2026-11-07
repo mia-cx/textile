@@ -66,7 +66,7 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       uniforms.fill(0)
       uniforms.set([width, height, dpr, time], 0)
       uniforms.set([view.left, view.top, view.tip, INTENSITY], 4)
-      uniforms.set([0, 0, Math.min(cord.copy.length, MAX_COPY), 1], 8)
+      uniforms.set([0, 0, Math.min(cord.copy.length, MAX_COPY)], 8)
       uniforms.set([cord.radius, CORD_THREADS, 0, shown.first], 12)
       uniforms.set([shown.count, peels.length], 16)
       for (const [p, peel] of peels.entries()) uniforms.set([peel.first, peel.count], 20 + p * 2)

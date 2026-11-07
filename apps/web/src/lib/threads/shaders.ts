@@ -29,8 +29,8 @@ export const UNIFORM_VEC4S = 12
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
 /** The first bloom target's size, as a fraction of the canvas's CSS size: the same glare at every pixel ratio. */
 export const BLOOM_SCALE = 0.25
-/** Bloom targets, each half the size of the one before: the last spreads light over about a third of the screen. */
-export const BLOOM_LEVELS = 6
+/** Bloom targets, each half the size of the one before: the last spreads light across about half the screen. */
+export const BLOOM_LEVELS = 7
 
 /** A number as a shader float literal: `2` becomes `2.0`. */
 const float = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n))
@@ -261,8 +261,9 @@ ${fragmentWgsl}
 struct Thread { lane: f32, pin: f32, joins: f32, join: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32, wander: vec3f };
 
 fn threadOf(i: f32) -> Thread {
-  let from = U[3].x; let to = U[11].x;
-  let join = JOIN * (to - from);
+  // Where the braid starts to form and where it is whole. (WGSL reserves from.)
+  let forms = U[3].x; let whole = U[11].x;
+  let join = JOIN * (whole - forms);
   let ribbon = ribbonOf(i);
   let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   var across = (hash(i + 0.5) - 0.5) * 2.0;
@@ -272,8 +273,8 @@ fn threadOf(i: f32) -> Thread {
   var pin = -1.0;
   if (i < U[3].w) { let label = U[4u + u32(i)]; pin = label.x; lane = label.y; side = label.y; across = sign(label.y); }
   let order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
-  var joins = from + join + (to - from - join) * min(1.0, order);
-  if (pin >= 0.0) { joins = max(joins, min(to, pin + join * 1.5)); }
+  var joins = forms + join + (whole - forms - join) * min(1.0, order);
+  if (pin >= 0.0) { joins = max(joins, min(whole, pin + join * 1.5)); }
   var phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   if (pin >= 0.0) { phase = i * LABEL_PHASE; }
   let wander = vec3f(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, select(WANDER, 0.0, pin >= 0.0));
@@ -516,8 +517,8 @@ out vec2 vGlint;
 struct Thread { float lane; float pin; float joins; float join; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; };
 
 Thread threadOf(float i) {
-  float from = U[3].x; float to = U[11].x;
-  float join = JOIN * (to - from);
+  float forms = U[3].x; float whole = U[11].x;
+  float join = JOIN * (whole - forms);
   float ribbon = ribbonOf(i);
   float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   float across = (hash(i + 0.5) - 0.5) * 2.0;
@@ -531,8 +532,8 @@ Thread threadOf(float i) {
     }
   }
   float order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
-  float joins = from + join + (to - from - join) * min(1.0, order);
-  if (pin >= 0.0) joins = max(joins, min(to, pin + join * 1.5));
+  float joins = forms + join + (whole - forms - join) * min(1.0, order);
+  if (pin >= 0.0) joins = max(joins, min(whole, pin + join * 1.5));
   float phase = pin >= 0.0 ? i * LABEL_PHASE : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   vec3 wander = vec3(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, pin >= 0.0 ? 0.0 : WANDER);
   return Thread(lane, pin, joins, join, strandOf(side), phase, fibre(i, across), ribbon, wander);
@@ -707,8 +708,8 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  * The cord's uniforms, packed by `paint` in cordRenderer.ts. The tone pass reads 10 as it does the hero's:
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  the canvas's top-left on the page (px), the tip's height on the page, intensity
- *   2  0, 0, how many prose boxes, 1
- *   3  braid radius, cord threads, 0, the cord's first sample on screen
+ *   2  -, -, how many prose boxes, -
+ *   3  braid radius, cord threads, -, the cord's first sample on screen
  *   4  how many of its samples are on screen, peels, -, -
  *   5–7  peels: first sample and count, two to a vec4
  *   8–9  colours: violet, amber

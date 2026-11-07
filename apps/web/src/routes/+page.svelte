@@ -421,25 +421,49 @@ function close(
     width: min(100%, 36rem);
     justify-self: center;
   }
-  /* The cord's light catches the window's rim where it arrives: the top's middle when stacked, the left edge's middle
-     side by side, as `hero` ends it. A narrow flare along the rim, not a disc over the window's contents. */
+  /* The cord's light falls on the window where it arrives (`--tip`): the top's middle when stacked, the left edge's
+     middle side by side, as `hero` ends it. It falls off as the inverse square of the distance from the cord's end,
+     1.8 / (1 + (r / reach)²) in the stops below, clipped at white within a reach of the cord: bright along the rim,
+     which faces the cord, and faint across the face beside it, which the light only grazes. Hot near the cord, as the
+     tone map burns the hottest light toward white. */
+  .hero-window {
+    --tip: 50% 0;
+    /* About the cord's width where it arrives: light from all of it, not from a point. */
+    --reach: 3.5rem;
+    --hot: #fff3ea;
+    --lit: color-mix(in srgb, var(--thread-violet) 70%, white);
+  }
+  .hero-window::before,
   .hero-window::after {
     content: '';
     position: absolute;
-    top: 0;
-    left: 50%;
-    width: 14rem;
-    height: 1.5rem;
-    translate: -50% -50%;
+    inset: 0;
+    border-radius: 1.125rem;
     background: radial-gradient(
-      closest-side,
-      white,
-      color-mix(in srgb, var(--thread-violet) 70%, white) 18%,
-      color-mix(in srgb, var(--thread-violet) 50%, transparent) 50%,
-      transparent
+      circle at var(--tip),
+      var(--hot) 0,
+      var(--hot) calc(var(--reach) * 0.4),
+      color-mix(in srgb, var(--lit) 90%, transparent) var(--reach),
+      color-mix(in srgb, var(--lit) 36%, transparent) calc(var(--reach) * 2),
+      color-mix(in srgb, var(--lit) 18%, transparent) calc(var(--reach) * 3),
+      color-mix(in srgb, var(--lit) 6.9%, transparent) calc(var(--reach) * 5),
+      color-mix(in srgb, var(--lit) 2.7%, transparent) calc(var(--reach) * 8),
+      color-mix(in srgb, var(--lit) 0.9%, transparent) calc(var(--reach) * 14),
+      transparent calc(var(--reach) * 24)
     );
     mix-blend-mode: screen;
     pointer-events: none;
+  }
+  /* The face, lit at a grazing angle: far fainter than the rim. */
+  .hero-window::before {
+    opacity: 0.1;
+  }
+  /* The rim: the same light on the window's border alone, masked to a ring as wide as the border. */
+  .hero-window::after {
+    padding: 2px;
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
   }
   @media (min-width: 60rem) {
     .hero {
@@ -447,14 +471,9 @@ function close(
       gap: clamp(3rem, 8vw, 12rem);
     }
     .hero-window {
+      --tip: 0 50%;
       width: 100%;
       justify-self: end;
-    }
-    .hero-window::after {
-      top: 50%;
-      left: 0;
-      width: 1.5rem;
-      height: 14rem;
     }
   }
   .close {
