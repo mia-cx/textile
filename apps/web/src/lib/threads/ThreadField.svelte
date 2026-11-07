@@ -22,7 +22,7 @@ let {
 
 let box: HTMLDivElement
 let canvas: HTMLCanvasElement
-let marks = $state<ReadonlyArray<{ text: string; x: number; y: number }>>([])
+let marks = $state<ReadonlyArray<{ text: string; x: number; y: number; below: boolean }>>([])
 let kind = $state<Renderer['kind']>()
 
 /** Device pixels per CSS pixel, at most: finer than this costs fill rate without looking finer. */
@@ -107,7 +107,7 @@ onMount(() => {
     field = placed
     marks = placed.labels.map((label, i) => {
       const [x, y] = position(placed, i, label.at, 0)
-      return { text: label.text, x, y }
+      return { text: label.text, x, y, below: label.lane > 0 }
     })
     // Resizing clears the canvas: draw now if it shows, rather than leave a blank frame.
     dirty = true
@@ -189,7 +189,7 @@ onMount(() => {
 <div bind:this={box} class="field {className}" data-renderer={kind} aria-hidden="true">
   <canvas bind:this={canvas}></canvas>
   {#each marks as mark}
-    <span class="mark" style:translate="{mark.x}px {mark.y}px"><span class="label">{mark.text}</span></span>
+    <span class="mark" class:below={mark.below} style:translate="{mark.x}px {mark.y}px"><span class="label">{mark.text}</span></span>
   {/each}
 </div>
 
@@ -206,7 +206,7 @@ onMount(() => {
     width: 100%;
     height: 100%;
   }
-  /* A dot on the thread, and the event's name just above it. */
+  /* A dot on the thread, and the event's name beside it. */
   .mark {
     position: absolute;
     top: 0;
@@ -235,5 +235,11 @@ onMount(() => {
     letter-spacing: 0.01em;
     white-space: nowrap;
     text-shadow: 0 0 12px var(--paper), 0 0 4px var(--paper);
+  }
+  /* On the current's lower half the threads rise toward the braid through the space above a knot, so the name hangs
+     below it instead, out under the current. */
+  .below .label {
+    top: 0.4rem;
+    bottom: auto;
   }
 </style>

@@ -41,27 +41,29 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
  * The hero's event labels, each on a bright thread at the current's outer edge: two above the headline and two below
  * the buttons, out in clear dark, all left of the window. Each pair steps toward the braid along its edge, so the lower
  * pair mirrors the upper: the edge rises as the current narrows, so its label nearer the braid sits higher. (The
- * concept puts cron lower; there, its thread would leave the current.) Within a pair, one thread rides a tenth of the
- * current further in than the other, so each label has a strand of its own, and none rides past 1.05, where a thread
- * leaves the current to run alone. They are placed as fractions of the hero while
- * the copy scales on its own, so they show only from LABELLED pixels wide (the box, without a scrollbar) and
- * LABELLED_HEIGHT tall, and each only where it keeps clear of the copy (`clearOfCopy`).
+ * concept puts cron lower; there, its thread would leave the current.) Within a pair, one thread rides about a tenth of
+ * the current further in than the other, so each label has a strand of its own, and none rides past 1.05, where a
+ * thread leaves the current to run alone. The labels nearer the braid take the outer strands, so no labelled thread
+ * passes through the other label's name: above the headline names sit over their knots, below the buttons they hang
+ * under them (ThreadField). They are placed as fractions of the hero while the copy scales on its own, so they show
+ * only from LABELLED pixels wide (the box, without a scrollbar) and LABELLED_HEIGHT tall, and each only where it keeps
+ * clear of the copy (`clearOfCopy`).
  */
 const LABELS: ReadonlyArray<Label> = [
   { text: 'messageCreate', at: 0.45, lane: -0.93 },
   { text: 'interactionCreate', at: 0.55, lane: -1.03 },
-  { text: 'voiceStateUpdate', at: 0.35, lane: 1.05 },
-  { text: `cron ${CRON}`, at: 0.39, lane: 0.95 },
+  { text: 'voiceStateUpdate', at: 0.32, lane: 0.93 },
+  { text: `cron ${CRON}`, at: 0.47, lane: 1.05 },
 ]
 const LABELLED = 1280
 /** The shortest hero that shows the labels: on shorter screens the copy fills the bands they sit in. */
 const LABELLED_HEIGHT = 760
 /**
- * A label's text beside its knot, as ThreadField sets it: about 9px a character, 12px right of the knot, and rising
- * 31px above it (0.4rem, then one 24px line of 15px text).
+ * A label's text beside its knot, as ThreadField sets it: about 9px a character, 12px right of the knot, and reaching
+ * 31px above it, or below it on the current's lower half (0.4rem, then one 24px line of 15px text).
  */
 const LABEL_CHAR = 9
-const LABEL_RISE = 31
+const LABEL_SPAN = 31
 const LABEL_INSET = 12
 /**
  * The least room a label keeps from the copy, and more below it: a label just under the buttons reads as their
@@ -80,11 +82,12 @@ function clearOfCopy(field: Field, label: Label) {
   const copy = heroCopy.getBoundingClientRect()
   // The knot is where the label's thread passes its `at`, whatever thread carries it.
   const [x, y] = position({ ...field, labels: [label] }, 0, label.at, 0)
+  const [top, bottom] = label.lane > 0 ? [y, y + LABEL_SPAN] : [y - LABEL_SPAN, y]
   return (
     x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM < copy.left - origin.left ||
     x - LABEL_ROOM > copy.right - origin.left ||
-    y + LABEL_ROOM < copy.top - origin.top ||
-    y - LABEL_RISE - LABEL_BELOW > copy.bottom - origin.top
+    bottom + LABEL_ROOM < copy.top - origin.top ||
+    top - LABEL_BELOW > copy.bottom - origin.top
   )
 }
 /** How far short of the window's edge the cord ends, in CSS pixels. */
