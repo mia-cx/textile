@@ -84,12 +84,12 @@ for event labels, the 2D fallback, the section strands, and the social card.
   outermost last. The hero measures it from its layout, again when webfonts load: threads behind the headline,
   subline, and buttons stay loose, the braid forms in the open gap between the copy's right edge and the window's left
   edge, at every width, and it is whole only for the last tenth of that gap. Each thread eases in over a share of the
-  gap, with no corner. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one
-  helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing has room, twisting tighter as it goes
-  to meet the target at its thinnest. The hero's cord stops just short of the window; the window drops its black
-  shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping can't cut, takes the
-  cord's light: on its rim, which faces the cord, and faintly across its face, falling off as the inverse square of
-  the distance from the cord's end.
+  gap, with no corner. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord`
+  and keeps one helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing has room, twisting
+  tighter as it goes to meet the target at its thinnest. The hero's cord stops just short of the window; the window
+  drops its black shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping
+  can't cut, takes the cord's light: on its rim, which faces the cord, and faintly across its face, falling off as the
+  inverse square of the distance from the cord's end.
 - The threads emit light, in linear units with real range: a lone fibre in the current gives about 0.1, the braid's
   bands a few times that, and glints, sparks on a fifth of the braid's fibres, a few hundred times. Each thread is one
   instance, a triangle strip of 201 point pairs (crowded toward the end, where the braid twists tightest) widened 2px
