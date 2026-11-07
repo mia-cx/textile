@@ -139,8 +139,9 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('GLINT_SPEED', float(0.05)),
     declare('GLINT_LIGHT', float(200)),
     declare('GLINT_SHARE', float(0.2)),
-    // How dark a fibre is behind the braid, against in front of it.
+    // How dark a fibre is behind the braid, against in front of it, and how much hotter it burns on a crossing's crest.
     declare('BACK', float(0.2)),
+    declare('CREST', float(4)),
     declare('COOL', float(SHAPE.cool)),
     // The share of all light that scatters into glare, and the bloom levels it spreads over.
     declare('GLARE', float(0.06)),
@@ -188,10 +189,12 @@ fn band(twist: f32, f: vec3f, u: f32) -> f32 {
 // under the other as it swings across, so its depth turns twice as fast as its swing.
 fn depthOf(twist: f32) -> f32 { return sin(2.0 * twist); }
 // The light a fibre gives in the braid, for one of brightness own in the funnel, at depth: more on a band's edges than
-// inside it, and much more where its strand passes over than under, so the crossings read.
+// inside it, much more where its strand passes over than under, and hottest on the crest of each crossing, where it
+// burns toward white and blooms, so the crossings read.
 fn braidLight(depth: f32, f: vec3f, own: f32) -> f32 {
   let front = 0.5 + 0.5 * depth;
-  return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
+  let crest = max(depth, 0.0) * max(depth, 0.0);
+  return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * (1.0 + CREST * crest * crest) * BRAID_LIGHT;
 }
 // How brightly a fibre glints at depth: where its strand passes over its neighbour. Only some fibres glint: those whose
 // drift starts in the first GLINT_SHARE of its cycle, a random share.
@@ -493,7 +496,8 @@ float band(float twist, vec3 f, float u) {
 float depthOf(float twist) { return sin(2.0 * twist); }
 float braidLight(float depth, vec3 f, float own) {
   float front = 0.5 + 0.5 * depth;
-  return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * BRAID_LIGHT;
+  float crest = max(depth, 0.0) * max(depth, 0.0);
+  return mix(INNER_LIGHT * pow(own, 1.0 / 3.0), EDGE_LIGHT, f.y) * (BACK + (1.0 - BACK) * front * front) * (1.0 + CREST * crest * crest) * BRAID_LIGHT;
 }
 float glintLight(float depth, vec3 f) {
   float facing = max(depth, 0.0);
