@@ -69,7 +69,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
   main:focus {
     outline: none;
   }
-  /* Full width, like the hero it sits over; everything below the hero sits in the container. */
+  /* As wide as the hero it sits over; everything below the hero sits in the narrower container. */
   .site-header {
     position: relative;
     z-index: 3;
@@ -78,15 +78,17 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     justify-content: space-between;
     gap: 1rem;
     height: var(--header-height);
-    padding-inline: var(--gutter);
+    padding-inline: var(--hero-inset);
   }
   /* `--inset` is the side padding that holds a full-width block's content to the container: the gutter, or wider
-     where the screen is wider than the container. Its percentage resolves against the block it pads. */
+     where the screen is wider than the container. Its percentage resolves against the block it pads. The hero and
+     header use a wider container, so the hero spans the screen without running edge to edge. */
   :global(:root) {
     --header-height: 5.5rem;
     --gutter: clamp(1.25rem, 4vw, 4.5rem);
     --container: 96rem;
     --inset: max(var(--gutter), (100% - var(--container)) / 2);
+    --hero-inset: max(var(--gutter), (100% - 108rem) / 2);
   }
   .wordmark {
     display: inline-flex;

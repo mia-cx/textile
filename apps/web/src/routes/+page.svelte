@@ -278,7 +278,7 @@ function close(
     gap: 3rem;
     min-height: clamp(42rem, 100svh, 75rem);
     margin-top: calc(-1 * var(--header-height));
-    padding: calc(var(--header-height) + 2rem) var(--gutter) 4rem;
+    padding: calc(var(--header-height) + 2rem) var(--hero-inset) 4rem;
   }
   /* Each field fades out at its open edges instead of stopping at its box. */
   .hero :global(.field) {
