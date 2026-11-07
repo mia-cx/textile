@@ -607,7 +607,13 @@ fn up(v: Screen) -> @location(0) vec4f {
 }
 `
 
-export const toneWgsl = /* wgsl */ `${commonWgsl}
+/**
+ * The tone pass, shared by the hero's scene and the cord's: it reads only 10 (background and exposure), so it declares
+ * no more uniforms than that, and binds either scene's.
+ */
+const TONE_VEC4S = 11
+
+export const toneWgsl = /* wgsl */ `${commonWgslFor(TONE_VEC4S)}
 ${fullscreenWgsl}
 @group(0) @binding(1) var light: texture_2d<f32>;
 @group(0) @binding(2) var bloom: texture_2d<f32>;
@@ -927,7 +933,7 @@ export const upFragmentGlsl = bloomPassGlsl(`
   colour = vec4((centre * 4.0 + edges * 2.0 + corners) / 16.0, 1.0);`)
 
 /** The tone pass, as `fs` in toneWgsl, or for a canvas `over` the page, as `over`. */
-const toneGlsl = (over: boolean) => /* glsl */ `${commonGlsl}
+const toneGlsl = (over: boolean) => /* glsl */ `${commonGlslFor(TONE_VEC4S)}
 uniform sampler2D light;
 uniform sampler2D bloom;
 in vec2 vUv;
