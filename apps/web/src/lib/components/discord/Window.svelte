@@ -50,7 +50,9 @@ let {
     overflow: hidden;
     border: 1px solid rgb(255 255 255 / 0.12);
     border-radius: 1.125rem;
-    background: rgb(20 18 30 / 0.92);
+    /* Nearly opaque instead of a frosted backdrop: a blur over the live threads behind re-renders every frame, and
+       through this much paint it barely showed. */
+    background: rgb(20 18 30 / 0.96);
     box-shadow:
       0 0 0 1px rgb(0 0 0 / 0.6),
       0 30px 80px -20px rgb(0 0 0 / 0.8),
@@ -58,7 +60,6 @@ let {
     color: #dbdee1;
     font-size: 1rem;
     line-height: 1.4;
-    backdrop-filter: blur(14px);
   }
   .rail {
     display: flex;

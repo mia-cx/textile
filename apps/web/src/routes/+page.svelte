@@ -452,8 +452,7 @@ function close(
      middle side by side, as `hero` ends it. It falls off as the inverse square of the distance from the cord's end,
      1.8 / (1 + (r / reach)²) in the stops below, clipped at full strength: bright along the rim, which faces the cord,
      and faint across the face beside it, which the light only grazes. White nearest the cord, as the tone map burns the
-     hottest light white, and violet beyond. Both layers sit above the window, whose backdrop filter stacks it on its
-     own. */
+     hottest light white, and violet beyond. Both layers sit above the window. */
   .hero-window {
     --tip: 50% 0;
     /* About the cord's width where it arrives: light from all of it, not from a point. */
