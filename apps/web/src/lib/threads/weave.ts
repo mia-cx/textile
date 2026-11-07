@@ -97,7 +97,7 @@ const path = (points: ReadonlyArray<Point>) =>
 /** Where in its strand fibre `f` runs, -1 to 1, spread evenly with a little jitter, as the hero's fibres are. */
 const lane = (f: number) => ((f + 0.5) / FIBRES) * 2 - 1 + (hash(f + 8.3) - 0.5) * 0.2
 
-/** The route through `waypoints` itself, its corners rounded by up to `radius`: the line the braid's glow follows. */
+/** The route through `waypoints` itself, its corners rounded by up to `radius`: the line the braid's halo follows. */
 const route = (waypoints: ReadonlyArray<Point>, radius: number) => path(trace(waypoints, radius))
 
 /** Dense points along the cubic from `a` to `d` through controls `b` and `c`. */
@@ -205,8 +205,8 @@ export interface Weaving {
  * the knots where it enters. Behind a panel it is not drawn, so it shows nowhere between stacked panels; it comes out
  * again at the panel's `out`. It stops at the first stop where it comes apart.
  *
- * Besides the strokes, it returns `spine`, the cord's route, which its glow follows, and `lines`, that route with every
- * strand's line, which, stroked wider than the cord's glow, covers everything drawn.
+ * Besides the strokes, it returns `spine`, the cord's route, which its halo follows, and `lines`, that route with every
+ * strand's line, which, stroked wider than the cord's halo, covers everything drawn.
  */
 export function weave(start: Point, stops: ReadonlyArray<Stop>, { cord, corner, lane }: Weaving) {
   const runs: Point[][] = []
