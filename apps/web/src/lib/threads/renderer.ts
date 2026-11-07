@@ -430,7 +430,6 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       const count = Math.min(field.count, STILL_THREADS)
       for (let i = 0; i < count; i++) {
         const { joins } = thread(field, i)
-        const alpha = 0.8 * brightness(field, i) * field.intensity
         // From halfway into the braid, a thread gives less light, as hundreds share it. `into` is the point there:
         // `along` inverted.
         const into = Math.ceil((1 - (1 - (joins - SHAPE.join / 2)) ** (1 / CROWD)) * STILL_SEGMENTS)
@@ -441,7 +440,13 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
           const colour = blend(
             warmth(field, i, along((s + to) / 2 / STILL_SEGMENTS), time, braided),
           )
-          stroke(i, s, to, colour, braided ? alpha * BRAID_STILL : alpha)
+          stroke(
+            i,
+            s,
+            to,
+            colour,
+            0.8 * brightness(field, i, braided) * field.intensity * (braided ? BRAID_STILL : 1),
+          )
         }
       }
       // The flare where the cord ends.

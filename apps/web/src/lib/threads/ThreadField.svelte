@@ -8,6 +8,8 @@ import { type Palette, type Renderer, type RGB, still, webgl2, webgpu } from './
  * frame. `layout` places the field for the box's size and the target's box within it, and runs again on every resize.
  * Decorative: the page around it says what it shows.
  *
+ * Each label rides its thread: the frame loop moves its mark by the same math the shaders run.
+ *
  * It renders only while on screen and the tab is visible. With reduced motion it draws one still frame.
  */
 let {
@@ -23,6 +25,8 @@ let {
 let box: HTMLDivElement
 let canvas: HTMLCanvasElement
 let marks = $state<ReadonlyArray<{ text: string; x: number; y: number; below: boolean }>>([])
+/** The marks' elements, which ride their threads: each frame moves them, without a render. */
+const knots: HTMLElement[] = $state([])
 let kind = $state<Renderer['kind']>()
 
 /** Device pixels per CSS pixel, at most: finer than this costs fill rate without looking finer. */
@@ -58,9 +62,20 @@ onMount(() => {
   let dirty = false
   const motion = matchMedia('(prefers-reduced-motion: no-preference)')
 
+  /** Moves each mark to where its thread passes its label now, by the same math the shaders run. */
+  const ride = () => {
+    if (!field) return
+    for (const [i, label] of field.labels.entries()) {
+      const knot = knots[i]
+      if (!knot) continue
+      const [x, y] = position(field, i, label.at, time)
+      knot.style.translate = `${x}px ${y}px`
+    }
+  }
   const draw = () => {
     if (!renderer || !field || !palette) return
     renderer.draw(field, palette, time)
+    ride()
     dirty = false
   }
   const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
@@ -105,7 +120,7 @@ onMount(() => {
     )
     field = placed
     marks = placed.labels.map((label, i) => {
-      const [x, y] = position(placed, i, label.at, 0)
+      const [x, y] = position(placed, i, label.at, time)
       return { text: label.text, x, y, below: label.lane > 0 }
     })
     // Resizing clears the canvas: draw now if it shows, rather than leave a blank frame.
@@ -187,8 +202,8 @@ onMount(() => {
 
 <div bind:this={box} class="field {className}" data-renderer={kind} aria-hidden="true">
   <canvas bind:this={canvas}></canvas>
-  {#each marks as mark}
-    <span class="mark" class:below={mark.below} style:translate="{mark.x}px {mark.y}px"><span class="label">{mark.text}</span></span>
+  {#each marks as mark, i}
+    <span bind:this={knots[i]} class="mark" class:below={mark.below} style:translate="{mark.x}px {mark.y}px"><span class="label">{mark.text}</span></span>
   {/each}
 </div>
 

@@ -12,7 +12,7 @@ import Section from '$lib/components/Section.svelte'
 import Seo from '$lib/components/Seo.svelte'
 import { CRON, ROUTE, STANDUP_POST, standupReply } from '$lib/landing'
 import { GITHUB_URL, ORIGIN, page } from '$lib/site'
-import { type Field, type Label, type Point, position } from '$lib/threads/geometry'
+import { type Field, type Label, type Point, position, reach } from '$lib/threads/geometry'
 import ThreadField from '$lib/threads/ThreadField.svelte'
 import Weave from '$lib/threads/Weave.svelte'
 
@@ -74,7 +74,7 @@ const LABEL_BELOW = 48
 
 /**
  * Whether `label`, on `field`, keeps LABEL_ROOM from the hero's copy, and LABEL_BELOW under it, measured in the field's
- * pixels. The copy is one block, headline to buttons, so a label never sits between its lines.
+ * pixels, wherever its knot sways. The copy is one block, headline to buttons, so a label never sits between its lines.
  */
 function clearOfCopy(field: Field, label: Label) {
   if (!heroSection || !heroCopy) return false
@@ -82,12 +82,14 @@ function clearOfCopy(field: Field, label: Label) {
   const copy = heroCopy.getBoundingClientRect()
   // The knot is where the label's thread passes its `at`, whatever thread carries it.
   const [x, y] = position({ ...field, labels: [label] }, 0, label.at, 0)
+  const room = LABEL_ROOM + reach(field, label.at)
+  const below = LABEL_BELOW + reach(field, label.at)
   const [top, bottom] = label.lane > 0 ? [y, y + LABEL_SPAN] : [y - LABEL_SPAN, y]
   return (
-    x + LABEL_INSET + label.text.length * LABEL_CHAR + LABEL_ROOM < copy.left - origin.left ||
-    x - LABEL_ROOM > copy.right - origin.left ||
-    bottom + LABEL_ROOM < copy.top - origin.top ||
-    top - LABEL_BELOW > copy.bottom - origin.top
+    x + LABEL_INSET + label.text.length * LABEL_CHAR + room < copy.left - origin.left ||
+    x - room > copy.right - origin.left ||
+    bottom + room < copy.top - origin.top ||
+    top - below > copy.bottom - origin.top
   )
 }
 /** How far short of the window's edge the cord ends, in CSS pixels. */
