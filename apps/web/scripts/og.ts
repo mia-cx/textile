@@ -57,9 +57,9 @@ const threads = Array.from({ length: field.count }, (_, i) => {
   const points = Array.from({ length: POINTS + 1 }, (_, s) => {
     const u = along(s / POINTS)
     const [x, y] = position(field, i, u, STILL_TIME)
-    const { braided, plait } = knit(field, th, u)
+    const { braided, look } = knit(field, th, u)
     const colour = mixed(warmth(field, i, u, STILL_TIME, braided))
-    const opacity = Math.min(1, 0.12 + 0.5 * brightness(field, i, braided * plait))
+    const opacity = Math.min(1, 0.12 + 0.5 * brightness(field, i, braided * look))
     return { x, y, colour, opacity }
   })
   return Array.from({ length: POINTS / PIECE }, (_, n) => {

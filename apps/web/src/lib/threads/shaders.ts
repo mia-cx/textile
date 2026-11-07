@@ -137,9 +137,9 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('RIBBON', float(SHAPE.ribbon)),
     declare('RIBBON_SPREAD', float(SHAPE.ribbonSpread)),
     declare('LEAVE', float(SHAPE.leave)),
-    declare('JOINED', float(SHAPE.joined)),
-    declare('JOINING', float(SHAPE.joining)),
-    declare('PLAIT', float(SHAPE.plait)),
+    declare('JOIN_LENGTH', float(SHAPE.joinLength)),
+    declare('CURL', float(SHAPE.curl)),
+    declare('ROPE_LOOSE', float(SHAPE.ropeLoose)),
     declare('CLEAR', float(SHAPE.clear)),
     declare('SWING', float(SHAPE.swing)),
     declare('SPLAY', float(SHAPE.splay)),
@@ -284,12 +284,13 @@ fn fibre(i: f32, across: f32) -> vec3f {
   return vec3f(jitter, select(0.0, 1.0, edge), hash(i + 4.7) * TAU);
 }
 // How far from the spine a fibre lies, in braid radii, where its strand has turned twist, u along the fibre, with the
-// plait grown plait (0 to 1): its strand's place, side by side or swinging across the plait, and its place across its
-// band. Mirrors band in geometry.ts.
-fn band(twist: f32, strand: f32, f: vec3f, u: f32, plait: f32) -> f32 {
-  let centre = (strand - 1.0) * SPLAY;
+// plait formed as form says (x how far its ropes have curled, y how many times as wide and as far apart as the plait's
+// bands they are, z how far the band's look has taken over): its strand's place, side by side or swinging across the
+// plait, and its place across its band. Mirrors band in geometry.ts.
+fn band(twist: f32, strand: f32, f: vec3f, u: f32, form: vec3f) -> f32 {
+  let centre = (strand - 1.0) * SPLAY * form.y;
   let across = FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist));
-  return mix(centre, SWING * sin(twist), plait) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * mix(1.0, across, plait);
+  return mix(centre, SWING * sin(twist), form.x) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * form.y * mix(1.0, across, form.z);
 }
 // How near the viewer a strand is where it has turned twist, -1 to 1: a plait's strand passes over one neighbour and
 // under the other as it swings across, so its depth turns twice as fast as its swing.
@@ -419,7 +420,7 @@ fn threadOf(i: f32) -> Thread {
   let order = min(1.0, INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1));
   var leaves = gathers + (forms - gathers) * LEAVE * order;
   if (pin >= 0.0) { leaves = max(leaves, pin + CLEAR); }
-  let joins = max(forms + (whole - forms) * (JOINED + JOINING * order), leaves + (whole - forms) * JOINED);
+  let joins = max(min(leaves + (forms - gathers) * JOIN_LENGTH, whole), leaves + 0.001);
   var phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   if (pin >= 0.0) { phase = i * LABEL_PHASE; }
   let reach = select(WANDER * select(pow(hash(i + 5.9), FRAYING), 1.0, stray), 0.0, pin >= 0.0 || lead);
@@ -438,9 +439,18 @@ fn behindText(p: vec2f) -> f32 {
   return light;
 }
 
+// How far the plait has formed u along the field, each on its own long ramp: x how far its ropes have curled around
+// each other, y how far they have drawn in to the plait's bands, z how far the band's look has taken over. The ropes
+// curl from CURL of the gathering stretch before where the plait forms; all three are done where it is whole. Mirrors
+// forming in geometry.ts.
+fn forming(u: f32) -> vec3f {
+  let gathers = U[11].y; let forms = U[3].x; let whole = U[11].x;
+  return vec3f(ease(forms - CURL * (forms - gathers), whole, u), ease(gathers, whole, u), ease(forms, whole, u));
+}
+
 // Where a thread is u along it: in CSS px, how far it has gathered into its strand (0 to 1), how far the plait has
-// grown, and its strand's depth in the plait.
-struct Placed { at: vec2f, braided: f32, plait: f32, depth: f32 };
+// formed (as forming returns it), and its strand's depth in the plait.
+struct Placed { at: vec2f, braided: f32, form: vec3f, depth: f32 };
 
 fn place(th: Thread, u: f32) -> Placed {
   let p0 = U[1].xy; let p1 = U[1].zw; let p2 = U[2].xy;
@@ -451,9 +461,8 @@ fn place(th: Thread, u: f32) -> Placed {
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   let radius = cord * (1.0 + SWELL * a);
-  // The strands' swing grows over the first PLAIT of the stretch from where the plait forms to where it is whole.
-  let plait = ease(U[3].x, mix(U[3].x, U[11].x, PLAIT), u);
-  let width = radius * (1.0 + (SWING + FRAY - 1.0) * plait) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+  let form = forming(u);
+  let width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   var held = 1.0;
   if (th.pin >= 0.0) { let d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
@@ -463,9 +472,9 @@ fn place(th: Thread, u: f32) -> Placed {
   let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   let turns = spine / (PITCH * cord * SWELL);
   let twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
-  let inBand = radius * band(twist, th.strand, th.fibre, u, plait);
+  let inBand = radius * band(twist, th.strand, th.fibre, u, vec3f(form.x, 1.0 + ROPE_LOOSE * (1.0 - form.y), form.z));
   let braided = ease(th.leaves, th.joins, u);
-  return Placed(p + n * mix(current, inBand, braided), braided, plait, depthOf(twist));
+  return Placed(p + n * mix(current, inBand, braided), braided, form, depthOf(twist));
 }
 
 @vertex
@@ -483,8 +492,8 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let tangent = dir / max(length(dir), 1e-4);
   let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  // How far into the plait itself the thread is: gathered into its strand, where the strands have wound.
-  let knit = here.braided * here.plait;
+  // How far the band's look has taken over the thread: gathered into its strand, where the look has faded in.
+  let knit = here.braided * here.form.z;
   // Each thread runs violet to amber and back along its length, the gradient flowing toward the window, faster in the
   // plait. In the current most threads share their ribbon's phase; as they gather, each takes its strand's, a third of
   // a cycle from its neighbours'. Each strand breathes, a slow swell of light and warmth travelling along it.
@@ -492,7 +501,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   if (th.lead > 1.0 || hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
   let t = U[0].w;
   let breathing = breath(th.strand, u, t);
-  let hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
+  let hue = hueOf(u, eased(U[3].x, U[11].x, u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   let colour = blend(cool(warmth(hue), here.depth, knit));
   var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW);
   if (th.lead > 1.0) { own = 1.0; }
@@ -685,10 +694,10 @@ vec3 fibre(float i, float across) {
     : INNER * (bundle * 2.0 - 1.0 + (hash(i + 8.3) - 0.5) * SPILL);
   return vec3(jitter, edge ? 1.0 : 0.0, hash(i + 4.7) * TAU);
 }
-float band(float twist, float strand, vec3 f, float u, float plait) {
-  float centre = (strand - 1.0) * SPLAY;
+float band(float twist, float strand, vec3 f, float u, vec3 form) {
+  float centre = (strand - 1.0) * SPLAY * form.y;
   float across = FLAT + (1.0 - FLAT) * (0.5 + 0.5 * sin(2.0 * twist));
-  return mix(centre, SWING * sin(twist), plait) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * mix(1.0, across, plait);
+  return mix(centre, SWING * sin(twist), form.x) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * form.y * mix(1.0, across, form.z);
 }
 float depthOf(float twist) { return sin(2.0 * twist); }
 float braidLight(float depth, vec3 f, float own) {
@@ -753,7 +762,7 @@ Thread threadOf(float i) {
   float order = min(1.0, INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1));
   float leaves = gathers + (forms - gathers) * LEAVE * order;
   if (pin >= 0.0) leaves = max(leaves, pin + CLEAR);
-  float joins = max(forms + (whole - forms) * (JOINED + JOINING * order), leaves + (whole - forms) * JOINED);
+  float joins = max(min(leaves + (forms - gathers) * JOIN_LENGTH, whole), leaves + 0.001);
   float phase = pin >= 0.0 ? i * LABEL_PHASE : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   float reach = pin >= 0.0 || lead ? 0.0 : WANDER * (stray ? 1.0 : pow(hash(i + 5.9), FRAYING));
   vec3 wander = vec3(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, reach);
@@ -771,7 +780,12 @@ float behindText(vec2 p) {
   return light;
 }
 
-struct Placed { vec2 at; float braided; float plait; float depth; };
+vec3 forming(float u) {
+  float gathers = U[11].y; float forms = U[3].x; float whole = U[11].x;
+  return vec3(ease(forms - CURL * (forms - gathers), whole, u), ease(gathers, whole, u), ease(forms, whole, u));
+}
+
+struct Placed { vec2 at; float braided; vec3 form; float depth; };
 
 Placed place(Thread th, float u) {
   vec2 p0 = U[1].xy; vec2 p1 = U[1].zw; vec2 p2 = U[2].xy;
@@ -782,8 +796,8 @@ Placed place(Thread th, float u) {
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   float radius = cord * (1.0 + SWELL * a);
-  float plait = ease(U[3].x, mix(U[3].x, U[11].x, PLAIT), u);
-  float width = radius * (1.0 + (SWING + FRAY - 1.0) * plait) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+  vec3 form = forming(u);
+  float width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   float held = 1.0;
   if (th.pin >= 0.0) { float d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
@@ -793,9 +807,9 @@ Placed place(Thread th, float u) {
   float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   float turns = spine / (PITCH * cord * SWELL);
   float twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
-  float inBand = radius * band(twist, th.strand, th.fibre, u, plait);
+  float inBand = radius * band(twist, th.strand, th.fibre, u, vec3(form.x, 1.0 + ROPE_LOOSE * (1.0 - form.y), form.z));
   float braided = ease(th.leaves, th.joins, u);
-  return Placed(p + n * mix(current, inBand, braided), braided, plait, depthOf(twist));
+  return Placed(p + n * mix(current, inBand, braided), braided, form, depthOf(twist));
 }
 
 void main() {
@@ -812,11 +826,11 @@ void main() {
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  float knit = here.braided * here.plait;
+  float knit = here.braided * here.form.z;
   float pick = th.lead > 1.0 || hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
   float t = U[0].w;
   float breathing = breath(th.strand, u, t);
-  float hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
+  float hue = hueOf(u, eased(U[3].x, U[11].x, u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   vec3 colour = blend(cool(warmth(hue), here.depth, knit));
   float own = i < U[3].w ? LABELLED : th.lead > 1.0 ? 1.0 : DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW);
   float shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
@@ -1060,7 +1074,7 @@ fn place(th: Thread, k: f32) -> Placed {
   let twist = a.z + U[2].x - t * SPIN + th.strand * TAU / 3.0;
   // The plait, swinging wider as it loosens.
   let wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
-  let plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
+  let plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, vec3f(1.0));
   // Its strand as a loose rope: on its own third of the spread, still swinging around the others a little, its fibres
   // close together until they fray out to their own lanes within that third. The ropes part as far as loose spreads
   // them, which the weave keeps to a gentle turn, so no rope leaves the plait at a corner.
@@ -1197,7 +1211,7 @@ Placed place(Thread th, float k) {
   float fray = ease(UNBRAID_FRAY, 1.0, loose);
   float twist = a.z + U[2].x - t * SPIN + th.strand * TAU / 3.0;
   float wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
-  float plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, 1.0);
+  float plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, vec3(1.0));
   float home = (th.strand - 1.0) * 2.0 / 3.0;
   float sway = 0.0;
   if (th.path < 0.5) {

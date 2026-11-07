@@ -120,13 +120,13 @@ function labelBox(field: Field, label: Label): NonNullable<Field['text']>[number
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 /**
- * The hero's plait forms only in the open gap between the copy and the window, at every width: its strands start to
- * wind at the copy's edge and wind tighter all the way to the window, where the plait is whole. (Not behind the window:
- * its glass would show the plait through its messages.) The bundles start to gather behind the copy, GATHER times the
- * gap before its edge and at least MIN_GATHER pixels, so they converge over a long stretch even where the gap is narrow.
+ * The hero's plait forms over a long stretch, each change on its own ramp (see `forming` in geometry.ts). The bundles
+ * start to gather into three loose ropes well behind the copy, GATHER times the gap between the copy and the window
+ * before the copy's edge and at least MIN_GATHER pixels; the ropes start to curl gently around each other behind the
+ * copy, still loose; the band's look fades in from the copy's edge; and the plait is whole only at the window.
  */
-const GATHER = 1.2
-const MIN_GATHER = 360
+const GATHER = 1.5
+const MIN_GATHER = 600
 
 type Spine = Pick<Field, 'start' | 'control' | 'end'>
 

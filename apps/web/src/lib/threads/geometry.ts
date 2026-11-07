@@ -101,9 +101,12 @@ export const SHAPE = {
   flat: 0.5,
   /**
    * Before they wind, the three strands run side by side, `splay` braid radii apart: the bundles gather into them, and
-   * the plait grows out of them as their swing grows, so it has no visible start.
+   * the plait grows out of them as their swing grows, so it has no visible start. Where the bundles start to gather the
+   * strands are loose ropes, `ropeLoose` times wider and further apart than the plait's bands, many fibres with dark
+   * between them; they narrow all the way to where the plait is whole.
    */
   splay: 1.6,
+  ropeLoose: 1,
   /**
    * The share of a band's fibres that run along its two edges, in `edgeLanes` close lanes `edgeStep` apart (in the
    * band's -1 to 1): crisp, bright lines, each fibre still visible, around the dimmer fibres inside. Those spread over
@@ -141,19 +144,18 @@ export const SHAPE = {
    */
   hue: 0,
   /**
-   * How the plait forms between `forms` and `whole`: the strands' swing grows over the first `plait` of that stretch,
-   * and the plait keeps tightening after, all the way to `whole`.
+   * How the plait forms, each change on a long ramp of its own (see `forming`): the ropes start to curl around each
+   * other `curl` of the gathering stretch (from `gathers` to `forms`) before `forms`, with a swing that grows gently all
+   * the way to `whole`; they narrow from `gathers` to `whole`; and the band's look (dense fibres, lit edges, bulges and
+   * shade at the crossings) fades in from `forms` to `whole`.
    */
-  plait: 0.5,
+  curl: 0.4,
   /**
-   * When a bundle starts to gather, as a share of the stretch from `gathers` to `forms`; and when its threads have all
-   * joined their strand, as a share of the stretch from `forms` to `whole`: from `joined`, for the inner bundles, to
-   * `joined + joining` for the outer. Each bundle takes a long stretch to gather, so the plait grows out of the current
-   * with no visible start, and the last stretch is all plait.
+   * When a bundle starts to gather, as a share of the gathering stretch, and how long its threads take to join their
+   * rope, in the same units: long, so each bundle drifts in over hundreds of pixels.
    */
-  leave: 0.7,
-  joined: 0.3,
-  joining: 0.4,
+  leave: 0.5,
+  joinLength: 0.8,
   /** How far past its label, at least, a labelled thread starts to gather, so its knot rides it in the current. */
   clear: 0.04,
   /**
@@ -314,14 +316,13 @@ export const thread = (field: Field, i: number) => {
   )
   const [gathers, forms, whole] = field.braid
   const leaves = gathers + (forms - gathers) * SHAPE.leave * order
-  const joins = forms + (whole - forms) * (SHAPE.joined + SHAPE.joining * order)
   const after = label ? Math.max(leaves, label.at + SHAPE.clear) : leaves
   return {
     lane,
     pin: label ? label.at : -1,
-    /** Where the thread starts to leave its lane for its strand, and where it is wholly in it. */
+    /** Where the thread starts to leave its lane for its strand's rope, and where it is wholly in it. */
     leaves: after,
-    joins: Math.max(joins, after + (whole - forms) * SHAPE.joined),
+    joins: Math.max(Math.min(after + (forms - gathers) * SHAPE.joinLength, whole), after + 0.001),
     strand: strandOf(side),
     phase: label ? i * SHAPE.labelPhase : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
     // A labelled thread and the lead don't fray: a knot rides the one, and the eye follows the other.
@@ -372,28 +373,41 @@ export const fibre = (i: number, across: number) => {
 export const reach = (field: Field, at: number) =>
   funnelWidth(field, at) * SHAPE.wave * SHAPE.pinned
 
-/** Where the plait has grown whole, its strands swinging their full width: `plait` of the way from `forms` to `whole`. */
-const plaited = ({ braid: [, forms, whole] }: Field) => forms + SHAPE.plait * (whole - forms)
+/** Where the ropes start to curl around each other: `curl` of the gathering stretch before `forms`. */
+const curls = ({ braid: [gathers, forms] }: Field) => forms - SHAPE.curl * (forms - gathers)
 
-/** How far the plait has grown `u` along `field`, 0 to 1. Mirrors `plait` in `place` in the shaders. */
-const plaitAt = (field: Field, u: number) => ease(field.braid[1], plaited(field), u)
+/**
+ * How far the plait has formed `u` along `field`, each on its own long ramp, 0 to 1: `curl`, how far the ropes swing
+ * around each other; `tight`, how close they have drawn in from loose ropes to the plait's bands; and `look`, how far
+ * the band's look (its light, lit edges, and bulges and shade at the crossings) has taken over from loose fibres.
+ * Mirrors `place` in the shaders.
+ */
+export const forming = (field: Field, u: number) => {
+  const [gathers, forms, whole] = field.braid
+  return {
+    curl: ease(curls(field), whole, u),
+    tight: ease(gathers, whole, u),
+    look: ease(forms, whole, u),
+  }
+}
 
 /**
  * The funnel's half-width `u` along it: the braid's radius, narrowing toward `cord`, and the current's beyond it.
- * Where the plait forms, the braid's part widens to its outline, so the current meets the plait without a waist.
+ * As the ropes curl, the braid's part widens to its outline, so the current meets the plait without a waist.
  * Mirrors `width` in `place` in the shaders.
  */
 const funnelWidth = (field: Field, u: number) =>
   field.cord *
     (1 + SHAPE.swell * (1 - u)) *
-    (1 + (SHAPE.swing + SHAPE.fray - 1) * plaitAt(field, u)) +
+    (1 + (SHAPE.swing + SHAPE.fray - 1) * forming(field, u).curl) +
   field.spread * Math.max(1 - u / field.braid[2], 0) ** SHAPE.taper
 
 /**
  * How far from the braid's spine a fibre at `jitter` across its band lies, in braid radii, where strand `strand` has
- * turned `twist` and the plait has grown `plait` (0 to 1): before it grows, the strands run side by side, `splay`
- * apart; grown, each swings across the plait, and its band is widest where it passes in front and thinnest behind.
- * Mirrors `band` in the shaders.
+ * turned `twist`, its ropes have curled `curl` (0 to 1) around each other, `loosened` times as wide and as far apart as
+ * the plait's bands, and its band's look has taken over `look` of the way: before they curl, the strands run side by
+ * side, `splay` apart; curled, each swings across the plait, and its band is widest where it passes in front and
+ * thinnest behind. Mirrors `band` in the shaders.
  */
 export const band = (
   twist: number,
@@ -402,17 +416,20 @@ export const band = (
   edge: boolean,
   along: number,
   drift: number,
-  plait: number,
+  curl = 1,
+  loosened = 1,
+  look = 1,
 ) => {
-  const centre = (strand - 1) * SHAPE.splay
+  const centre = (strand - 1) * SHAPE.splay * loosened
   const swung = SHAPE.swing * Math.sin(twist)
   const across = SHAPE.flat + ((1 - SHAPE.flat) * (1 + Math.sin(2 * twist))) / 2
   return (
     centre +
-    (swung - centre) * plait +
+    (swung - centre) * curl +
     (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
       SHAPE.fray *
-      (1 + (across - 1) * plait)
+      loosened *
+      (1 + (across - 1) * look)
   )
 }
 
@@ -436,11 +453,11 @@ const twistOf = (field: Field, strand: number, u: number, t: number) =>
 
 /**
  * How far into the braid thread `th` is `u` along `field`: `braided`, how far it has gathered from its lane into its
- * strand, and `plait`, how far the strands have wound. Mirrors `place` in the shaders.
+ * strand's rope, and how far the plait has formed there (see `forming`). Mirrors `place` in the shaders.
  */
 export const knit = (field: Field, th: ReturnType<typeof thread>, u: number) => ({
   braided: ease(th.leaves, th.joins, u),
-  plait: plaitAt(field, u),
+  ...forming(field, u),
 })
 
 /** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
@@ -466,8 +483,10 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const bend = wander.reach * Math.sin(u * wander.bends + t * 0.12 + wander.phase)
   const current = width * (lane + SHAPE.wave * held * sway + bend)
 
-  const { braided, plait } = knit(field, th, u)
-  const inBand = radius * band(twistOf(field, strand, u, t), strand, jitter, edge, u, drift, plait)
+  const { braided, curl, tight, look } = knit(field, th, u)
+  const loosened = 1 + SHAPE.ropeLoose * (1 - tight)
+  const twist = twistOf(field, strand, u, t)
+  const inBand = radius * band(twist, strand, jitter, edge, u, drift, curl, loosened, look)
   const offset = current + (inBand - current) * braided
   return [x + nx * offset, y + ny * offset]
 }
@@ -589,7 +608,7 @@ export const warmth = (field: Field, i: number, u: number, t: number, braided: n
   return warmthAt(
     hueOf(
       u,
-      eased(field.braid[1], plaited(field), u),
+      eased(field.braid[1], field.braid[2], u),
       pick + (strand / 3 - pick) * braided,
       t,
       breath(strand, u, t),
@@ -622,7 +641,7 @@ export const brightness = (field: Field, i: number, knitted = 0) => {
  */
 export const seamOf = (field: Field) => ({
   twist: twistOf(field, 0, 1, 0),
-  hue: hueOf(1, eased(field.braid[1], plaited(field), 1), 0, 0, 0),
+  hue: hueOf(1, eased(field.braid[1], field.braid[2], 1), 0, 0, 0),
   drift: 1,
 })
 export type Seam = ReturnType<typeof seamOf>

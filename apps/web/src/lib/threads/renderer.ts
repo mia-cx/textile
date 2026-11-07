@@ -128,8 +128,8 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
         const lit = Array.from({ length: STILL_SEGMENTS + 1 }, (_, s): Lit => {
           const u = along(s / STILL_SEGMENTS)
           const [x, y] = position(field, i, u, time)
-          const { braided, plait } = knit(field, th, u)
-          const knitted = braided * plait
+          const { braided, look } = knit(field, th, u)
+          const knitted = braided * look
           const light = brightness(field, i, knitted) * (1 + (BRAID_STILL - 1) * knitted)
           return {
             x,
