@@ -85,7 +85,7 @@ export function webgl2(canvas: HTMLCanvasElement): Renderer | undefined {
 /** Points per thread in the 2D fallback, and how many threads it draws at most: one still frame, drawn once. */
 const STILL_SEGMENTS = SEGMENTS
 const STILL_THREADS = 320
-/** Points per piece a thread is stroked in, each piece its own colour along the gradient. */
+/** Points per piece a thread is stroked in, each piece blending from its first point's colour to its last's. */
 const STILL_PIECE = 8
 /** How much light each thread gives in the still frame's braid, where they overlap. */
 const BRAID_STILL = 0.3
@@ -111,33 +111,48 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
         violet[1] + (amber[1] - violet[1]) * w,
         violet[2] + (amber[2] - violet[2]) * w,
       ]
-      /** Thread `i` from point `from` to `to` (of STILL_SEGMENTS), stroked with a faint halo under a fine core. */
-      const stroke = (i: number, from: number, to: number, rgb: RGB, alpha: number) => {
-        context.beginPath()
-        for (let s = from; s <= to; s++) {
-          const [x, y] = position(field, i, along(s / STILL_SEGMENTS), time)
-          if (s === from) context.moveTo(x, y)
-          else context.lineTo(x, y)
-        }
-        context.lineWidth = 5
-        context.strokeStyle = css(rgb, 0.1 * alpha)
-        context.stroke()
-        context.lineWidth = 0.8
-        context.strokeStyle = css(rgb, alpha)
-        context.stroke()
+      /** A gradient along a piece, from `a`'s colour at its first point to `b`'s at its last, `share` as opaque. */
+      type Lit = { x: number; y: number; rgb: RGB; alpha: number }
+      const between = (a: Lit, b: Lit, share: number) => {
+        const gradient = context.createLinearGradient(a.x, a.y, b.x, b.y)
+        gradient.addColorStop(0, css(a.rgb, Math.min(share * a.alpha, 1)))
+        gradient.addColorStop(1, css(b.rgb, Math.min(share * b.alpha, 1)))
+        return gradient
       }
       const count = Math.min(field.count, STILL_THREADS)
       for (let i = 0; i < count; i++) {
         const th = thread(field, i)
-        // In short pieces, so its colour follows the gradient along it. As it gathers it eases into its strand's
-        // colour, and in the plait it gives less light, as hundreds share it there.
-        for (let s = 0; s < STILL_SEGMENTS; s += STILL_PIECE) {
-          const to = Math.min(s + STILL_PIECE, STILL_SEGMENTS)
-          const u = along((s + to) / 2 / STILL_SEGMENTS)
+        // Each point's place, colour, and light. As a thread gathers it eases into its strand's colour, and in the
+        // plait it gives less light, as hundreds share it there.
+        const lit = Array.from({ length: STILL_SEGMENTS + 1 }, (_, s): Lit => {
+          const u = along(s / STILL_SEGMENTS)
+          const [x, y] = position(field, i, u, time)
           const { braided, plait } = knit(field, th, u)
           const knitted = braided * plait
           const light = brightness(field, i, knitted) * (1 + (BRAID_STILL - 1) * knitted)
-          stroke(i, s, to, blend(warmth(field, i, u, time, braided)), 0.8 * light * field.intensity)
+          return {
+            x,
+            y,
+            rgb: blend(warmth(field, i, u, time, braided)),
+            alpha: 0.8 * light * field.intensity,
+          }
+        })
+        // In short pieces, each a gradient from its first point's colour to its last's, so the colour follows the
+        // thread with no seam; a faint halo under a fine core.
+        for (let s = 0; s < STILL_SEGMENTS; s += STILL_PIECE) {
+          const piece = lit.slice(s, Math.min(s + STILL_PIECE, STILL_SEGMENTS) + 1)
+          const first = piece[0]
+          const last = piece.at(-1)
+          if (!first || !last) continue
+          context.beginPath()
+          for (const [k, p] of piece.entries())
+            k === 0 ? context.moveTo(p.x, p.y) : context.lineTo(p.x, p.y)
+          context.lineWidth = 5
+          context.strokeStyle = between(first, last, 0.1)
+          context.stroke()
+          context.lineWidth = 0.8
+          context.strokeStyle = between(first, last, 1)
+          context.stroke()
         }
       }
       // The flare where the cord ends.

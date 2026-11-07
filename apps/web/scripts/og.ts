@@ -39,26 +39,38 @@ const field: Field = {
 const POINTS = 160
 /** A settled moment of the current, as the page's still frame shows. */
 const STILL_TIME = 12
-/** Points per piece a thread is stroked in, each piece its own colour along its violet-to-amber gradient. */
-const PIECE = 2
+/**
+ * Points per piece a thread is stroked in, each piece a gradient from its first point's colour to its last's, so the
+ * violet-to-amber gradient runs along it with no seam.
+ */
+const PIECE = 8
 /** A colour `w` of the way from violet to amber. */
 const blend = (w: number) =>
   `rgb(${VIOLET.map((v, c) => Math.round(v + ((AMBER[c] ?? v) - v) * w)).join(' ')})`
 const threads = Array.from({ length: field.count }, (_, i) => {
-  const points = Array.from({ length: POINTS + 1 }, (_, s) =>
-    position(field, i, along(s / POINTS), STILL_TIME),
-  )
-  // As a thread gathers it eases into its strand's colour, and in the plait its band's light, as the shaders do.
+  // Each point's place, colour, and opacity. As a thread gathers it eases into its strand's colour, and in the plait
+  // its band's light, as the shaders do.
   const th = thread(field, i)
+  const points = Array.from({ length: POINTS + 1 }, (_, s) => {
+    const u = along(s / POINTS)
+    const [x, y] = position(field, i, u, STILL_TIME)
+    const { braided, plait } = knit(field, th, u)
+    const colour = blend(warmth(field, i, u, STILL_TIME, braided))
+    const opacity = Math.min(1, 0.12 + 0.5 * brightness(field, i, braided * plait))
+    return { x, y, colour, opacity }
+  })
   return Array.from({ length: POINTS / PIECE }, (_, n) => {
     const piece = points.slice(n * PIECE, (n + 1) * PIECE + 1)
-    const u = along((n + 0.5) / (POINTS / PIECE))
-    const { braided, plait } = knit(field, th, u)
+    const first = piece[0]
+    const last = piece.at(-1)
+    if (!first || !last) return ''
+    const id = `g${i}-${n}`
     const d = piece
-      .map(([x, y], s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
+      .map(({ x, y }, s) => `${s === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
       .join('')
-    const opacity = Math.min(1, 0.12 + 0.5 * brightness(field, i, braided * plait))
-    return `<path d="${d}" stroke="${blend(warmth(field, i, u, STILL_TIME, braided))}" stroke-opacity="${opacity.toFixed(2)}"/>`
+    const stop = (at: number, p: typeof first) =>
+      `<stop offset="${at}" stop-color="${p.colour}" stop-opacity="${p.opacity.toFixed(2)}"/>`
+    return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${first.x.toFixed(1)}" y1="${first.y.toFixed(1)}" x2="${last.x.toFixed(1)}" y2="${last.y.toFixed(1)}">${stop(0, first)}${stop(1, last)}</linearGradient><path d="${d}" stroke="url(#${id})"/>`
   }).join('')
 }).join('')
 
