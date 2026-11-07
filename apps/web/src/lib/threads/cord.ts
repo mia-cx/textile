@@ -73,8 +73,8 @@ const STEP = 4
 const SPREAD = 0.92
 const MIN_TURN = 180
 /** Texels per sample, and samples per row of the texture: rows stay within every GPU's smallest texture limit. */
-export const TEXELS = 3
-export const ROW = 682
+export const TEXELS = 4
+export const ROW = 512
 /** Threads in the cord, threads in each strand that peels off, and the most strands that can peel. */
 export const CORD_THREADS = 180
 export const PEEL_THREADS = 10
@@ -122,6 +122,12 @@ export interface Cord {
   readonly paths: ReadonlyArray<Span>
   /** The cord's samples' heights, rising: the part on screen is a binary search away. */
   readonly heights: Float32Array
+  /** How far along the cord's route each of its samples is, rising: where its tip is, in height, is too. */
+  readonly routes: Float32Array
+  /** How far along the route each section's gap is, where the cord is braided, in the stops' order. */
+  readonly gaps: ReadonlyArray<number>
+  /** How far the whole route runs, to the end of the last strand peeling off it. */
+  readonly length: number
   readonly copy: ReadonlyArray<Box>
   /**
    * Where each section's name sits: on the knot where the cord crosses its gap, on the side it doesn't come in from, at
@@ -152,6 +158,7 @@ export interface Cord {
  *   0  x, y, twist (radians, strand 0 at time 0), sways
  *   1  s, open, width, hue (gradient cycles)
  *   2  axis x, axis y, light, carries the lead (0 or 1)
+ *   3  how far along the cord's route it is (px from the window, a peel carrying on from where it leaves), -, -, -
  */
 interface Sample {
   readonly x: number
@@ -486,28 +493,31 @@ export function weave(
     })
   }
   const cordHues = hues(cord, 0)
-  const hueAt = (y: number) =>
-    cordHues[
-      Math.max(
-        0,
-        cord.findIndex((p) => p.y >= y),
-      )
-    ] ?? 0
+  /** The cord's sample at height `y`: where a peel leaves it, or a gap crosses it. */
+  const at = (y: number) =>
+    Math.max(
+      0,
+      cord.findIndex((p) => p.y >= y),
+    )
   const all = [
-    { path: cord, hue: cordHues, twist: twists(cord, 0), leads: true },
-    ...peels.map((path, n) => ({
-      path,
-      hue: hues(path, hueAt(path[0]?.y ?? 0)),
-      twist: twists(path, 0),
-      leads: peeling[n]?.leads ?? false,
-    })),
+    { path: cord, hue: cordHues, twist: twists(cord, 0), route: 0, leads: true },
+    ...peels.map((path, n) => {
+      const from = at(path[0]?.y ?? 0)
+      return {
+        path,
+        hue: hues(path, cordHues[from] ?? 0),
+        twist: twists(path, 0),
+        route: cord[from]?.s ?? 0,
+        leads: peeling[n]?.leads ?? false,
+      }
+    }),
   ]
   const total = all.reduce((sum, { path }) => sum + path.length, 0)
   const rows = Math.max(1, Math.ceil(total / ROW))
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   const paths: Span[] = []
   let first = 0
-  for (const { path, hue, twist, leads } of all) {
+  for (const { path, hue, twist, route, leads } of all) {
     for (const [k, p] of path.entries()) {
       data.set(
         [
@@ -522,6 +532,10 @@ export function weave(
           ...p.axis,
           p.light,
           leads ? 1 : 0,
+          route + p.s,
+          0,
+          0,
+          0,
         ],
         (first + k) * TEXELS * 4,
       )
@@ -542,6 +556,9 @@ export function weave(
     rows,
     paths,
     heights: Float32Array.from(cord, (p) => p.y),
+    routes: Float32Array.from(cord, (p) => p.s),
+    gaps: gaps.map(({ y }) => cord[at(y)]?.s ?? 0),
+    length: Math.max(...all.map(({ path, route }) => route + (path.at(-1)?.s ?? 0))),
     copy: stops.slice(0, MAX_COPY).map((stop) => stop.copy),
     knots,
     radius,
@@ -556,6 +573,40 @@ export function weave(
 
 /** How far a strand strays up or down from its path's samples in the braid: the braid's radius, and its glow. */
 const margin = (radius: number) => radius * 4 + STEP
+
+/** How far along its route the cord fades out above its tip, in px. Mirrors FADE in the shaders. */
+export const FADE = 224
+
+/**
+ * How far down the page the cord shows when its tip is `tip` along its route: the height of the cord where its tip is,
+ * past which nothing of it is lit. Infinite once the tip is past the cord's own end, where peels carry the route on.
+ */
+export function tipY(cord: Cord, tip: number) {
+  const k = cord.routes.findIndex((s) => s >= tip)
+  return k < 0 ? Number.POSITIVE_INFINITY : (cord.heights[k] ?? 0) + cord.reach
+}
+
+/**
+ * Where the cord's tip is along its route as the page scrolls to `scroll`: a smooth curve of plateaus. At the top, 0,
+ * the cord ending at the window. Each section `k` has a plateau, reached as its heading crosses `at` of the screen
+ * (`plateaus[k].scroll`): its whole stretch is drawn, through the rebraid below it, the tip resting a fade past the next
+ * gap, where the cord is one plait. Between plateaus the tip holds until HOLD of the way to the next, then eases there,
+ * slow out and slow in; the first runs from the top at once. Scrolling back retraces it exactly.
+ */
+export function reveal(plateaus: ReadonlyArray<{ scroll: number; tip: number }>, scroll: number) {
+  let from = { scroll: 0, tip: 0 }
+  for (const [k, to] of plateaus.entries()) {
+    if (scroll < to.scroll) {
+      const hold = k === 0 ? 0 : HOLD
+      const start = from.scroll + (to.scroll - from.scroll) * hold
+      return from.tip + (to.tip - from.tip) * easeIn(start, to.scroll, scroll)
+    }
+    from = to
+  }
+  return from.tip
+}
+/** How much of the way from one section's plateau to the next the tip holds still before it moves on. */
+const HOLD = 0.45
 
 /**
  * The cord's samples from `top` to `bottom`, and as far beyond as any strand strays from its sample (`reach`), so its

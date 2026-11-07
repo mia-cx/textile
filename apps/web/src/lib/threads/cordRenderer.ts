@@ -3,12 +3,14 @@ import {
   type Cord,
   cordThread,
   cordWarmth,
+  FADE,
   MAX_COPY,
   MAX_PEELS,
   PEEL_THREADS,
   place,
   ROW,
   TEXELS,
+  tipY,
   visible,
 } from './cord'
 import { blend, hash, SHAPE } from './geometry'
@@ -16,7 +18,7 @@ import { type Painter, type Scene, webgl2Painter, webgpuPainter } from './gpu'
 import { EXPOSURE, type Palette, type RGB } from './renderer'
 import { CORD_VEC4S, cordVertexGlsl, cordWgsl } from './shaders'
 
-/** The part of the page a cord canvas shows: its top-left, in the weave's pixels, and how far down the cord is drawn. */
+/** The part of the page a cord canvas shows: its top-left, in the weave's pixels, and how far along its route the cord's tip is. */
 export interface View {
   readonly left: number
   readonly top: number
@@ -62,7 +64,7 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       const dpr = canvas.width / Math.max(canvas.clientWidth, 1)
       const width = canvas.width / dpr
       const height = canvas.height / dpr
-      const shown = visible(cord, view.top, Math.min(view.top + height, view.tip))
+      const shown = visible(cord, view.top, Math.min(view.top + height, tipY(cord, view.tip)))
       const peels = cord.paths.slice(1, 1 + MAX_PEELS)
       uniforms.fill(0)
       uniforms.set([width, height, dpr, time], 0)
@@ -99,12 +101,16 @@ export function cordWebgl2(canvas: HTMLCanvasElement): CordRenderer | undefined 
 
 /** Every how many of the cord's threads the 2D fallback strokes, and how many samples long each piece of one is. */
 const STILL_EVERY = 3
-const STILL_PIECE = 96
+const STILL_PIECE = 24
 
-/** A stretch of one thread, as the 2D fallback strokes it: how far up and down it reaches, its path, and its colour. */
+/**
+ * A stretch of one thread, as the 2D fallback strokes it: how far up and down it reaches, how far along the cord's route
+ * its middle is, its path, and its colour.
+ */
 interface Piece {
   readonly top: number
   readonly bottom: number
+  readonly route: number
   readonly path: Path2D
   readonly style: CanvasGradient
 }
@@ -143,6 +149,7 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         const { warmth, leads } = cordWarmth(laid, i, span.first + k, time, th)
         return {
           at: place(laid, i, span.first + k, time, th).point,
+          route: laid.data[(span.first + k) * TEXELS * 4 + 12] ?? 0,
           // The lead is TRACED times the brightest of the rest.
           colour: css(mixed(warmth), Math.min(1, leads ? 0.5 * SHAPE.traced : own)),
         }
@@ -164,7 +171,8 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
           style.addColorStop(Math.min(1, Math.max(0, along)), colour)
         }
         const heights = run.map(({ at }) => at[1])
-        return { top: Math.min(...heights), bottom: Math.max(...heights), path, style }
+        const route = run[Math.floor(run.length / 2)]?.route ?? 0
+        return { top: Math.min(...heights), bottom: Math.max(...heights), route, path, style }
       })
     })
   }
@@ -183,18 +191,17 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
       }
       const dpr = canvas.width / Math.max(canvas.clientWidth, 1)
       const width = canvas.width / dpr
-      const bottom = Math.min(view.top + canvas.height / dpr, view.tip)
+      const bottom = view.top + canvas.height / dpr
       context.setTransform(dpr, 0, 0, dpr, -view.left * dpr, -view.top * dpr)
       context.clearRect(view.left, view.top, width, canvas.height / dpr)
-      if (bottom <= view.top) return
       context.save()
-      context.beginPath()
-      context.rect(view.left, view.top, width, bottom - view.top)
-      context.clip()
       context.globalCompositeOperation = 'lighter'
       context.lineWidth = 0.8
+      // Each piece fades out over FADE along the route above the tip, as the GPU's strands do.
       for (const piece of pieces) {
-        if (piece.bottom < view.top || piece.top > bottom) continue
+        if (piece.bottom < view.top || piece.top > bottom || piece.route > view.tip) continue
+        const t = Math.min(1, Math.max(0, (view.tip - piece.route) / FADE))
+        context.globalAlpha = t * t * (3 - 2 * t)
         context.strokeStyle = piece.style
         context.stroke(piece.path)
       }

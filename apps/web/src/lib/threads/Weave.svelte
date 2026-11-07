@@ -1,7 +1,18 @@
 <script lang="ts">
 import { onMount, untrack } from 'svelte'
 import { advance, STILL_TIME } from './clock'
-import { type Box, type Cord, carry, NO_SEAM, type Stop, swayAt, weave } from './cord'
+import {
+  type Box,
+  type Cord,
+  carry,
+  FADE,
+  NO_SEAM,
+  reveal,
+  type Stop,
+  swayAt,
+  tipY,
+  weave,
+} from './cord'
 import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
 import type { Seam } from './geometry'
 import { hex, type Palette } from './renderer'
@@ -18,8 +29,10 @@ import { hex, type Palette } from './renderer'
  * split, from where the cord enters the `[data-weave]` element, where it comes apart into its strands and ends.
  *
  * The cord is drawn on the GPU, as the hero's threads are, on a canvas one screen tall (and a margin) that keeps to the
- * part on screen. It draws down the page as the reader scrolls, its tip 75% of the way down the screen, fading into the
- * page; without scroll timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds still.
+ * part on screen. It draws down the page in steps as the reader scrolls (see `reveal` in cord.ts): as each section's
+ * heading reaches HEADING of the way down the screen, the cord is drawn through the whole section, and holds there
+ * until the reader scrolls on; its tip fades out along its own route, and each knot shows as the tip reaches it. With
+ * reduced motion it is simply drawn, and holds still.
  * Without a GPU it is drawn in canvas 2D. It is drawn only side by side; stacked, each section names its event above
  * its demo instead. Decorative.
  *
@@ -36,12 +49,12 @@ const CORD = 10
 const LANE = 110
 /** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */
 const MARGIN = 0.15
-/** Where the cord's tip runs, as a share of the screen's height from its top. */
-const TIP = 0.75
+/** How far down the screen a section's heading is when the cord is drawn through the whole section. */
+const HEADING = 0.6
 /** Device pixels per CSS pixel, at most, as the hero's. */
 const MAX_DPR = 2
 /**
- * How far down the page the cord's tip is when it is simply drawn: far past any page, and finite, because the shaders
+ * How far along its route the cord's tip is when it is simply drawn: far past any page, and finite, because the shaders
  * fade the cord in the span above its tip.
  */
 const NO_TIP = 1e7
@@ -66,12 +79,13 @@ onMount(() => {
   if (!root) return
   const wide = matchMedia(WIDE)
   const motion = matchMedia('(prefers-reduced-motion: no-preference)')
-  const scrolled = CSS.supports('animation-timeline: view()')
   let renderer: CordRenderer | undefined
   let cord: Cord | undefined
   let palette: Palette | undefined
   /** The weave's top on the page, so scrolling needs no layout to find what shows. */
   let offset = 0
+  /** Where the cord's tip rests for each section, and at what scroll: see `reveal`. */
+  let plateaus: Array<{ scroll: number; tip: number }> = []
   let visible = false
   let frame = 0
   let time = STILL_TIME
@@ -81,23 +95,27 @@ onMount(() => {
   /** Whether the canvas still holds a frame of the cord. */
   let painted = false
 
-  /** The part of the cord the screen shows now, with the canvas's margin, and how far down it is drawn. */
+  /** The part of the cord the screen shows now, with the canvas's margin, and how far along its route it is drawn. */
   const view = () => {
     const top = scrollY - offset - innerHeight * MARGIN
-    const tip = scrolled && motion.matches ? scrollY - offset + innerHeight * TIP : NO_TIP
+    const tip = motion.matches ? reveal(plateaus, scrollY) : NO_TIP
     return { left: 0, top, tip }
   }
   const draw = () => {
     if (!renderer || !cord || !palette) return
     if (!loaded) renderer.load(cord)
     loaded = true
-    const shown = view()
-    canvas.style.translate = `0 ${shown.top}px`
-    renderer.draw(palette, time, shown)
-    // Each knot rides the cord's sway where it crosses its gap, by the same math the shaders run.
+    const seen = view()
+    canvas.style.translate = `0 ${seen.top}px`
+    renderer.draw(palette, time, seen)
+    // Each knot rides the cord's sway where it crosses its gap, by the same math the shaders run, and shows as the tip
+    // reaches it.
     for (const [i, knot] of cord.knots.entries()) {
       const mark = marks[i]
-      if (mark) mark.style.translate = `${knot.x + swayAt(knot.y, time) * knot.sways}px ${knot.y}px`
+      if (!mark) continue
+      mark.style.translate = `${knot.x + swayAt(knot.y, time) * knot.sways}px ${knot.y}px`
+      const reached = Math.min(1, Math.max(0, (seen.tip - (cord.gaps[i] ?? 0)) / (FADE / 2)))
+      mark.style.opacity = String(reached)
     }
     painted = true
   }
@@ -113,7 +131,7 @@ onMount(() => {
   /** Whether any of the cord is drawn on the canvas where it is now: above the tip, within the screen and its margin. */
   const shows = (laid: Cord) => {
     const { top, tip } = view()
-    const bottom = Math.min(top + innerHeight * (1 + 2 * MARGIN), tip)
+    const bottom = Math.min(top + innerHeight * (1 + 2 * MARGIN), tipY(laid, tip))
     return top < laid.extent.bottom && bottom > laid.extent.top
   }
   /** The cord draws only while the tab shows it, side by side, with some of it on screen. */
@@ -173,6 +191,8 @@ onMount(() => {
     const from = rect(start)
     let above = from.bottom
     const stops: Stop[] = []
+    /** Each section's heading, on the page. */
+    const headings: number[] = []
     for (const section of root.querySelectorAll<HTMLElement>('[data-weave-label]')) {
       const entry = section.querySelector<HTMLElement>('[data-weave]')
       const copy = section.querySelector('[data-weave-copy]')
@@ -207,6 +227,7 @@ onMount(() => {
         }),
       })
       above = content.bottom
+      headings.push(rect(section.querySelector('h2') ?? copy).top + offset)
     }
     // Behind the window, the hero's strands run from its left edge's middle to its bottom's middle.
     const hidden = (from.right - from.left) / 2 + (from.bottom - from.top) / 2
@@ -218,6 +239,13 @@ onMount(() => {
       seam ? carry(seam, hidden, CORD) : NO_SEAM,
     )
     knots = cord.knots
+    // Each section's plateau: the cord drawn a fade past the next gap, where it is one plait again, or to the end of its
+    // route for the last section; reached as the section's heading crosses HEADING of the way down the screen.
+    const { gaps, length } = cord
+    plateaus = headings.map((heading, k) => ({
+      scroll: Math.max(1, heading - innerHeight * HEADING),
+      tip: (gaps[k + 1] ?? length) + FADE,
+    }))
     loaded = false
     wake()
   }
@@ -298,25 +326,22 @@ onMount(() => {
 
 <div bind:this={box} class="weave" data-renderer={kind} aria-hidden="true">
   <div class="threads"><canvas bind:this={canvas}></canvas></div>
-  <div class="reveal marks">
-    <div class="hold">
-      {#each knots as knot, i}
-        <span bind:this={marks[i]} class="mark" data-side={knot.side} style:translate="{knot.x}px {knot.y}px"><span class="label">{knot.text}</span></span>
-      {/each}
-    </div>
+  <div class="marks">
+    {#each knots as knot, i}
+      <span bind:this={marks[i]} class="mark" data-side={knot.side} style:translate="{knot.x}px {knot.y}px"><span class="label">{knot.text}</span></span>
+    {/each}
   </div>
 </div>
 
 <style>
-  /* Fills the page it is in, and names the scroll timeline the knots reveal on. No z-index of its own, so the cord can
-     sit behind the page's panels and its knots in front of them. */
+  /* Fills the page it is in. No z-index of its own, so the cord can sit behind the page's panels and its knots in front
+     of them. */
   .weave {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    view-timeline: --weave block;
   }
-  .reveal,
+  .marks,
   .threads {
     position: absolute;
     inset: 0;
@@ -334,10 +359,6 @@ onMount(() => {
     top: 0;
     left: 0;
     width: 100%;
-  }
-  .hold {
-    position: absolute;
-    inset: 0;
   }
   @media not (min-width: 64rem) {
     .weave {
@@ -382,39 +403,4 @@ onMount(() => {
     left: auto;
   }
 
-  /* The knots show as the cord's tip reaches them: the clip box slides down over them while what it holds slides back
-     up by as much, so only transforms change, on the compositor. Its edge runs 75% of the way down the screen, with
-     the cord's tip. */
-  @supports (animation-timeline: view()) {
-    @media (prefers-reduced-motion: no-preference) {
-      .reveal,
-      .reveal > * {
-        animation: linear both;
-        animation-timeline: --weave;
-        animation-range: cover 25vh cover calc(100% - 75vh);
-      }
-      .reveal {
-        animation-name: clip;
-      }
-      .reveal > * {
-        animation-name: hold;
-      }
-    }
-  }
-  @keyframes clip {
-    from {
-      transform: translateY(-100%);
-    }
-    to {
-      transform: none;
-    }
-  }
-  @keyframes hold {
-    from {
-      transform: translateY(100%);
-    }
-    to {
-      transform: none;
-    }
-  }
 </style>

@@ -1,6 +1,7 @@
 import {
   CORD_THREADS,
   DRIFT_SPAN,
+  FADE,
   LOOSE_HUE,
   MAX_COPY,
   PEEL_LEAD,
@@ -971,7 +972,7 @@ export const toneOverFragmentGlsl = toneGlsl(true)
 /**
  * The cord's uniforms, packed by `paint` in cordRenderer.ts. The tone pass reads 10 as it does the hero's:
  *   0  width, height (CSS px), device pixel ratio, time (s)
- *   1  the canvas's top-left on the page (px), the tip's height on the page, intensity
+ *   1  the canvas's top-left on the page (px), how far along its route the cord's tip is, intensity
  *   2  the seam: strand 0's twist and hue where the cord leaves the window, how many prose boxes, the seam's drift
  *   3  braid radius, cord threads, -, the cord's first sample on screen
  *   4  how many of its samples are on screen, peels, -, -
@@ -990,8 +991,8 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     declare('ROW', float(ROW)),
     declare('TEXELS', float(TEXELS)),
     declare('DRIFT_SPAN', float(DRIFT_SPAN)),
-    // How far above its tip the cord fades into the page, in px: 14rem.
-    declare('FADE', float(224)),
+    // How far along its route the cord fades out above its tip, in px: see FADE in cord.ts.
+    declare('FADE', float(FADE)),
     // How much of the strands' light shows behind a section's prose.
     declare('COPY_LIGHT', float(0.04)),
     declare('COPY_FADE', float(120)),
@@ -1060,7 +1061,7 @@ fn swayAt(y: f32, t: f32) -> f32 {
 // Where a thread is at sample k: on the page, how loose (0 braided to 1), how far its strands have drifted apart from
 // the plait (0 to 1), its strand's depth in the plait, how far along its path, how bright the path is there, its hue
 // there (gradient cycles, as weave adds them up), and whether the path carries the lead. Mirrors place in cord.ts.
-struct Placed { at: vec2f, loose: f32, apart: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32 };
+struct Placed { at: vec2f, loose: f32, apart: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32, route: f32 };
 
 fn place(th: Thread, k: f32) -> Placed {
   let a = texel(k, 0.0); let b = texel(k, 1.0); let c = texel(k, 2.0);
@@ -1086,7 +1087,7 @@ fn place(th: Thread, k: f32) -> Placed {
   let rope = (b.z * mix(home, th.lane, fray) + sway * fray) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   let drift = swayAt(a.y, t) * a.w;
-  return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
+  return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, texel(k, 3.0).x);
 }
 
 // How much light shows at p: less behind a section's prose, fading back in over COPY_FADE px around it, so neither
@@ -1135,8 +1136,9 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW), 1.0, leads);
   let lead = 1.0 + (TRACED - 1.0) * leads;
   let shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
-  // The cord fades out over FADE above its tip, and dims behind prose.
-  let tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
+  // The cord fades out over FADE along its route above its tip, every strand at the same point along it, so a parting
+  // strand ends level with its neighbours rather than cut across the screen; and it dims behind prose.
+  let tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.route);
 
   var out: Out;
   let res = U[0].xy;
@@ -1200,7 +1202,7 @@ float swayAt(float y, float t) {
   return SWAY_REACH * (sin(TAU * t / SWAY_PERIOD_A + y * SWAY_WAVE_A) * 0.6 + sin(TAU * t / SWAY_PERIOD_B + y * SWAY_WAVE_B + 2.0) * 0.4);
 }
 
-struct Placed { vec2 at; float loose; float apart; float depth; float s; float light; float hue; float leads; };
+struct Placed { vec2 at; float loose; float apart; float depth; float s; float light; float hue; float leads; float route; };
 
 Placed place(Thread th, float k) {
   vec4 a = texel(k, 0.0); vec4 b = texel(k, 1.0); vec4 c = texel(k, 2.0);
@@ -1220,7 +1222,7 @@ Placed place(Thread th, float k) {
   float rope = (b.z * mix(home, th.lane, fray) + sway * fray) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   float drift = swayAt(a.y, t) * a.w;
-  return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
+  return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, texel(k, 3.0).x);
 }
 
 float behindCopy(vec2 p) {
@@ -1259,7 +1261,7 @@ void main() {
   float own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW), 1.0, leads);
   float lead = 1.0 + (TRACED - 1.0) * leads;
   float shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
-  float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
+  float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.route);
 
   vec2 res = U[0].xy;
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
