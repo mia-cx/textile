@@ -185,66 +185,64 @@ function close(
     </div>
   </section>
 
-  <Section id="publish" title="Your agent ships a workflow over MCP" event="tools/call" layout="wide">
+  <Section id="publish" title="Run discord.js on Textile" event="tools/call" layout="wide">
     <p>
-      A workflow is plain discord.js, written like any bot. Your agent publishes it over MCP; Textile bundles it, keeps
-      the bot online, and runs every event in a fresh sandbox.
+      Your agent publishes a discord.js workflow over MCP, then enables it. Textile runs it even when your agent
+      disconnects.
     </p>
     <p>
-      The sandbox never holds the bot’s token. Each call goes through a broker that checks the workflow’s grants and adds
-      the token itself.
+      Each run starts in a fresh sandbox. Your workflow declares which Discord operations and external hosts it can use.
+      Textile keeps the bot token outside the sandbox.
     </p>
     <p><a class="next-link" href="/docs/workflows/">Read about workflows</a></p>
     {#snippet demo()}<Publish />{/snippet}
   </Section>
 
-  <Section id="slash" title="Slash commands answer from your code" event="interactionCreate" layout="centred">
+  <Section id="slash" title="Reply to slash commands" event="interactionCreate" layout="centred">
     <p>
-      Each interaction runs the workflow in its own isolate. What should last, like each person’s last answer, lives in
-      the workflow’s key-value store.
+      Register a slash command, then handle it in a workflow. This example saves each person's last answer between runs.
     </p>
     {#snippet demo()}<Slash />{/snippet}
   </Section>
 
-  <Section id="schedules" title="Cron schedules, one run per tick" event="cron {CRON}" layout="prose-right">
+  <Section id="schedules" title="Post on a schedule" event="cron {CRON}" layout="prose-right">
     <p>
-      Each tick runs once, however many hosts there are. A tick missed while the bot was offline runs once, late, when
-      it’s back.
+      Use a UTC cron expression for recurring posts. This workflow asks for a standup update at 9:00 each weekday.
     </p>
     {#snippet demo()}<Schedule />{/snippet}
   </Section>
 
   <Section
     id="webhooks"
-    title="Webhooks from anywhere"
+    title="Post to Discord from a webhook"
     event="POST {ROUTE.replace(/\/\d+\//, '/…/')}"
     layout="prose-left"
   >
     <p>
-      The same workflow answers HTTP at its own route. Routes are public, so the handler checks who’s calling before it
-      posts.
+      Give your workflow an HTTP handler to accept updates from another service. The example checks a shared secret
+      before posting to Discord.
     </p>
     {#snippet demo()}<Webhook />{/snippet}
   </Section>
 
   <Section id="scripts" title="Many Discord calls, one tool call" event="discord_script_run" layout="wide-right">
     <p>
-      <code class="prose-code">discord_script_run</code> runs discord.js once, now, under the same grants as workflows,
-      so a batch of Discord calls costs your agent one tool call.
+      Send a batch of messages with <code class="prose-code">discord_script_run</code>. Your agent supplies discord.js
+      code and its grants, and Textile runs it once.
     </p>
     {#snippet demo()}<Script />{/snippet}
   </Section>
 
-  <Section id="voice" title="Voice, speaker by speaker" event="discord_voice_join" layout="span">
+  <Section id="voice" title="Connect your agent to voice" event="discord_voice_join" layout="span">
     <p>
-      Join a voice channel and open one WebSocket. Each person’s audio arrives as its own stream, tagged with their
-      Discord ID, in Opus or PCM16. Send audio back and the bot speaks.
+      Let your agent speak in a Discord voice channel. It can receive each speaker's audio separately, in Opus or PCM16.
+      Your agent supplies the speech model.
     </p>
     {#snippet demo()}
       <Voice>
         <p>
-          Before the bot hears anyone, it posts a notice. Anyone who opts out is never relayed, and Textile never stores
-          audio.
+          The bot posts an opt-out notice before relaying voice. Textile doesn't store audio. Receiving is best-effort
+          because Discord doesn't support bots receiving voice.
         </p>
         <p><a class="next-link" href="/docs/voice/">Read about voice</a></p>
       </Voice>
@@ -254,10 +252,9 @@ function close(
   <section class="close" aria-labelledby="access">
     <ThreadField layout={close} target={signIn} />
     <div class="close-copy">
-      <h2 id="access">Access opens in rounds</h2>
+      <h2 id="access">Check your alpha access</h2>
       <p class="lede">
-        Textile starts with a closed alpha. Sign in with Discord to check your access, and to find where to follow
-        progress until you’re in.
+        The alpha is invite-only. Sign in with Discord to check whether you have access.
       </p>
       <div class="actions">
         <a bind:this={signIn} class="button button-primary" href="/login" data-sveltekit-reload>

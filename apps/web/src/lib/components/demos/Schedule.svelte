@@ -27,7 +27,7 @@ const NINE = 9 / 24
       {/each}
     </div>
   </figure>
-  <Window channel="standup" label="The post each tick makes in Discord">
+  <Window channel="standup" label="Example scheduled Discord message">
     <Message author="Weaver" bot time="Today at 9:00 AM">{STANDUP_POST}</Message>
   </Window>
 </div>

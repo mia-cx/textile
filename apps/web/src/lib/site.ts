@@ -21,7 +21,7 @@ export const PAGES = [
     path: '/',
     title: 'Textile: Discord bots for AI agents',
     description:
-      'A Discord bot platform for AI agents, over MCP. Your agent gets a bot that stays online, runs the discord.js workflows it writes, and joins voice channels.',
+      'Host a Discord bot for your AI agent. Use MCP to run discord.js workflows, schedule messages, and connect to voice. Invite-only alpha.',
   },
   {
     path: '/terms',
@@ -36,7 +36,7 @@ export const PAGES = [
   {
     path: '/access',
     title: 'Your Textile access',
-    description: 'Sign in with Discord to see whether you have access to the Textile alpha.',
+    description: 'Sign in with Discord to check your access to the invite-only Textile alpha.',
   },
 ] as const
 

@@ -12,7 +12,7 @@ export const CRON = '0 9 * * 1-5'
 /** The webhook's shared secret, as the workflow's source spells it. */
 export const SECRET = 'replace-with-a-long-random-string'
 /** What the workflow posts on each tick. */
-export const STANDUP_POST = 'Standup time: what did you ship today?'
+export const STANDUP_POST = 'What did you ship?'
 
 /** One workflow with all three kinds of trigger: a cron schedule, a slash command, and an HTTP route. */
 export const WORKFLOW = `import { Client, Events } from 'discord.js'
@@ -129,10 +129,10 @@ export default async ({ client }) => {
 
 /** The notice a bot posts before it relays voice, and its buttons' replies (packages/bot-host/src/consent.ts). */
 export const VOICE_NOTICE = {
-  notice: 'I’m relaying voice in this channel to an AI agent.',
+  notice: "I'm relaying voice in this channel to an AI agent.",
   optOutHere: 'Opt out here',
   optOutAll: 'Opt out of all Textile bots',
-  optedOutHere: 'I won’t relay your voice in this server.',
+  optedOutHere: "I won't relay your voice in this server.",
   optedOutAll: 'No Textile bot will relay your voice.',
   undoneHere: 'I can relay your voice in this server again.',
   undoneAll: 'Textile bots can relay your voice again.',
@@ -148,70 +148,80 @@ export const landingMarkdown = (origin: string) => `# Discord bots for AI agents
 
 Your agent writes the code. Textile keeps the bot online.
 
-Textile is a Discord bot platform for AI agents, served over MCP. Your agent signs in, sends its bot's token with each
-request, and gets a bot that stays online, runs the discord.js workflows the agent writes, runs one-off scripts, and
-joins voice channels. Textile hosts no models: your agent brings its own.
+Textile hosts Discord bots for AI agents. Connect your agent over MCP to call Discord APIs, publish discord.js
+workflows, run scripts, and join voice channels. You supply the bot token and sign in with Discord.
+Textile runs no AI models; your agent supplies those.
 
 [Sign in with Discord](${origin}/login) · [Read the docs](${origin}/docs.md)
 
-## Your agent ships a workflow over MCP
+## Run discord.js on Textile
 
-A workflow is plain discord.js, written like any bot. This one posts a standup prompt every weekday, logs answers to a
-\`/standup\` slash command, and posts whatever an outside service sends to its HTTP route:
+Your agent publishes a discord.js workflow over MCP, then enables it. Textile runs it even when your agent disconnects.
+This example posts weekday standup prompts, saves slash command answers, and accepts updates from an HTTP caller:
 
 ${fence('ts', WORKFLOW)}
 
-The agent publishes it with \`${CALLS[0].tool}\`. Textile bundles it, loads it once to find the events, schedules, and
-route it uses, and stores it as revision 1:
+Publish with \`${CALLS[0].tool}\` to store a revision. The result lists its triggers and grants:
 
 ${fence('json', CALLS[0].result)}
 
-Then \`${CALLS[1].tool}\` runs it. From then on, the bot stays online without the agent. Each event, tick, and request
-runs the workflow in a fresh sandbox that never holds the bot's token: a broker checks every call against the
-workflow's grants and adds the token itself. [Read about workflows](${origin}/docs/workflows.md).
+Enable it with \`${CALLS[1].tool}\`. Enabled workflows keep the bot online without agent calls.
+Each run starts in a fresh sandbox. Your workflow declares which Discord operations and external hosts it can use.
+Textile checks calls against those grants and keeps the bot token outside the sandbox.
+[Read about workflows](${origin}/docs/workflows.md) for supported events and runtime limits.
 
-## Slash commands answer from your code
+## Reply to slash commands
 
-When someone runs \`/standup shipped:the onboarding flow\`, the workflow answers in its own isolate, and remembers
-each person's last answer in the workflow's key-value store:
+Register \`/standup\` with a required \`shipped\` string option before using this workflow.
+Your agent can register it through \`discord_api_admin\`; publishing a workflow does not register commands.
+When someone runs \`/standup shipped:the onboarding flow\`, the workflow saves their answer in its key-value store:
 
 > ${standupReply('the onboarding flow', 'dark mode for the docs')}
 
-## Cron schedules, one run per tick
+## Post on a schedule
 
-\`${CRON}\` is 9:00 UTC, Monday to Friday. Each tick runs once, however many hosts there are. A tick missed while the
-bot was offline runs once, late, when it is back.
+Use a UTC cron expression for recurring posts. \`${CRON}\` schedules this prompt for 9:00 each weekday:
 
 > ${STANDUP_POST}
 
-## Webhooks from anywhere
+The scheduler dispatches each tick at most once. After downtime, it selects the latest missed tick per schedule.
+Earlier missed ticks are skipped. A crash between recording a tick and starting it can lose that run.
 
-The workflow answers HTTP at \`${ROUTE}\`. Routes are public, so the handler checks the caller's secret: a request
-without it gets \`401 unauthorized\` and posts nothing.
+## Post to Discord from a webhook
+
+Give your workflow an HTTP handler to accept updates from another service.
+This example serves \`${ROUTE}\` and checks a shared secret before posting to Discord.
+Replace the example IDs and secret with your own. Routes are public; your handler must authenticate the caller.
+A request without the secret gets \`401 unauthorized\` and posts nothing.
 
 ${fence('http', `POST ${ROUTE}\nAuthorization: Bearer ${SECRET}\nContent-Type: application/json\n\n{ "text": "Deployed v2.4.1" }`)}
 
 ## Many Discord calls, one tool call
 
-\`discord_script_run\` runs discord.js once, now, under the same grants as workflows, so a batch of Discord calls costs
-your agent one tool call:
+Send a batch of messages with \`discord_script_run\`.
+Your agent supplies discord.js code and its grants, and Textile runs it once:
 
 ${fence('ts', SCRIPT)}
 
-## Voice, speaker by speaker
+## Connect your agent to voice
 
-Join a voice channel and open one WebSocket. Each person's audio arrives as its own stream, tagged with their Discord
-ID, in Opus or PCM16. Send audio back and the bot speaks. Before the bot hears anyone, it posts a notice:
+Let your agent speak in a Discord voice channel. It can receive each speaker's audio separately, in Opus or PCM16.
+Your agent supplies the speech model. Call \`discord_voice_join\` and connect to the returned WebSocket path.
+Set \`receive: true\` to request incoming audio, tagged with each speaker's Discord ID.
+The bot posts an opt-out notice before relaying voice:
 
 > ${VOICE_NOTICE.notice}
 >
 > **${VOICE_NOTICE.optOutHere}** · **${VOICE_NOTICE.optOutAll}**
 
-Anyone who opts out is never relayed: their audio is dropped before it is decrypted. Textile never stores audio.
+People can opt out of this bot in this server, or every Textile bot. Textile drops their audio before decryption.
+Textile doesn't store audio. Receiving is best-effort because Discord doesn't support bots receiving voice.
 [Read about voice](${origin}/docs/voice.md).
 
-## Access opens in rounds
+The interactive examples on the website are simulations. They send nothing to Discord and do not change voice preferences.
 
-Textile starts with a closed alpha. [Sign in with Discord](${origin}/login) to check your access, and to find where to
-follow progress until you're in. [MCP tools](${origin}/docs/tools.md) lists every tool your agent gets.
+## Check your alpha access
+
+The alpha is invite-only. [Sign in with Discord](${origin}/login) to check whether you have access.
+[See every MCP tool](${origin}/docs/tools.md).
 `

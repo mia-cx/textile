@@ -90,19 +90,19 @@ describe('Markdown for agents', () => {
     expect(markdown).toMatch(/^# Discord bots for AI agents\n/)
     // The landing page's story, written for reading: each part the page shows, with the workflow it runs.
     for (const part of [
-      '## Your agent ships a workflow over MCP',
-      '## Slash commands answer from your code',
-      '## Cron schedules, one run per tick',
-      '## Webhooks from anywhere',
+      '## Run discord.js on Textile',
+      '## Reply to slash commands',
+      '## Post on a schedule',
+      '## Post to Discord from a webhook',
       '## Many Discord calls, one tool call',
-      '## Voice, speaker by speaker',
+      '## Connect your agent to voice',
     ])
       expect(markdown).toContain(part)
     expect(markdown).toContain(WORKFLOW)
     expect(markdown).toContain(`(${ORIGIN}/docs/workflows.md)`)
     // Sign-in is an action, not a page.
     expect(markdown).toContain(`(${ORIGIN}/login)`)
-    expect(markdown).toContain('> I’m relaying voice in this channel to an AI agent.')
+    expect(markdown).toContain("> I'm relaying voice in this channel to an AI agent.")
     // The notice's buttons are its opt-out wording.
     expect(markdown).toContain('Opt out of all Textile bots')
   })

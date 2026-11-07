@@ -83,7 +83,7 @@ async function undo() {
       <div class="aside">{@render children()}</div>
     {/if}
     <div class="notice">
-      <Window channel="lounge" label="The notice in the voice channel’s chat">
+      <Window channel="lounge" label="Voice opt-out notice">
         <Message author="Weaver" bot time="Today at 8:30 PM">
           <p>{VOICE_NOTICE.notice}</p>
           <div class="actions">
@@ -124,7 +124,7 @@ async function undo() {
           </div>
         </div>
       </Window>
-      <p class="note">A simulation: its buttons change nothing in Discord.</p>
+      <p class="note">Try it here. This demo leaves your Discord voice preferences unchanged.</p>
     </div>
   </div>
 </div>

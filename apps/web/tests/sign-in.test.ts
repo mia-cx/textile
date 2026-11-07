@@ -108,14 +108,14 @@ describe('Sign in through central', () => {
       Buffer.from(session?.split(/[=;]/)[1] ?? '', 'base64url').toString('latin1'),
     ).not.toContain(ACCESS_TOKEN)
     const page = await accessPage(cookiesOf(response))
-    expect(page).toContain('You’re in')
+    expect(page).toContain("You're in")
     expect(page).toContain('href="/docs/connecting/"')
     expect(page).toContain('Sign out')
     expect(central.calls).toEqual(['/register', '/token'])
   })
 
   // Central answers access_denied for its allowlist and for a cancelled sign-in alike, so neither may stick.
-  it('tells someone central turned away that they don’t have access yet, and lets them sign in again', async () => {
+  it('keeps a denied or cancelled sign-in signed out and offers another attempt', async () => {
     const central = fakeCentral()
     const { authorize, cookie } = await start(central)
     const response = await callback(cookie, {
@@ -128,10 +128,10 @@ describe('Sign in through central', () => {
       false,
     )
     const page = await (await request('/access?denied')).text()
-    expect(page).toContain('You don’t have access yet')
+    expect(page).toContain("You aren't signed in")
     expect(page).toContain('Join the Discord server')
     expect(page).toContain('href="/login"')
-    expect(page).not.toContain('You’re in')
+    expect(page).not.toContain("You're in")
     const again = await request('/login', { headers: { cookie: cookiesOf(response) } })
     expect(new URL(again.headers.get('location') ?? '').pathname).toBe('/authorize')
     expect(central.calls).toEqual(['/register', '/register'])

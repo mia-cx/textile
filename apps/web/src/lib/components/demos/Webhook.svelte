@@ -39,7 +39,7 @@ function send(withSecret: boolean) {
 {BODY}</pre>
       <div class="actions">
         <button type="button" class="button button-primary" onclick={() => send(true)}>Send request</button>
-        <button type="button" class="button button-secondary" onclick={() => send(false)}>Send without the secret</button>
+        <button type="button" class="button button-secondary" onclick={() => send(false)}>Send without secret</button>
       </div>
       <p class="response" aria-live="polite">
         {#if response}
@@ -57,7 +57,7 @@ function send(withSecret: boolean) {
     </div>
   </div>
 </div>
-<p class="note">A simulation: nothing is sent.</p>
+<p class="note">Try it here. This demo sends no HTTP requests.</p>
 
 <style>
   .frame {

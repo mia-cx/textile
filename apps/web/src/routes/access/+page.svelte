@@ -12,7 +12,7 @@ let { data }: PageProps = $props()
 <!-- The step after the landing page's sign-in, so it keeps the landing page's dark. -->
 <section class="page" data-scheme="dark">
   {#if data.signedIn}
-    <h1 class="page-title">You’re in</h1>
+    <h1 class="page-title">You're in</h1>
     <p class="page-lede">You have access to the Textile alpha. Connect your agent to start.</p>
     <div class="mt-10">
       <a class="button button-primary" href="/docs/connecting/">Connect an agent</a>
@@ -21,10 +21,9 @@ let { data }: PageProps = $props()
       <button class="text-action" type="submit">Sign out</button>
     </form>
   {:else if data.denied}
-    <h1 class="page-title">You don’t have access yet</h1>
+    <h1 class="page-title">You aren't signed in</h1>
     <p class="page-lede">
-      Access to Textile opens in rounds, by invitation. Join {COMMUNITY.name} to follow progress and get
-      invited in the next round.
+      The alpha is invite-only. If you cancelled sign-in, try again. Join {COMMUNITY.name} for updates.
     </p>
     <div class="mt-10">
       <a class="button button-primary" href={COMMUNITY.invite}>Join the Discord server</a>
@@ -34,7 +33,7 @@ let { data }: PageProps = $props()
     </p>
   {:else}
     <h1 class="page-title">Sign in to Textile</h1>
-    <p class="page-lede">Sign in with Discord to see whether you have access to the alpha.</p>
+    <p class="page-lede">Sign in with Discord to check your alpha access.</p>
     <div class="mt-10">
       <a class="button button-primary" href="/login" data-sveltekit-reload><DiscordLogo />Sign in with Discord</a>
     </div>

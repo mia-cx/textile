@@ -47,7 +47,7 @@ function onsubmit(event: SubmitEvent) {
     {/snippet}
   </Window>
 </div>
-<p class="note">A simulation: nothing reaches Discord.</p>
+<p class="note">Try it here. This demo sends nothing to Discord.</p>
 
 <style>
   :global(.slash-window .messages) {
