@@ -52,9 +52,9 @@ const TAU = Math.PI * 2
 /** The field's shape, which the shaders read too (shaders.ts writes them into WGSL and GLSL). */
 export const SHAPE = {
   /** Braid radii per full twist: the braid keeps one helix angle, so it twists tighter as it narrows. */
-  pitch: 7.5,
+  pitch: 8,
   /** How many cord radii the braid widens by from `end` back to `start`: it narrows linearly to `cord`. */
-  swell: 15,
+  swell: 9,
   /**
    * How the funnel narrows: its width beyond the braid's goes as (1 - u / close)^taper, nearly straight edges that
    * close in steadily from the left edge and meet the braid, tangent to it, at `close` (a fraction of the way along).
@@ -64,12 +64,11 @@ export const SHAPE = {
   /** How far the current sways, as a fraction of the funnel's width. */
   wave: 0.14,
   /**
-   * Each of the braid's strands is a flat band of fibres: `fray` is its half-width in braid radii, facing the viewer
-   * where it crosses the braid's middle, and `flat` the share of that it keeps edge-on, where it turns around the
-   * braid's top and bottom. So the band shows its width as it twists.
+   * Each of the braid's three strands is a flat band of fibres lying around the braid, `span` radians either side of its
+   * centre: wide, so the bands nearly cover the braid. A band facing the viewer shows its full width, and one turning
+   * around the braid's edge narrows to a line.
    */
-  fray: 0.62,
-  flat: 0.3,
+  span: 0.85,
   /**
    * The share of a band's fibres that run along its two edges, in `edgeLanes` close lanes `edgeStep` apart (in the
    * band's -1 to 1): crisp, bright lines, each fibre still visible, around the dimmer fibres inside. Those spread over
@@ -79,10 +78,12 @@ export const SHAPE = {
   edgeLanes: 3,
   edgeStep: 0.1,
   inner: 0.8,
-  fibres: 14,
+  fibres: 24,
+  /** How far an inner fibre strays from its bundle, in the band's units: little, so each bundle reads as one fine fibre. */
+  spill: 0.04,
   /** How bright a band's edge fibres and its inner fibres are in the braid, against their brightness in the funnel. */
   edgeLight: 1.5,
-  innerLight: 0.6,
+  innerLight: 0.45,
   /**
    * How far an inner fibre drifts across its band, in the same units as its place in it (-1 to 1), and how fast, in
    * radians per unit along the thread: about one and a half slow waves over the braid, so fibres cross inside each
@@ -209,7 +210,7 @@ export const fibre = (i: number, across: number) => {
               Math.floor(((1 - reach) / SHAPE.edges) * SHAPE.edgeLanes),
               SHAPE.edgeLanes - 1,
             ))
-      : SHAPE.inner * (bundle * 2 - 1 + (hash(i + 8.3) - 0.5) * 0.2),
+      : SHAPE.inner * (bundle * 2 - 1 + (hash(i + 8.3) - 0.5) * SHAPE.spill),
     drift: hash(i + 4.7) * TAU,
   }
 }
@@ -226,13 +227,11 @@ const funnelWidth = ({ spread, cord }: Field, u: number) =>
   cord * (1 + SHAPE.swell * (1 - u)) + spread * Math.max(1 - u / SHAPE.close, 0) ** SHAPE.taper
 
 /**
- * How far from its strand's centre a fibre at `jitter` lies, in braid radii, where the braid has turned `twist`: its
- * band is widest facing the viewer and narrowest edge-on. Mirrors `band` in the shaders.
+ * Where around the braid a fibre at `jitter` across its band lies, in radians, where its strand has turned `twist`:
+ * its offset from the braid's spine is the braid's radius times the sine of this. Mirrors `band` in the shaders.
  */
 export const band = (twist: number, jitter: number, edge: boolean, along: number, drift: number) =>
-  (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
-  SHAPE.fray *
-  (SHAPE.flat + (1 - SHAPE.flat) * Math.abs(Math.cos(twist)))
+  twist + (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) * SHAPE.span
 
 /** About how long the spine is, in pixels: between its chord and its control polygon. Mirrors the shaders. */
 const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
@@ -268,7 +267,7 @@ export function position(field: Field, i: number, u: number, t: number): Point {
     turns * TAU * Math.log((1 + SHAPE.swell) / (1 + SHAPE.swell * a)) -
     t * SHAPE.spin +
     (strand * TAU) / 3
-  const braided = radius * (Math.sin(twist) + band(twist, jitter, edge, u, drift))
+  const braided = radius * Math.sin(band(twist, jitter, edge, u, drift))
   const offset = current + (braided - current) * smoothstep(joins - SHAPE.join, joins, u)
   return [x + nx * offset, y + ny * offset]
 }

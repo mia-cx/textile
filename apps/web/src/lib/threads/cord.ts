@@ -337,8 +337,7 @@ export function place(cord: Cord, i: number, k: number, t: number) {
   const th = cordThread(i)
   const loose = smoothstep(th.leave, th.leave + LOOSEN, open)
   const twist = (s / (SHAPE.pitch * cord.radius)) * TAU - t * SHAPE.spin + (th.strand * TAU) / 3
-  const braided =
-    cord.radius * (Math.sin(twist) + band(twist, th.jitter, th.edge, s / DRIFT_SPAN, th.drift))
+  const braided = cord.radius * Math.sin(band(twist, th.jitter, th.edge, s / DRIFT_SPAN, th.drift))
   const sway =
     th.path === 0
       ? width *
