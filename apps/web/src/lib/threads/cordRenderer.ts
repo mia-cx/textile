@@ -2,6 +2,7 @@ import {
   CORD_THREADS,
   type Cord,
   cordThread,
+  cordWarmth,
   MAX_COPY,
   MAX_PEELS,
   PEEL_THREADS,
@@ -105,12 +106,16 @@ interface Piece {
   readonly top: number
   readonly bottom: number
   readonly path: Path2D
-  readonly style: string
+  readonly style: CanvasGradient
 }
 
+/** Samples between the colour stops along a piece: close enough to follow the gradient's turns smoothly. */
+const STILL_STOP = 8
+
 /**
- * The fallback without a GPU: the same cord as canvas 2D strokes, each thread one colour, still. It lays its strokes
- * out once per layout, in short pieces, and as the page scrolls strokes only the pieces on screen.
+ * The fallback without a GPU: the same cord as canvas 2D strokes, still, each thread turning violet to amber along it
+ * as the GPU's do. It lays its strokes out once per layout, in short pieces, each a gradient along its chord, and as
+ * the page scrolls strokes only the pieces on screen.
  */
 export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
   const context = canvas.getContext('2d')
@@ -123,6 +128,11 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
 
   const layOut = (laid: Cord, palette: Palette, time: number) => {
     const [violet, amber] = palette.threads
+    const blend = (w: number): RGB => [
+      violet[0] + (amber[0] - violet[0]) * w,
+      violet[1] + (amber[1] - violet[1]) * w,
+      violet[2] + (amber[2] - violet[2]) * w,
+    ]
     const peels = Math.min(laid.paths.length - 1, MAX_PEELS)
     const threads = [
       ...Array.from({ length: Math.ceil(CORD_THREADS / STILL_EVERY) }, (_, n) => n * STILL_EVERY),
@@ -132,25 +142,31 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
       const th = cordThread(i)
       const span = laid.paths[th.path]
       if (!span || span.count < 2) return []
-      const warm = th.strand / 3 + hash(i + 4.4) * 0.2 >= 0.5
-      const lead = th.lead && (laid.data[(span.first * TEXELS + 2) * 4 + 3] ?? 0) > 0
-      const style = css(
-        warm ? amber : violet,
-        Math.min(
-          1,
-          0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2)) * (lead ? SHAPE.traced : 1),
-        ),
-      )
-      const points = Array.from(
-        { length: span.count },
-        (_, k) => place(laid, i, span.first + k, time, th).point,
-      )
-      // Neighbouring pieces share their end point, so the thread runs on unbroken.
+      const own = 0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2))
+      const points = Array.from({ length: span.count }, (_, k) => {
+        const { warmth, leads } = cordWarmth(laid, i, span.first + k, time, th)
+        return {
+          at: place(laid, i, span.first + k, time, th).point,
+          colour: css(blend(warmth), Math.min(1, own * (leads ? SHAPE.traced : 1))),
+        }
+      })
+      // Neighbouring pieces share their end point, so the thread runs on unbroken. Each piece's colour runs along its
+      // chord, with a stop every few samples where that sample falls on it.
       return Array.from({ length: Math.ceil((points.length - 1) / STILL_PIECE) }, (_, n) => {
         const run = points.slice(n * STILL_PIECE, (n + 1) * STILL_PIECE + 1)
+        const [x0, y0] = run[0]?.at ?? [0, 0]
+        const [x1, y1] = run.at(-1)?.at ?? [0, 0]
+        const length = (x1 - x0) ** 2 + (y1 - y0) ** 2 || 1
+        const style = context.createLinearGradient(x0, y0, x1, y1)
         const path = new Path2D()
-        for (const [k, [x, y]] of run.entries()) k === 0 ? path.moveTo(x, y) : path.lineTo(x, y)
-        const heights = run.map(([, y]) => y)
+        for (const [k, { at, colour }] of run.entries()) {
+          const [x, y] = at
+          k === 0 ? path.moveTo(x, y) : path.lineTo(x, y)
+          if (k % STILL_STOP !== 0 && k !== run.length - 1) continue
+          const along = ((x - x0) * (x1 - x0) + (y - y0) * (y1 - y0)) / length
+          style.addColorStop(Math.min(1, Math.max(0, along)), colour)
+        }
+        const heights = run.map(({ at }) => at[1])
         return { top: Math.min(...heights), bottom: Math.max(...heights), path, style }
       })
     })

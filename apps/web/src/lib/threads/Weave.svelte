@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount, untrack } from 'svelte'
+import { advance, STILL_TIME } from './clock'
 import { type Box, type Cord, carry, NO_SEAM, type Stop, weave } from './cord'
 import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
 import type { Seam } from './geometry'
@@ -39,9 +40,6 @@ const MARGIN = 0.15
 const TIP = 0.75
 /** Device pixels per CSS pixel, at most, as the hero's. */
 const MAX_DPR = 2
-/** The moment reduced motion and the 2D fallback show, and the longest step between frames, as the hero's. */
-const STILL_TIME = 12
-const MAX_STEP = 0.1
 /**
  * How far down the page the cord's tip is when it is simply drawn: far past any page, and finite, because the shaders
  * fade the cord in the span above its tip.
@@ -75,7 +73,6 @@ onMount(() => {
   let visible = false
   let frame = 0
   let time = STILL_TIME
-  let last = 0
   let destroyed = false
   /** Whether the renderer holds the current cord: a new layout waits to upload until the cord next draws. */
   let loaded = false
@@ -119,8 +116,8 @@ onMount(() => {
   const tick = (now: number) => {
     frame = 0
     if (!live()) return rest()
-    if (animates()) time += Math.min((now - last) / 1000, MAX_STEP)
-    last = now
+    // The hero's clock, so the cord's strands stay in step with the hero's they carry on.
+    if (animates()) time = advance(now)
     draw()
     if (animates()) frame = requestAnimationFrame(tick)
   }
@@ -128,7 +125,6 @@ onMount(() => {
   const wake = () => {
     if (frame !== 0) return
     if (!live()) return rest()
-    last = performance.now()
     frame = requestAnimationFrame(tick)
   }
 

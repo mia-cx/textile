@@ -1,14 +1,18 @@
 import {
   band,
+  breath,
   fibre,
   hash,
+  hueOf,
   isTraced,
   laneOf,
   type Point,
   ribbonOf,
+  ribbonPick,
   type Seam,
   SHAPE,
   strandOf,
+  warmthAt,
 } from './geometry'
 
 /**
@@ -84,6 +88,11 @@ export const MAX_COPY = 8
 export const DRIFT_SPAN = 1300
 /** How many of a peeling strand's fibres, along its outer edge, carry the lead on where the cord comes apart. */
 export const PEEL_LEAD = 3
+/**
+ * How far apart, in gradient cycles, a loose strand's ribbons run: a little, so each strand stays one colour run as it
+ * parts and its fibres vary within it.
+ */
+export const LOOSE_HUE = 0.15
 /** The strand the lead runs in: its lane's, as the hero gathers it. */
 const LEAD_STRAND = strandOf(SHAPE.traceLane)
 
@@ -478,4 +487,24 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
     y + ny * braided * held + ay * spread * loose,
   ]
   return { point, loose, twist, s }
+}
+
+/**
+ * How warm thread `i` is at its path's sample `k` at time `t`, 0 violet to 1 amber, and whether its path carries the
+ * lead there. Mirrors the colour in `cordWgsl`, without the braid's depth shading, which the 2D fallback leaves out as
+ * the hero's does (see `warmth` in geometry.ts).
+ */
+export function cordWarmth(cord: Cord, i: number, k: number, t: number, th = cordThread(i)) {
+  const o = k * TEXELS * 4
+  const s = cord.data[o + 4] ?? 0
+  const loose = cord.data[o + 5] ?? 0
+  const hue = cord.data[o + 7] ?? 0
+  const leads = (cord.data[o + 11] ?? 0) > 0
+  const pick = th.lead || hash(i + 9.7) < SHAPE.coherence ? ribbonPick(th.ribbon) : hash(i + 4.4)
+  const breathing = breath(th.strand, s / DRIFT_SPAN + cord.seam.drift, t)
+  const own = th.strand / 3 + LOOSE_HUE * (pick - 0.5) * loose
+  return {
+    warmth: warmthAt(hueOf(0, 0, own, t, breathing) + hue + cord.seam.hue),
+    leads: th.lead && leads,
+  }
 }

@@ -456,7 +456,7 @@ export function position(field: Field, i: number, u: number, t: number): Point {
 /**
  * A ribbon's gradient phase: steps of the golden ratio, so neighbouring ribbons differ. Mirrors `pick` in the shaders.
  */
-const ribbonPick = (ribbon: number) => {
+export const ribbonPick = (ribbon: number) => {
   const x = ribbon * 0.618034 + SHAPE.hue
   return x - Math.floor(x)
 }

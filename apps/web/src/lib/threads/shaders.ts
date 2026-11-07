@@ -1,4 +1,13 @@
-import { CORD_THREADS, DRIFT_SPAN, MAX_COPY, PEEL_LEAD, PEEL_THREADS, ROW, TEXELS } from './cord'
+import {
+  CORD_THREADS,
+  DRIFT_SPAN,
+  LOOSE_HUE,
+  MAX_COPY,
+  PEEL_LEAD,
+  PEEL_THREADS,
+  ROW,
+  TEXELS,
+} from './cord'
 import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
 
 /**
@@ -846,9 +855,7 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     // loose: early, so none of them line up in rows across the parting strands.
     declare('PULSE_SPREAD', float(8)),
     declare('COPY_LIGHT', float(0.2)),
-    // How far apart, in gradient cycles, a loose strand's ribbons run: a little, so each strand stays one colour run
-    // as it parts and its fibres vary within it.
-    declare('LOOSE_HUE', float(0.15)),
+    declare('LOOSE_HUE', float(LOOSE_HUE)),
     // How many of a peeling strand's fibres, along its outer edge, carry the lead on when it peels from the cord.
     declare('PEEL_LEAD', float(PEEL_LEAD)),
   ].join('\n')

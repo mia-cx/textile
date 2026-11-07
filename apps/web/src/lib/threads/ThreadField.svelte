@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte'
+import { advance, STILL_TIME } from './clock'
 import { type Field, position } from './geometry'
 import { hex, type Palette, type Renderer, type RGB, still, webgl2, webgpu } from './renderer'
 
@@ -32,10 +33,6 @@ let kind = $state<Renderer['kind']>()
 
 /** Device pixels per CSS pixel, at most: finer than this costs fill rate without looking finer. */
 const MAX_DPR = 2
-/** The moment reduced motion and the 2D fallback show: the current looks settled there. */
-const STILL_TIME = 12
-/** The longest step between frames, in seconds, so a stalled tab doesn't jump the current forward. */
-const MAX_STEP = 0.1
 /** How many lost GPU devices the field replaces before it stops asking for WebGPU. */
 const MAX_GPU_RECOVERIES = 1
 
@@ -52,7 +49,6 @@ onMount(() => {
   let visible = false
   let frame = 0
   let time = STILL_TIME
-  let last = 0
   let destroyed = false
   /** The canvas no longer shows the current frame: it was resized, or the still frame changed. */
   let dirty = false
@@ -78,14 +74,12 @@ onMount(() => {
   const tick = (now: number) => {
     frame = 0
     if (!visible || document.hidden || !animates()) return
-    time += Math.min((now - last) / 1000, MAX_STEP)
-    last = now
+    time = advance(now)
     draw()
     frame = requestAnimationFrame(tick)
   }
   const wake = () => {
     if (frame !== 0 || !visible || document.hidden || !animates()) return
-    last = performance.now()
     frame = requestAnimationFrame(tick)
   }
   /** Brings the canvas up to date, but only while someone can see it; off screen or hidden, it waits. */
