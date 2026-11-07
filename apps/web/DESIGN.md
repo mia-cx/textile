@@ -84,8 +84,7 @@ for event labels, the 2D fallback, the section strands, and the social card.
   outermost last. The hero measures it from its layout, again when webfonts load: threads behind the headline,
   subline, and buttons stay loose, the braid forms in the open gap between the copy's right edge and the window's left
   edge, at every width, and it is whole only for the last tenth of that gap. Each thread eases in over a share of the
-  gap, with no corner; at its tightest it turns 1.5 to 2.5 times tighter than the plait itself, most in the narrowest
-  gaps. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one
+  gap, with no corner. Its strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one
   helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing has room, twisting tighter as it goes
   to meet the target at its thinnest. The hero's cord stops just short of the window; the window drops its black
   shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping can't cut, takes the

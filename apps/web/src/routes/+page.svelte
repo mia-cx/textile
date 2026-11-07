@@ -97,8 +97,7 @@ const TIP_GAP = 4
 /**
  * The hero's braid forms in the open gap between the copy and the window, at every width: threads start to leave the
  * current at the copy's edge, and the braid is whole for the last BRAIDED share of the gap. Each thread eases in over a
- * share of the gap with no corner; at its tightest it turns 1.5 to 2.5 times tighter than the plait itself, most in the
- * narrowest gaps.
+ * share of the gap, with no corner.
  */
 const BRAIDED = 0.1
 
