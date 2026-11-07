@@ -146,83 +146,79 @@ const fence = (language: string, code: string) => `\`\`\`${language}\n${code}\n\
  */
 export const landingMarkdown = (origin: string) => `# Discord bots for AI agents
 
-Your agent writes the code. Textile keeps the bot online.
+Host your Discord bot and manage it over MCP.
 
-Textile hosts Discord bots for AI agents. Connect your agent over MCP to call Discord APIs, publish discord.js
-workflows, run scripts, and join voice channels. You supply the bot token and sign in with Discord.
-Textile runs no AI models; your agent supplies those.
+Textile is a Discord MCP server with bot hosting. You supply a bot token and sign in with Discord.
+Your agent can call Discord APIs and publish discord.js workflows that run while the agent is offline.
+Textile also supports one-off scripts and voice, using your own speech model.
 
 [Sign in with Discord](${origin}/login) · [Read the docs](${origin}/docs.md)
 
-## Run discord.js on Textile
+## Bot hosting
 
-Your agent publishes a discord.js workflow over MCP, then enables it. Textile runs it even when your agent disconnects.
-This example posts weekday standup prompts, saves slash command answers, and accepts updates from an HTTP caller:
+Your bot can keep answering commands after you close your agent. Publish and enable a discord.js workflow through MCP.
+This example runs a weekday standup. It posts a reminder and saves what each person shipped:
 
 ${fence('ts', WORKFLOW)}
 
-Publish with \`${CALLS[0].tool}\` to store a revision. The result lists its triggers and grants:
+Call \`${CALLS[0].tool}\` with the source and grants. This stores a revision and returns:
 
 ${fence('json', CALLS[0].result)}
 
-Enable it with \`${CALLS[1].tool}\`. Enabled workflows keep the bot online without agent calls.
-When publishing, your agent grants the workflow access to specific Discord operations and external hosts.
-Each run starts in a fresh sandbox.
-Textile checks calls against those grants and keeps the bot token outside the sandbox.
-[Read about workflows](${origin}/docs/workflows.md) for supported events and runtime limits.
+Call \`${CALLS[1].tool}\` to start it. Enabled workflows keep the bot online without agent calls.
+[Read about workflows](${origin}/docs/workflows.md) for grants, supported events and runtime limits.
 
-## Reply to slash commands
+## Slash commands
 
-Register \`/standup\` with a required \`shipped\` string option before using this workflow.
-Your agent can register it through \`discord_api_admin\`; publishing a workflow does not register commands.
-When someone runs \`/standup shipped:the onboarding flow\`, the workflow saves their answer in its key-value store:
+The \`/standup\` command saves your update and shows the previous one:
 
 > ${standupReply('the onboarding flow', 'dark mode for the docs')}
 
-## Post on a schedule
+Register the command through \`discord_api_admin\` with a required \`shipped\` string option before using it.
+Publishing the workflow does not register the command.
 
-Use a UTC cron expression for recurring posts. \`${CRON}\` schedules this prompt for 9:00 each weekday:
+## Scheduled messages
+
+Set a cron schedule for reminders or regular updates. This one posts in #standup at 9:00 UTC on weekdays:
 
 > ${STANDUP_POST}
 
-The scheduler dispatches each tick at most once. After downtime, it selects the latest missed tick per schedule.
-Earlier missed ticks are skipped. A crash between recording a tick and starting it can lose that run.
+The cron expression is \`${CRON}\`. After downtime, the scheduler selects the latest missed tick per schedule and skips earlier ticks.
+It dispatches each tick at most once. A crash between recording a tick and starting it can lose that run.
 
-## Post to Discord from a webhook
+## Webhook updates
 
-Give your workflow an HTTP handler to accept updates from another service.
-This example serves \`${ROUTE}\` and checks a shared secret before posting to Discord.
-Replace the example IDs and secret with your own. Routes are public; your handler must authenticate the caller.
-A request without the secret gets \`401 unauthorized\` and posts nothing.
+Post a deploy update to Discord from your CI job. The route is public, so your handler must check the sender.
+This handler checks a shared secret and returns \`401 unauthorized\` if it is missing or wrong.
+Replace the example IDs and secret with your own:
 
 ${fence('http', `POST ${ROUTE}\nAuthorization: Bearer ${SECRET}\nContent-Type: application/json\n\n{ "text": "Deployed v2.4.1" }`)}
 
-## Many Discord calls, one tool call
+## One-off scripts
 
-Send a batch of messages with \`discord_script_run\`.
-Your agent supplies discord.js code and its grants, and Textile runs it once:
+Use \`discord_script_run\` to send several messages in one MCP call.
+It accepts discord.js code, including embeds like these. Pass the source and its grants with the tool call:
 
 ${fence('ts', SCRIPT)}
 
-## Connect your agent to voice
+## Voice chat
 
-Let your agent speak in a Discord voice channel. It can receive each speaker's audio separately, in Opus or PCM16.
-Your agent supplies the speech model. Call \`discord_voice_join\` and connect to the returned WebSocket path.
-Set \`receive: true\` to request incoming audio, tagged with each speaker's Discord ID.
-The bot posts an opt-out notice before relaying voice:
+Connect your speech model to Discord over a WebSocket. Receive each speaker's audio separately in Opus or PCM16.
+Call \`discord_voice_join\` and connect to the returned WebSocket path. Send audio over the socket to speak through the bot.
+Set \`receive: true\` to hear the channel. The bot posts this notice before relaying audio:
 
 > ${VOICE_NOTICE.notice}
 >
 > **${VOICE_NOTICE.optOutHere}** · **${VOICE_NOTICE.optOutAll}**
 
-People can opt out of this bot in this server, or every Textile bot. Textile drops their audio before decryption.
+Anyone in the channel can opt out of this bot in this server, or all Textile bots.
 Textile doesn't store audio. Receiving is best-effort because Discord doesn't support bots receiving voice.
 [Read about voice](${origin}/docs/voice.md).
 
-The interactive examples on the website are simulations. They send nothing to Discord and do not change voice preferences.
+The website demos send nothing to Discord. Their buttons only change the demos.
 
-## Check your alpha access
+## Try Textile
 
-The alpha is invite-only. [Sign in with Discord](${origin}/login) to check whether you have access.
+Textile is in closed alpha. [Sign in with Discord](${origin}/login) to check your access.
 [See every MCP tool](${origin}/docs/tools.md).
 `

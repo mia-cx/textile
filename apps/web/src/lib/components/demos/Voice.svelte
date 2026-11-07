@@ -124,7 +124,7 @@ async function undo() {
           </div>
         </div>
       </Window>
-      <p class="note">Try it here. This demo leaves your Discord voice preferences unchanged.</p>
+      <p class="note">These buttons only change the demo.</p>
     </div>
   </div>
 </div>

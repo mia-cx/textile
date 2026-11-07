@@ -57,7 +57,7 @@ function send(withSecret: boolean) {
     </div>
   </div>
 </div>
-<p class="note">Try it here. This demo sends no HTTP requests.</p>
+<p class="note">This demo doesn't send HTTP requests.</p>
 
 <style>
   .frame {

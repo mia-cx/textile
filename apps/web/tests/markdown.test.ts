@@ -90,12 +90,12 @@ describe('Markdown for agents', () => {
     expect(markdown).toMatch(/^# Discord bots for AI agents\n/)
     // The landing page's story, written for reading: each part the page shows, with the workflow it runs.
     for (const part of [
-      '## Run discord.js on Textile',
-      '## Reply to slash commands',
-      '## Post on a schedule',
-      '## Post to Discord from a webhook',
-      '## Many Discord calls, one tool call',
-      '## Connect your agent to voice',
+      '## Bot hosting',
+      '## Slash commands',
+      '## Scheduled messages',
+      '## Webhook updates',
+      '## One-off scripts',
+      '## Voice chat',
     ])
       expect(markdown).toContain(part)
     expect(markdown).toContain(WORKFLOW)

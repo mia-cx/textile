@@ -19,9 +19,9 @@ export const COMMUNITY = {
 export const PAGES = [
   {
     path: '/',
-    title: 'Textile: Discord bots for AI agents',
+    title: 'Discord bot hosting for AI agents | Textile',
     description:
-      'Host a Discord bot for your AI agent. Use MCP to run discord.js workflows, schedule messages, and connect to voice. Invite-only alpha.',
+      'Host a Discord bot and manage it over MCP. Run discord.js automations while your agent is offline. Closed alpha.',
   },
   {
     path: '/terms',
