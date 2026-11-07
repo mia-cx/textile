@@ -1,0 +1,510 @@
+import {
+  band,
+  breath,
+  fibre,
+  hash,
+  hueOf,
+  isTraced,
+  laneOf,
+  type Point,
+  ribbonOf,
+  ribbonPick,
+  type Seam,
+  SHAPE,
+  strandOf,
+  warmthAt,
+} from './geometry'
+
+/**
+ * The cord that leaves the hero's window and carries the reader down the page: a braid that gathers in the gap above
+ * each section, comes apart behind the section into loose ribbons of fibre, as the hero's funnel does run in reverse,
+ * and gathers again in the gap below on its way to the next. Strands peel off it into demos, and it ends where a
+ * section's strands all peel off.
+ *
+ * Plain geometry in the page's CSS pixels: `weave` lays the cord out once per resize as samples along its paths, which
+ * the GPU reads from a float texture (see `cordWgsl` in shaders.ts); `place` runs the same math on the CPU for the 2D
+ * fallback.
+ */
+
+export interface Box {
+  readonly left: number
+  readonly top: number
+  readonly right: number
+  readonly bottom: number
+}
+
+/** One section the cord passes, as the page measures it, in the weave's pixels. */
+export interface Stop {
+  /** The event that runs the section, named on a knot where the cord gathers above it. */
+  readonly label: string
+  /** Where the cord gathers into a braid in the gap above the section, before it comes apart behind it. */
+  readonly pinch: Point
+  /** The section's content: its strands spread across it, behind the panels. */
+  readonly box: Box
+  /** The section's prose, which strands passing behind dim under. */
+  readonly copy: Box
+  /** Where strands peel off into the demo: a panel's right edge. Without one, the cord itself comes apart at `enter`. */
+  readonly split: Point | undefined
+  /** Where it enters the demo, to come apart there. */
+  readonly enter: Point
+  /** The points the peeled strands reach, each level with what it enters. */
+  readonly ends: ReadonlyArray<Point>
+}
+
+/**
+ * About how far a knot's name reaches beside it, in px, as Weave.svelte sets it: 1.25rem from the knot, about 9px a
+ * character of its 15px monospace, and room to spare before the page's edge.
+ */
+const labelReach = (text: string) => 20 + text.length * 9 + 16
+
+/** The side a knot's name sits on: `prefer`, unless the page, `width` wide, has no room for it there. */
+const labelSide = (text: string, x: number, prefer: 'left' | 'right', width: number) => {
+  if (prefer === 'left' && x < labelReach(text)) return 'right'
+  if (prefer === 'right' && x + labelReach(text) > width) return 'left'
+  return prefer
+}
+
+/** Pixels between samples along a path: fine enough that the braid's twists stay smooth. */
+const STEP = 4
+/**
+ * The share of a section's width its loose strands spread across, at most, and the tightest turn, in px, a strand may
+ * make as it swells apart and gathers: the strands spread around the cord, as far as that turn allows.
+ */
+const SPREAD = 0.92
+const MIN_TURN = 180
+/** Texels per sample, and samples per row of the texture: rows stay within every GPU's smallest texture limit. */
+export const TEXELS = 3
+export const ROW = 682
+/** Threads in the cord, threads in each strand that peels off, and the most strands that can peel. */
+export const CORD_THREADS = 180
+export const PEEL_THREADS = 10
+export const MAX_PEELS = 6
+/** The most sections whose prose dims the strands behind it. */
+export const MAX_COPY = 8
+/**
+ * Pixels of path per unit along a fibre, for its drift, its gradient, and its breath: about the hero's length, so the
+ * cord's fibres drift and turn colour as its do.
+ */
+export const DRIFT_SPAN = 1300
+/** How many of a peeling strand's fibres, along its outer edge, carry the lead on where the cord comes apart. */
+export const PEEL_LEAD = 3
+/**
+ * How far apart, in gradient cycles, a loose strand's ribbons run: a little, so each strand stays one colour run as it
+ * parts and its fibres vary within it.
+ */
+export const LOOSE_HUE = 0.15
+/** The strand the lead runs in: its lane's, as the hero gathers it. */
+const LEAD_STRAND = strandOf(SHAPE.traceLane)
+
+/** Where the cord's strands stand where it leaves the window: as the hero's do where it ends, or from scratch. */
+export const NO_SEAM: Seam = { twist: 0, hue: 0, drift: 0 }
+
+/**
+ * The hero's `seam` carried `hidden` pixels on, behind the window, to where the cord leaves it with braid `radius`: its
+ * strands keep turning, changing colour, and drifting at the braid's rates, so each comes out as itself.
+ */
+export const carry = (seam: Seam, hidden: number, radius: number): Seam => ({
+  twist: seam.twist + (hidden / (SHAPE.pitch * radius)) * Math.PI * 2,
+  hue: seam.hue + (hidden / DRIFT_SPAN) * SHAPE.braidGradient,
+  drift: seam.drift + hidden / DRIFT_SPAN,
+})
+
+/** A path's samples in the texture: the first, and how many. Path 0 is the cord; the rest are strands peeling off. */
+export interface Span {
+  readonly first: number
+  readonly count: number
+}
+
+export interface Cord {
+  /** Every path's samples, `TEXELS` RGBA texels each: see `sample`. */
+  readonly data: Float32Array
+  readonly rows: number
+  readonly paths: ReadonlyArray<Span>
+  /** The cord's samples' heights, rising: the part on screen is a binary search away. */
+  readonly heights: Float32Array
+  readonly copy: ReadonlyArray<Box>
+  /** Where each section's name sits: on the knot where the cord gathers, on the side it doesn't come in from. */
+  readonly knots: ReadonlyArray<{ text: string; x: number; y: number; side: 'left' | 'right' }>
+  readonly radius: number
+  /** Where its strands stand where it leaves the window. */
+  readonly seam: Seam
+  /** How far up and down the page anything of the cord reaches, its braid and its peels included. */
+  readonly extent: { readonly top: number; readonly bottom: number }
+}
+
+/**
+ * One sample: where the spine is and its unit normal; how far along the path it is (`s`), how far the strands have come
+ * apart there (`open`, 0 braided to 1 loose), and the half-width they spread across (`width`), along `axis`; and how
+ * bright the strands are there (`light`). Packed with the hue its strands have reached there and whether its path
+ * carries the lead: see `pack`.
+ */
+interface Sample {
+  readonly x: number
+  readonly y: number
+  readonly nx: number
+  readonly ny: number
+  readonly s: number
+  readonly open: number
+  readonly width: number
+  readonly axis: Point
+  readonly light: number
+}
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * Eases from 0 to 1 with no slope and no curvature at either end, so curves joined end to end turn without a kink.
+ */
+const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
+
+/** Points from `a` down to `b`, leaving and arriving straight down, easing across between without a kink. */
+function drop(a: Point, b: Point): Point[] {
+  const steps = Math.max(1, Math.ceil((b[1] - a[1]) / STEP))
+  return Array.from({ length: steps }, (_, k): Point => {
+    const t = k / steps
+    return [a[0] + (b[0] - a[0]) * smootherstep(t), a[1] + (b[1] - a[1]) * t]
+  })
+}
+
+/**
+ * How far the strands have come apart `t` of the way from a gap to the next (0 to 1): a smooth swell, nothing in the
+ * gaps and all of it midway, with no slope and no corner anywhere, so they fan out and gather like a current. Behind
+ * the last section, which no gap closes, they swell to its foot.
+ */
+const swell = (t: number, closes: boolean) => Math.sin((Math.PI * t) / (closes ? 1 : 2)) ** 2
+
+/** Dense points along the cubic from `a` to `d` through controls `b` and `c`. */
+function cubic(a: Point, b: Point, c: Point, d: Point): Point[] {
+  const steps = Math.max(8, Math.ceil(Math.hypot(d[0] - a[0], d[1] - a[1]) / STEP))
+  return Array.from({ length: steps + 1 }, (_, k): Point => {
+    const t = k / steps
+    const u = 1 - t
+    const at = (axis: 0 | 1) =>
+      u ** 3 * a[axis] + 3 * u * u * t * b[axis] + 3 * u * t * t * c[axis] + t ** 3 * d[axis]
+    return [at(0), at(1)]
+  })
+}
+
+/**
+ * The line a strand follows when it peels off at `from` into `to`: a smooth curve that leaves heading `lead` (a unit
+ * vector: rightward from a panel's edge, downward where the cord comes apart) and arrives level.
+ */
+function strandLine(from: Point, to: Point, lead: Point): Point[] {
+  const reach = Math.abs(to[0] - from[0]) * 0.55
+  return cubic(
+    from,
+    [from[0] + lead[0] * reach, from[1] + lead[1] * reach],
+    [to[0] - reach, to[1]],
+    to,
+  )
+}
+
+/** Normals and distances along `points`, from their neighbours. */
+function frame(points: ReadonlyArray<Point>) {
+  let s = 0
+  return points.map(([x, y], i) => {
+    const previous = points[Math.max(0, i - 1)] as Point
+    const next = points[Math.min(points.length - 1, i + 1)] as Point
+    const tx = next[0] - previous[0]
+    const ty = next[1] - previous[1]
+    const length = Math.hypot(tx, ty) || 1
+    if (i > 0) s += Math.hypot(x - previous[0], y - previous[1])
+    return { x, y, nx: -ty / length, ny: tx / length, s }
+  })
+}
+
+/**
+ * The cord from `start` down through each stop in turn, with `radius` its braid's radius: braided down to the first
+ * gap, then behind each section coming apart across it and gathering again in the next gap, until a stop whose strands
+ * all peel off, where it ends. Strands peel off at each `split` into the ends to its right. `width` is the page's: each
+ * knot's name sits on the side the cord doesn't come in from, unless the page has no room for it there. Its strands
+ * start out as `seam` says, carrying on the hero's.
+ */
+export function weave(
+  start: Point,
+  stops: ReadonlyArray<Stop>,
+  radius: number,
+  width: number,
+  seam: Seam = NO_SEAM,
+): Cord {
+  const spine: Point[] = []
+  /** For each spine point, the section it comes apart behind, between the gaps `from` and `to`. */
+  const spans: Array<{ box: Box; from: number; to: number; closes: boolean } | undefined> = []
+  /** Strands peeling off, and whether each carries the lead on: the lead's strand, where the cord comes apart. */
+  const strands: Array<{ line: Point[]; leads: boolean }> = []
+  const knots: Array<Cord['knots'][number]> = []
+  let at = start
+  let behind: { box: Box; from: number; to: number; closes: boolean } | undefined
+  for (const [k, stop] of stops.entries()) {
+    const points = drop(at, stop.pinch)
+    spine.push(...points)
+    spans.push(...points.map(() => behind))
+    knots.push({
+      text: stop.label,
+      x: stop.pinch[0],
+      y: stop.pinch[1],
+      side: labelSide(
+        stop.label,
+        stop.pinch[0],
+        at[0] > stop.pinch[0] + 1 ? 'left' : 'right',
+        width,
+      ),
+    })
+    at = stop.pinch
+
+    const { split } = stop
+    if (split) {
+      const beside = stop.ends.filter(([x]) => x > split[0])
+      for (const end of beside) strands.push({ line: strandLine(split, end, [1, 0]), leads: false })
+    } else if (stop.ends.length > 0) {
+      // The cord runs braided into the demo and comes apart there into the strands that reach each end. A peel's strand
+      // is its place among all the peels, a third of a turn apart (see `cordThread`).
+      const into = drop(at, stop.enter)
+      spine.push(...into, stop.enter)
+      spans.push(...into.map(() => undefined), undefined)
+      for (const end of stop.ends)
+        strands.push({
+          line: strandLine(stop.enter, end, [0, 1]),
+          leads: strands.length % 3 === LEAD_STRAND,
+        })
+      behind = undefined
+      break
+    }
+    const next = stops[k + 1]
+    behind = {
+      box: stop.box,
+      from: stop.pinch[1],
+      to: next ? next.pinch[1] : stop.box.bottom,
+      closes: !!next,
+    }
+    if (!next) {
+      // The last section's strands come apart behind it and fade out at its foot.
+      const points = drop(at, [at[0], stop.box.bottom])
+      spine.push(...points, [at[0], stop.box.bottom])
+      spans.push(...points.map(() => behind), behind)
+    }
+  }
+
+  const cord: Sample[] = frame(spine).map((p, i) => {
+    const span = spans[i]
+    if (!span) return { ...p, open: 0, width: 0, axis: [1, 0], light: 1 }
+    const t = Math.min(1, Math.max(0, (p.y - span.from) / (span.to - span.from)))
+    const open = swell(t, span.closes)
+    // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
+    const height = (span.to - span.from) * (span.closes ? 1 : 2)
+    return {
+      ...p,
+      open,
+      width: Math.min(
+        ((span.box.right - span.box.left) / 2) * SPREAD,
+        height ** 2 / (2 * Math.PI ** 2 * MIN_TURN),
+      ),
+      axis: [1, 0],
+      // Behind the last section the strands fade out toward its foot.
+      light: span.closes ? 1 : 1 - open,
+    }
+  })
+  const peeling = strands.slice(0, MAX_PEELS)
+  const peels: Sample[][] = peeling.map(({ line }) => {
+    const points = frame(line)
+    const total = points.at(-1)?.s ?? 1
+    return points.map((p) => ({
+      ...p,
+      open: 1,
+      // Fibres splay apart mid-way and gather again at each end.
+      width: radius * 0.6 * (0.4 + Math.sin((p.s / total) * Math.PI)),
+      axis: [p.nx, p.ny],
+      light: smoothstep(0, 24, p.s),
+    }))
+  })
+
+  // The hue each path's strands have reached at each sample, in gradient cycles: they turn faster where braided. Added
+  // up here, so the shaders read it, rather than multiply a changing rate by the distance, which would sweep the colour
+  // wherever the rate changes. A peel starts at the cord's hue where it leaves it.
+  const hues = (path: ReadonlyArray<Sample>, from: number) => {
+    let hue = from
+    return path.map((p, k) => {
+      const previous = path[k - 1]
+      if (previous)
+        hue +=
+          ((p.s - previous.s) / DRIFT_SPAN) *
+          (SHAPE.gradient + (SHAPE.braidGradient - SHAPE.gradient) * (1 - p.open))
+      return hue
+    })
+  }
+  const cordHues = hues(cord, 0)
+  const hueAt = (y: number) =>
+    cordHues[
+      Math.max(
+        0,
+        cord.findIndex((p) => p.y >= y),
+      )
+    ] ?? 0
+  const all = [
+    { path: cord, hue: cordHues, leads: true },
+    ...peels.map((path, n) => ({
+      path,
+      hue: hues(path, hueAt(path[0]?.y ?? 0)),
+      leads: peeling[n]?.leads ?? false,
+    })),
+  ]
+  const total = all.reduce((sum, { path }) => sum + path.length, 0)
+  const rows = Math.max(1, Math.ceil(total / ROW))
+  const data = new Float32Array(rows * ROW * TEXELS * 4)
+  const paths: Span[] = []
+  let first = 0
+  for (const { path, hue, leads } of all) {
+    for (const [k, p] of path.entries()) {
+      data.set(
+        [
+          p.x,
+          p.y,
+          p.nx,
+          p.ny,
+          p.s,
+          p.open,
+          p.width,
+          hue[k] ?? 0,
+          ...p.axis,
+          p.light,
+          leads ? 1 : 0,
+        ],
+        (first + k) * TEXELS * 4,
+      )
+    }
+    paths.push({ first, count: path.length })
+    first += path.length
+  }
+  return {
+    data,
+    rows,
+    paths,
+    heights: Float32Array.from(cord, (p) => p.y),
+    copy: stops.slice(0, MAX_COPY).map((stop) => stop.copy),
+    knots,
+    radius,
+    seam,
+    extent: {
+      top: Math.min(...all.map(({ path }) => Math.min(...path.map((p) => p.y)))) - margin(radius),
+      bottom:
+        Math.max(...all.map(({ path }) => Math.max(...path.map((p) => p.y)))) + margin(radius),
+    },
+  }
+}
+
+/** How far a strand strays up or down from its path's samples: the braid's radius, and its glow. */
+const margin = (radius: number) => radius * 4 + STEP
+
+/** The cord's samples from `top` to `bottom`, and a little beyond, so its braid and sway reach the edges. */
+export function visible(cord: Cord, top: number, bottom: number): Span {
+  const below = (y: number) => {
+    let lo = 0
+    let hi = cord.heights.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if ((cord.heights[mid] ?? 0) < y) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+  const first = Math.max(0, below(top - margin(cord.radius)) - 1)
+  const last = Math.min(cord.heights.length, below(bottom + margin(cord.radius)) + 1)
+  return { first, count: Math.max(0, last - first) }
+}
+
+const TAU = Math.PI * 2
+
+/**
+ * What makes thread `i` of path `path` itself: as the hero's threads, cord threads travel in ribbons across the
+ * spread and keep their place across their ribbon as their place across their band, so thread `i` here is thread `i`
+ * of the hero, the same fibre in the same strand; a peeled strand's threads spread evenly across it. `lead` is whether
+ * it is one of the lead's fibres, where its path carries the lead. Mirrors `cordThread` in the shaders.
+ */
+export const cordThread = (i: number) => {
+  if (i >= CORD_THREADS) {
+    const j = (i - CORD_THREADS) % PEEL_THREADS
+    const peel = Math.floor((i - CORD_THREADS) / PEEL_THREADS)
+    const across = ((j + 0.5) / PEEL_THREADS) * 2 - 1
+    return {
+      path: 1 + peel,
+      lane: across,
+      strand: peel % 3,
+      phase: 0,
+      ribbon: peel,
+      lead: j >= PEEL_THREADS - PEEL_LEAD,
+      ...fibre(i, across),
+    }
+  }
+  const { ribbon, across } = ribbonOf(i)
+  const { centre, half } = laneOf(i, ribbon)
+  return {
+    path: 0,
+    lane: centre + across * half,
+    strand: strandOf(centre),
+    phase: hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
+    ribbon,
+    lead: isTraced(i),
+    ...fibre(i, across),
+  }
+}
+
+/**
+ * Thread `i` at its path's sample `k` at time `t`: where it is, and how loose it is there (0 braided, 1 loose). Reads
+ * the sample from `cord.data`; `th` is the thread, as `cordThread` makes it, for callers placing many of its points.
+ * Mirrors `place` in `cordWgsl`.
+ */
+export function place(cord: Cord, i: number, k: number, t: number, th = cordThread(i)) {
+  const o = k * TEXELS * 4
+  const d = cord.data
+  const [x = 0, y = 0, nx = 0, ny = 0, s = 0, loose = 0, width = 0, , ax = 0, ay = 0] = d.subarray(
+    o,
+    o + 10,
+  )
+  const twist =
+    (s / (SHAPE.pitch * cord.radius)) * TAU +
+    cord.seam.twist -
+    t * SHAPE.spin +
+    (th.strand * TAU) / 3
+  const braided =
+    cord.radius *
+    band(twist, th.strand, th.jitter, th.edge, s / DRIFT_SPAN + cord.seam.drift, th.drift, 1)
+  const sway =
+    th.path === 0
+      ? width *
+        SHAPE.wave *
+        (Math.sin(s * 0.004 + t * 0.35 + th.phase) * 0.6 +
+          Math.sin(s * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4)
+      : 0
+  const spread = th.lane * width + sway
+  // The braid's swing fades as the strands part, gone once they are two braid radii apart, so a strand coming loose
+  // straightens rather than crimps.
+  const held = (1 - loose) * Math.exp(-(((loose * width) / cord.radius) ** 2))
+  const point: Point = [
+    x + nx * braided * held + ax * spread * loose,
+    y + ny * braided * held + ay * spread * loose,
+  ]
+  return { point, loose, twist, s }
+}
+
+/**
+ * How warm thread `i` is at its path's sample `k` at time `t`, 0 violet to 1 amber, and whether its path carries the
+ * lead there. Mirrors the colour in `cordWgsl`, without the braid's depth shading, which the 2D fallback leaves out as
+ * the hero's does (see `warmth` in geometry.ts).
+ */
+export function cordWarmth(cord: Cord, i: number, k: number, t: number, th = cordThread(i)) {
+  const o = k * TEXELS * 4
+  const s = cord.data[o + 4] ?? 0
+  const loose = cord.data[o + 5] ?? 0
+  const hue = cord.data[o + 7] ?? 0
+  const leads = (cord.data[o + 11] ?? 0) > 0
+  const pick = th.lead || hash(i + 9.7) < SHAPE.coherence ? ribbonPick(th.ribbon) : hash(i + 4.4)
+  const breathing = breath(th.strand, s / DRIFT_SPAN + cord.seam.drift, t)
+  const own = th.strand / 3 + LOOSE_HUE * (pick - 0.5) * loose
+  return {
+    warmth: warmthAt(hueOf(0, 0, own, t, breathing) + hue + cord.seam.hue),
+    leads: th.lead && leads,
+  }
+}

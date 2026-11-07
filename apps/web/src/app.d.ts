@@ -1,4 +1,5 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
+/// <reference types="@webgpu/types" />
 import type { Session } from '$lib/server/session'
 
 declare global {

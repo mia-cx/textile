@@ -1,32 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <title>Textile</title>
-  <style>
-    .cloth { fill: #f5f0e6 }
-    .warp { fill: #2c3b94 }
-    .weft { fill: #c4472e }
-    @media (prefers-color-scheme: dark) {
-      .cloth { fill: #141a3e }
-      .warp { fill: #aab8ff }
-      .weft { fill: #e8735a }
-    }
-  </style>
-  <rect class="cloth" width="32" height="32" rx="7"/>
-  <!-- Plain weave: three weft rows and three warp columns, each passing over and under in turn. -->
-  <g class="weft">
-    <rect x="3" y="4" width="26" height="7.3"/>
-    <rect x="3" y="12.35" width="26" height="7.3"/>
-    <rect x="3" y="20.7" width="26" height="7.3"/>
-  </g>
-  <g class="warp">
-    <rect x="4" y="3" width="7.3" height="26"/>
-    <rect x="12.35" y="3" width="7.3" height="26"/>
-    <rect x="20.7" y="3" width="7.3" height="26"/>
-  </g>
-  <g class="weft">
-    <rect x="4" y="4" width="7.3" height="7.3"/>
-    <rect x="20.7" y="4" width="7.3" height="7.3"/>
-    <rect x="12.35" y="12.35" width="7.3" height="7.3"/>
-    <rect x="4" y="20.7" width="7.3" height="7.3"/>
-    <rect x="20.7" y="20.7" width="7.3" height="7.3"/>
+  <rect width="32" height="32" rx="7" fill="#07060c"/>
+  <!-- Three strands braided into one: violet, amber, and silver, as in the site's thread field. -->
+  <g fill="none" stroke-width="2.6" stroke-linecap="round">
+    <path stroke="#d4d7ea" d="M5 16c3.7 0 3.7-6 7.3-6s3.7 12 7.4 12S23.3 16 27 16"/>
+    <path stroke="#ffad5a" d="M5 16c3.7 0 3.7 6 7.3 6s3.7-12 7.4-12S23.3 16 27 16"/>
+    <path stroke="#9a6bff" d="M5 16h22"/>
   </g>
 </svg>

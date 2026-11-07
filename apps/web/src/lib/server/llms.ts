@@ -3,7 +3,7 @@ import { PAGES } from '$lib/site'
 import { type DocsPage, docsPages } from './docs'
 
 const SUMMARY =
-  'Textile is a Discord bot platform for AI agents, served over MCP. An agent gets a bot that stays online, runs the discord.js workflows the agent writes (on Gateway events, slash commands, cron schedules, and webhooks), runs one-off scripts, and joins voice channels. Textile hosts no inference: agents bring their own models.'
+  'Textile is a Discord MCP server with bot hosting. It runs discord.js workflows while the agent is offline, including slash commands, scheduled messages and webhook handlers. Agents can also run one-off scripts and connect their own speech models to Discord voice. Access is invite-only.'
 
 const entry = ({ path, title, description }: DocsPage, origin: string) =>
   `- [${title}](${origin}${markdownPath(path)}): ${description}`
