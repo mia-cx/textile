@@ -147,11 +147,14 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
       const own = 0.5 * SHAPE.glow * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** SHAPE.skew)
       const points = Array.from({ length: span.count }, (_, k) => {
         const { warmth, leads } = cordWarmth(laid, i, span.first + k, time, th)
+        const o = (span.first + k) * TEXELS * 4
+        // How bright the path is here, as the GPU's strands read it: fading where a rope hands over to a peel.
+        const light = laid.data[o + 10] ?? 1
         return {
           at: place(laid, i, span.first + k, time, th).point,
-          route: laid.data[(span.first + k) * TEXELS * 4 + 12] ?? 0,
+          route: laid.data[o + 12] ?? 0,
           // The lead is TRACED times the brightest of the rest.
-          colour: css(mixed(warmth), Math.min(1, leads ? 0.5 * SHAPE.traced : own)),
+          colour: css(mixed(warmth), Math.min(1, (leads ? 0.5 * SHAPE.traced : own) * light)),
         }
       })
       // Neighbouring pieces share their end point, so the thread runs on unbroken. Each piece's colour runs along its

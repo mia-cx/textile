@@ -128,9 +128,13 @@ onMount(() => {
     renderer.clear()
     painted = false
   }
-  /** Whether any of the cord is drawn on the canvas where it is now: above the tip, within the screen and its margin. */
+  /**
+   * Whether any of the cord is drawn on the canvas where it is now: revealed at all, above the tip, within the screen
+   * and its margin. With its tip at the start of its route, none of it is lit, so it draws nothing.
+   */
   const shows = (laid: Cord) => {
     const { top, tip } = view()
+    if (tip <= 0) return false
     const bottom = Math.min(top + innerHeight * (1 + 2 * MARGIN), tipY(laid, tip))
     return top < laid.extent.bottom && bottom > laid.extent.top
   }
