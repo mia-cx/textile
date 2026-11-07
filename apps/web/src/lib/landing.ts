@@ -146,11 +146,11 @@ const fence = (language: string, code: string) => `\`\`\`${language}\n${code}\n\
  */
 export const landingMarkdown = (origin: string) => `# Discord bots for AI agents
 
-Host your Discord bot and manage it over MCP.
+Host your Discord bot and manage it over MCP, with no server to run.
 
 Textile is a Discord MCP server with bot hosting. You supply a bot token and sign in with Discord.
 Your agent can call Discord APIs and publish discord.js workflows that run while the agent is offline.
-Textile also supports one-off scripts and voice, using your own speech model.
+Your agent can also run one-off scripts or connect its own speech model to a voice channel.
 
 [Sign in with Discord](${origin}/login) · [Read the docs](${origin}/docs.md)
 
@@ -183,8 +183,8 @@ Set a cron schedule for reminders or regular updates. This one posts in #standup
 
 > ${STANDUP_POST}
 
-The cron expression is \`${CRON}\`. After downtime, the scheduler selects the latest missed tick per schedule and skips earlier ticks.
-It dispatches each tick at most once. A crash between recording a tick and starting it can lose that run.
+After downtime, Textile tries the most recent missed post and skips older days.
+A crash just before sending can lose that post.
 
 ## Webhook updates
 
@@ -197,7 +197,7 @@ ${fence('http', `POST ${ROUTE}\nAuthorization: Bearer ${SECRET}\nContent-Type: a
 ## One-off scripts
 
 Use \`discord_script_run\` to send several messages in one MCP call.
-It accepts discord.js code, including embeds like these. Pass the source and its grants with the tool call:
+This discord.js script posts three embeds. Pass the source and its grants with the tool call:
 
 ${fence('ts', SCRIPT)}
 

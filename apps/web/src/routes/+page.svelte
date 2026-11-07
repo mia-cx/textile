@@ -168,7 +168,7 @@ function close(
     <ThreadField layout={hero} target={heroWindow} />
     <div bind:this={heroCopy} class="hero-copy">
       <h1 id="title">Discord bots for AI agents</h1>
-      <p class="lede">Host your Discord bot and manage it over MCP.</p>
+      <p class="lede">Host your Discord bot and manage it over MCP, with no server to run.</p>
       <div class="actions">
         <a class="button button-primary" href="/login" data-sveltekit-reload><DiscordLogo />Sign in with Discord</a>
         <a class="button button-secondary" href="/docs/">Read the docs</a>
@@ -199,7 +199,7 @@ function close(
 
   <Section id="slash" title="Slash commands" event="interactionCreate" layout="centred">
     <p>
-      The /standup command saves your update and shows the previous one. Try it below.
+      Register your slash commands and handle them in a workflow. Try /standup below to save an update and see your previous one.
     </p>
     {#snippet demo()}<Slash />{/snippet}
   </Section>
@@ -226,7 +226,7 @@ function close(
   <Section id="scripts" title="One-off scripts" event="discord_script_run" layout="wide-right">
     <p>
       Use <code class="prose-code">discord_script_run</code> to send several messages in one MCP call.
-      It accepts discord.js code, including embeds like these.
+      This discord.js script posts three embeds.
     </p>
     {#snippet demo()}<Script />{/snippet}
   </Section>
