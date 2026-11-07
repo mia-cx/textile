@@ -11,7 +11,7 @@ import {
   TEXELS,
   visible,
 } from './cord'
-import { hash, SHAPE } from './geometry'
+import { blend, hash, SHAPE } from './geometry'
 import { type Painter, type Scene, webgl2Painter, webgpuPainter } from './gpu'
 import { EXPOSURE, type Palette, type RGB } from './renderer'
 import { CORD_VEC4S, cordVertexGlsl, cordWgsl } from './shaders'
@@ -128,11 +128,7 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
 
   const layOut = (laid: Cord, palette: Palette, time: number) => {
     const [violet, amber] = palette.threads
-    const blend = (w: number): RGB => [
-      violet[0] + (amber[0] - violet[0]) * w,
-      violet[1] + (amber[1] - violet[1]) * w,
-      violet[2] + (amber[2] - violet[2]) * w,
-    ]
+    const mixed = (w: number) => blend(violet, amber, w)
     const peels = Math.min(laid.paths.length - 1, MAX_PEELS)
     const threads = [
       ...Array.from({ length: Math.ceil(CORD_THREADS / STILL_EVERY) }, (_, n) => n * STILL_EVERY),
@@ -148,7 +144,7 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         return {
           at: place(laid, i, span.first + k, time, th).point,
           // The lead is TRACED times the brightest of the rest.
-          colour: css(blend(warmth), Math.min(1, leads ? 0.5 * SHAPE.traced : own)),
+          colour: css(mixed(warmth), Math.min(1, leads ? 0.5 * SHAPE.traced : own)),
         }
       })
       // Neighbouring pieces share their end point, so the thread runs on unbroken. Each piece's colour runs along its

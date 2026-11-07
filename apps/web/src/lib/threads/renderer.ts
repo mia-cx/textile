@@ -1,5 +1,6 @@
 import {
   along,
+  blend,
   brightness,
   type Field,
   knit,
@@ -106,11 +107,7 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       context.fillRect(0, 0, canvas.width, canvas.height)
       context.globalCompositeOperation = 'lighter'
       const [violet, amber] = palette.threads
-      const blend = (w: number): RGB => [
-        violet[0] + (amber[0] - violet[0]) * w,
-        violet[1] + (amber[1] - violet[1]) * w,
-        violet[2] + (amber[2] - violet[2]) * w,
-      ]
+      const mixed = (w: number) => blend(violet, amber, w)
       /** A gradient along a piece, from `a`'s colour at its first point to `b`'s at its last, `share` as opaque. */
       type Lit = { x: number; y: number; rgb: RGB; alpha: number }
       const between = (a: Lit, b: Lit, share: number) => {
@@ -133,7 +130,7 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
           return {
             x,
             y,
-            rgb: blend(warmth(field, i, u, time, braided)),
+            rgb: mixed(warmth(field, i, u, time, braided)),
             alpha: 0.8 * light * field.intensity,
           }
         })
@@ -160,7 +157,7 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       const radius = field.cord * 8
       const flare = context.createRadialGradient(x, y, 0, x, y, radius)
       flare.addColorStop(0, css([1, 1, 1], 0.9 * field.intensity))
-      flare.addColorStop(0.15, css(blend(0.5), 0.5 * field.intensity))
+      flare.addColorStop(0.15, css(mixed(0.5), 0.5 * field.intensity))
       flare.addColorStop(1, css(violet, 0))
       context.fillStyle = flare
       context.fillRect(x - radius, y - radius, radius * 2, radius * 2)

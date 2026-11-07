@@ -8,7 +8,18 @@ import {
   ROW,
   TEXELS,
 } from './cord'
-import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
+import { CROWD, MAX_LABELS, OKLAB, SEGMENTS, SHAPE } from './geometry'
+
+/** A matrix given by rows as a shader's mat3 arguments, which run by columns. */
+const columns = (rows: ReadonlyArray<ReadonlyArray<number>>) =>
+  [0, 1, 2]
+    .flatMap((c) => rows.map((row) => row[c] ?? 0))
+    .map((n) => (Number.isInteger(n) ? n.toFixed(1) : String(n)))
+    .join(', ')
+const OKLAB_LMS = columns(OKLAB.lms)
+const OKLAB_LAB = columns(OKLAB.lab)
+const OKLAB_LMS_FROM = columns(OKLAB.lmsFrom)
+const OKLAB_RGB = columns(OKLAB.rgb)
 
 /**
  * The thread field's shaders, in WGSL for WebGPU and GLSL ES 3.00 for WebGL2. Both run `position` from geometry.ts per
@@ -148,8 +159,6 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('GRADIENT', float(SHAPE.gradient)),
     declare('BRAID_GRADIENT', float(SHAPE.braidGradient)),
     declare('FLOW', float(SHAPE.flow)),
-    declare('WARM', float(SHAPE.warm)),
-    declare('TURN', float(SHAPE.turn)),
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
@@ -235,8 +244,9 @@ fn breath(strand: f32, at: f32, t: f32) -> f32 { return sin(TAU * (t * BREATH - 
 fn hueOf(at: f32, wound: f32, pick: f32, t: f32, breathing: f32) -> f32 {
   return at * GRADIENT + wound * (BRAID_GRADIENT - GRADIENT) - t * FLOW + pick + BREATH_WARMTH * breathing;
 }
-// How warm a thread is at a phase (in gradient cycles): 0 violet, 1 amber. Mirrors warmthAt in geometry.ts.
-fn warmth(phase: f32) -> f32 { return smoothstep(-TURN, TURN, sin(TAU * phase) + WARM); }
+// How warm a thread is at a phase (in gradient cycles): 0 violet, 1 amber, on a plain sine, so a strand spends as
+// long between the two as in them. Mirrors warmthAt in geometry.ts.
+fn warmth(phase: f32) -> f32 { return 0.5 + 0.5 * sin(TAU * phase); }
 // The braid strand a ribbon centred at side (-1 to 1 across its current) joins. Mirrors strandOf in geometry.ts.
 fn strandOf(side: f32) -> f32 { return clamp(floor((side + 1.0) * 1.5), 0.0, 2.0); }
 // Where thread i runs in its band, -1 to 1, from its place across its ribbon; 1 when that is on one of the band's
@@ -288,6 +298,24 @@ fn spark(shade: f32) -> f32 { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05)
 fn cool(w: f32, depth: f32, braided: f32) -> f32 { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
 // A page colour (sRGB) as linear light.
 fn linear(c: vec3f) -> vec3f { return pow(c, vec3f(2.2)); }
+// Linear light to OKLab, and back. Mirrors oklab and fromOklab in geometry.ts.
+fn oklab(c: vec3f) -> vec3f {
+  let lms = pow(max(mat3x3f(${OKLAB_LMS}) * c, vec3f(0.0)), vec3f(1.0 / 3.0));
+  return mat3x3f(${OKLAB_LAB}) * lms;
+}
+fn fromOklab(lab: vec3f) -> vec3f {
+  let lms = mat3x3f(${OKLAB_LMS_FROM}) * lab;
+  return mat3x3f(${OKLAB_RGB}) * (lms * lms * lms);
+}
+// The thread colours, violet to amber at w, as linear light: mixed in OKLab with their chroma kept, so the way between
+// runs through magenta and pink rather than a muddy mauve. Mirrors blend in geometry.ts.
+fn blend(w: f32) -> vec3f {
+  let a = oklab(linear(U[8].rgb));
+  let b = oklab(linear(U[9].rgb));
+  let m = mix(a, b, w);
+  let chroma = mix(length(a.yz), length(b.yz), w);
+  return max(fromOklab(vec3f(m.x, m.yz * chroma / max(length(m.yz), 1e-5))), vec3f(0.0));
+}
 ${agxWgsl}
 `
 
@@ -433,7 +461,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let t = U[0].w;
   let breathing = breath(th.strand, u, t);
   let hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
-  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
+  let colour = blend(cool(warmth(hue), here.depth, knit));
   var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   if (th.lead > 1.0) { own = 1.0; }
   if (i < U[3].w) { own = LABELLED; }
@@ -607,7 +635,7 @@ float breath(float strand, float at, float t) { return sin(TAU * (t * BREATH - a
 float hueOf(float at, float wound, float pick, float t, float breathing) {
   return at * GRADIENT + wound * (BRAID_GRADIENT - GRADIENT) - t * FLOW + pick + BREATH_WARMTH * breathing;
 }
-float warmth(float phase) { return smoothstep(-TURN, TURN, sin(TAU * phase) + WARM); }
+float warmth(float phase) { return 0.5 + 0.5 * sin(TAU * phase); }
 float strandOf(float side) { return clamp(floor((side + 1.0) * 1.5), 0.0, 2.0); }
 vec3 fibre(float i, float across) {
   float reach = abs(across);
@@ -638,6 +666,21 @@ float glintLight(float depth, vec3 f) {
 float spark(float shade) { return EDGE_LIGHT * BRAID_LIGHT / max(shade, 0.05); }
 float cool(float w, float depth, float braided) { return w * mix(1.0, COOL + (1.0 - COOL) * (0.5 + 0.5 * depth), braided); }
 vec3 linear(vec3 c) { return pow(c, vec3(2.2)); }
+vec3 oklab(vec3 c) {
+  vec3 lms = pow(max(mat3(${OKLAB_LMS}) * c, vec3(0.0)), vec3(1.0 / 3.0));
+  return mat3(${OKLAB_LAB}) * lms;
+}
+vec3 fromOklab(vec3 lab) {
+  vec3 lms = mat3(${OKLAB_LMS_FROM}) * lab;
+  return mat3(${OKLAB_RGB}) * (lms * lms * lms);
+}
+vec3 blend(float w) {
+  vec3 a = oklab(linear(U[8].rgb));
+  vec3 b = oklab(linear(U[9].rgb));
+  vec3 m = mix(a, b, w);
+  float chroma = mix(length(a.yz), length(b.yz), w);
+  return max(fromOklab(vec3(m.x, m.yz * chroma / max(length(m.yz), 1e-5))), vec3(0.0));
+}
 ${agxGlsl}
 `
 
@@ -724,7 +767,7 @@ void main() {
   float t = U[0].w;
   float breathing = breath(th.strand, u, t);
   float hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
-  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
+  vec3 colour = blend(cool(warmth(hue), here.depth, knit));
   float own = i < U[3].w ? LABELLED : th.lead > 1.0 ? 1.0 : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float shade = mix(own, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
 
@@ -996,7 +1039,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let run = here.s / DRIFT_SPAN;
   let breathing = breath(th.strand, run + U[2].w, t);
   let hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
-  let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
+  let colour = blend(cool(warmth(hue), here.depth, knit));
   // The lead burns brighter all the way down, on the cord and on the strand that carries it on where the cord ends:
   // TRACED times the brightest of the rest.
   let leads = th.lead * here.leads;
@@ -1112,7 +1155,7 @@ void main() {
   float run = here.s / DRIFT_SPAN;
   float breathing = breath(th.strand, run + U[2].w, t);
   float hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
-  vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
+  vec3 colour = blend(cool(warmth(hue), here.depth, knit));
   float leads = th.lead * here.leads;
   float own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0), 1.0, leads);
   float lead = 1.0 + (TRACED - 1.0) * leads;

@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   along,
+  blend,
   brightness,
   type Field,
   knit,
@@ -22,8 +23,8 @@ const fonts = join(app, 'node_modules/@fontsource-variable')
 const [WIDTH, HEIGHT] = [1200, 630]
 /** The page's tokens (src/lib/tokens.css): the card is rendered outside the page, so it can't read them. */
 const INK = '#07060c'
-const VIOLET = [0x7a, 0x45, 0xff]
-const AMBER = [0xff, 0x9f, 0x5a]
+const VIOLET = [0x7a / 255, 0x45 / 255, 0xff / 255] as const
+const AMBER = [0xff / 255, 0x9f / 255, 0x5a / 255] as const
 
 const field: Field = {
   start: [-60, HEIGHT * 0.5],
@@ -44,9 +45,11 @@ const STILL_TIME = 12
  * violet-to-amber gradient runs along it with no seam.
  */
 const PIECE = 8
-/** A colour `w` of the way from violet to amber. */
-const blend = (w: number) =>
-  `rgb(${VIOLET.map((v, c) => Math.round(v + ((AMBER[c] ?? v) - v) * w)).join(' ')})`
+/** A colour `w` of the way from violet to amber, mixed in OKLab as the page's threads are. */
+const mixed = (w: number) =>
+  `rgb(${blend(VIOLET, AMBER, w)
+    .map((c) => Math.round(Math.min(c, 1) * 255))
+    .join(' ')})`
 const threads = Array.from({ length: field.count }, (_, i) => {
   // Each point's place, colour, and opacity. As a thread gathers it eases into its strand's colour, and in the plait
   // its band's light, as the shaders do.
@@ -55,7 +58,7 @@ const threads = Array.from({ length: field.count }, (_, i) => {
     const u = along(s / POINTS)
     const [x, y] = position(field, i, u, STILL_TIME)
     const { braided, plait } = knit(field, th, u)
-    const colour = blend(warmth(field, i, u, STILL_TIME, braided))
+    const colour = mixed(warmth(field, i, u, STILL_TIME, braided))
     const opacity = Math.min(1, 0.12 + 0.5 * brightness(field, i, braided * plait))
     return { x, y, colour, opacity }
   })

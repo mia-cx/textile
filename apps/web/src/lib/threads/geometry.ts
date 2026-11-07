@@ -173,21 +173,14 @@ export const SHAPE = {
   /** The share of threads that take their ribbon's colour phase, not their own: high, so colours run in bundles. */
   coherence: 0.9,
   /**
-   * How many violet-to-amber cycles a thread runs per unit along it (its whole length in the hero) in the loose
-   * current, and in the plait: faster there, so each band turns from violet to amber and back as it winds, its
-   * neighbours a third of a cycle apart.
+   * How many violet-to-amber cycles a thread runs per unit along it (its whole length in the hero, 1300px of the cord)
+   * in the loose current, and in the plait: a cycle spans hundreds of pixels either way, faster in the plait, so each
+   * band turns from violet through pink to amber and back as it winds, its neighbours a third of a cycle apart.
    */
-  gradient: 2.4,
-  braidGradient: 8,
+  gradient: 1.6,
+  braidGradient: 5,
   /** How fast the gradient flows toward the window, in cycles per second. */
   flow: 0.06,
-  /**
-   * How each cycle splits between violet and amber: below 0 keeps more of it violet. And how soft the turn between
-   * them is: soft enough that a band fades from one into the other over most of a crossing, as the concept's do,
-   * while each colour still holds saturated between the turns.
-   */
-  warm: -0.12,
-  turn: 0.75,
   /**
    * The strands breathe: a slow swell of light and warmth, `breath` cycles per second, that travels toward the window
    * in `breathWaves` waves per unit along, a third of a cycle apart between strands. `breathLight` is how much brighter
@@ -238,11 +231,6 @@ export const ease = (a: number, b: number, x: number) => {
 export const eased = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return (b - a) * t * t * t * t * (t * (t - 3) + 2.5) + Math.max(x - b, 0)
-}
-
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
-  return t * t * (3 - 2 * t)
 }
 
 /** Whether thread `i` is one of the lead's fibres. Mirrors `traced` in the shaders. */
@@ -482,8 +470,72 @@ export const hueOf = (along: number, wound: number, pick: number, t: number, bre
   SHAPE.breathWarmth * breathing
 
 /** How warm a thread is at hue `phase` (in cycles): 0 violet, 1 amber. Mirrors `warmth` in the shaders. */
-export const warmthAt = (phase: number) =>
-  smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
+export const warmthAt = (phase: number) => 0.5 + 0.5 * Math.sin(TAU * phase)
+
+type Vec3 = readonly [number, number, number]
+type Mat3 = readonly [Vec3, Vec3, Vec3]
+/**
+ * Björn Ottosson's OKLab, by rows: linear sRGB to cone responses, their cube roots to OKLab, and back. shaders.ts writes
+ * them into WGSL and GLSL.
+ */
+export const OKLAB = {
+  lms: [
+    [0.4122214708, 0.5363325363, 0.0514459929],
+    [0.2119034982, 0.6806995451, 0.1073969566],
+    [0.0883024619, 0.2817188376, 0.6299787005],
+  ],
+  lab: [
+    [0.2104542553, 0.793617785, -0.0040720468],
+    [1.9779984951, -2.428592205, 0.4505937099],
+    [0.0259040371, 0.7827717662, -0.808675766],
+  ],
+  lmsFrom: [
+    [1, 0.3963377774, 0.2158037573],
+    [1, -0.1055613458, -0.0638541728],
+    [1, -0.0894841775, -1.291485548],
+  ],
+  rgb: [
+    [4.0767416621, -3.3077115913, 0.2309699292],
+    [-1.2684380046, 2.6097574011, -0.3413193965],
+    [-0.0041960863, -0.7034186147, 1.707614701],
+  ],
+} as const satisfies Record<string, Mat3>
+
+const times = (m: Mat3, v: Vec3): Vec3 => [
+  m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+  m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+  m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+]
+const each = (v: Vec3, f: (x: number) => number): Vec3 => [f(v[0]), f(v[1]), f(v[2])]
+/** Linear light to OKLab, and back. Mirror `oklab` and `fromOklab` in the shaders. */
+const oklab = (c: Vec3) =>
+  times(
+    OKLAB.lab,
+    each(times(OKLAB.lms, c), (x) => Math.cbrt(Math.max(x, 0))),
+  )
+const fromOklab = (lab: Vec3) =>
+  times(
+    OKLAB.rgb,
+    each(times(OKLAB.lmsFrom, lab), (x) => x ** 3),
+  )
+
+/** A page colour (sRGB, 0 to 1) as linear light, and back, as the shaders' `linear` does. */
+const GAMMA = 2.2
+const toLinear = (c: Vec3) => each(c, (x) => x ** GAMMA)
+const toPage = (c: Vec3) => each(c, (x) => Math.max(x, 0) ** (1 / GAMMA))
+
+/**
+ * `violet` to `amber` (sRGB, 0 to 1) at `w`, as sRGB: mixed in OKLab with their chroma kept, so the way between runs
+ * through magenta and pink rather than a muddy mauve. Mirrors `blend` in the shaders, which keep it as linear light.
+ */
+export function blend(violet: Vec3, amber: Vec3, w: number): Vec3 {
+  const a = oklab(toLinear(violet))
+  const b = oklab(toLinear(amber))
+  const m: Vec3 = [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w]
+  const chroma = Math.hypot(a[1], a[2]) + (Math.hypot(b[1], b[2]) - Math.hypot(a[1], a[2])) * w
+  const k = chroma / Math.max(Math.hypot(m[1], m[2]), 1e-5)
+  return toPage(fromOklab([m[0], m[1] * k, m[2] * k]))
+}
 
 /**
  * How warm thread `i` is at `u` along it and time `t`: 0 violet, 1 amber. Every thread runs violet to amber and back,
