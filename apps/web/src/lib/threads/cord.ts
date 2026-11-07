@@ -200,7 +200,7 @@ export const swayAt = (y: number, t: number) =>
   (Math.sin((TAU * t) / SWAY.periods[0] + y * SWAY.waves[0]) * 0.6 +
     Math.sin((TAU * t) / SWAY.periods[1] + y * SWAY.waves[1] + 2) * 0.4)
 /** How far the cord sways at most, in px; over how many seconds; and in how many radians per px down the page. */
-export const SWAY = { reach: 0, periods: [11, 17], waves: [0.0021, 0.0013] } as const
+export const SWAY = { reach: 22, periods: [11, 17], waves: [0.0021, 0.0013] } as const
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
@@ -211,13 +211,13 @@ const smoothstep = (a: number, b: number, x: number) => {
  * The share of the way to the next gap (or a section's foot) the cord takes to reach a section's centre after its gap,
  * at most LAG_MAX px: it crosses the gap still on its way there, as a rope would, rather than turning on the gap.
  */
-const LAG = 0
+const LAG = 0.3
 const LAG_MAX = 320
 /**
  * How far the cord wanders off its course on its own, in px, in two slow waves (px per cycle), and over how many px it
  * eases into the wander from where it leaves the window and out of it where it ends.
  */
-const WANDER = 0
+const WANDER = 40
 const WANDER_WAVES = [1100, 1900] as const
 const WANDER_EASE = 400
 /** How far above a knot, in px, the cord's course is read to tell which side it comes in from. */
