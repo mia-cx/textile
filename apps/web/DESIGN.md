@@ -94,25 +94,31 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   drops its black shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping
   can't cut, takes the cord's light: on its rim, which faces the cord, and faintly across its face, falling off as the
   inverse square of the distance from the cord's end.
-- Only violet and amber: every thread runs violet to amber and back along its length, the gradient flowing toward the
-  target, faster in the plait (8 cycles per field length against 2.4 in the current). As threads gather they take
-  their strand's phase, a third of a cycle from its neighbours', so each band shows both colours and no band is one
-  colour; a band fades from one into the other over most of a crossing. The rate is integrated along the field, so the colour never sweeps where it changes. Every strand breathes:
-  a slow wave of light (±22%) and warmth, about six seconds long, travelling toward the target.
-- The threads emit light, in linear units with real range: a lone fibre in the current gives about 0.1, the braid's
-  bands a few times that, and glints a few hundred times. Glints spark on a fifth of the braid's fibres where a strand
-  passes over its neighbour, burning warm white. On loose fibres they spark at one place in a hundred, in the fibre's
-  own violet or amber, so a loose glint reads as a hot fibre rather than a grey fleck.
-  Each thread is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the braid twists
-  tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its own phase in
-  the funnel and in step within the braid, so they travel along it. Threads add their light into a half-float target.
+- Only violet and amber: every thread runs one long gradient from violet through magenta and pink to amber and back,
+  on a plain sine, so it spends as long between the two as in them, flowing toward the target. A cycle spans about
+  800px on a loose strand and 260px in the plait. The colours mix in OKLab with their chroma kept: a plain OKLab mix of
+  this violet and amber halves its chroma at the midpoint into a dusty mauve, so the mix is lifted back to the two
+  colours' chroma. As threads gather they take their strand's phase, a third of a cycle from its neighbours', so each
+  band shows both colours and no band is one colour. The rate is integrated along the field, so the colour never
+  sweeps where it changes. Every strand breathes: a slow wave of light (±22%) and warmth, about six seconds long,
+  travelling toward the target.
+- The threads emit light, in linear units with real range. A loose fibre glows: its own light runs from 0.22 to 1 of
+  the brightest, mostly moderate, times 1.7, so the current reads as the braid's light fanned out. The braid's bands
+  are hotter, and glints a few hundred times a fibre. Glints spark on a fifth of the braid's fibres where a strand
+  passes over its neighbour, burning warm white. On loose fibres, now and then a streak of light runs along one fibre
+  in its own violet or amber: a soft rise, a long fading tail, a low peak, so it reads as light moving rather than a
+  fleck; in the hero they speed up and lengthen into the braid. Each thread is one instance, a triangle strip of 201
+  point pairs (crowded toward the end, where the braid twists tightest) widened 2px for its own halo. Pulses of light
+  run along every thread toward the target, at its own phase in the funnel and in step within the braid, so they
+  travel along it. Threads add their light into a half-float target.
 - The lead: four fibres that burn four times brighter than the brightest of the rest, on a lane of their own inside
   the labelled threads, above the headline. They take the colour and sway of a bundle on the far side of the current,
   so they move unlike the bundles beside them and cross them as a strand of their own. They gather into the top strand
-  and ride its band's edge through the plait. The page's cord carries the hero's strands on as themselves: its thread `i` is the hero's thread `i`, in
-  the same strand, with the same fibre, and it picks up the hero's twist, colour, and drift where the hero's cord meets
-  the window, carried on behind the window to its bottom. So the lead runs down the whole cord, on its strand's side as
-  the strands part behind each section, and on into the strand that leaves the cord where it comes apart in voice.
+  and ride its band's edge through the plait. The page's cord carries the hero's strands on as themselves: its thread
+  `i` is the hero's thread `i`, in the same strand, with the same fibre, and it picks up the hero's twist, colour, and
+  drift where the hero's cord meets the window, carried on behind the window to its bottom, on the same clock. So the
+  lead runs down the whole cord, on its strand's rope as the strands part behind each section, and on into the strand
+  that leaves the cord where it comes apart in voice.
 - 6% of the light scatters into glare, as in a lens or the air: a chain of seven bloom targets from a quarter of the
   CSS size down, each halving the last with a 13-tap filter, then added back up through a tent, an equal share per
   octave. That sums to a glare falling off as `1 / (1 + (r / 4.7px)²)` out to about 500px: a tight core, a long faint
@@ -123,7 +129,9 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   placed once per resize, never per frame. Labels are placed as fractions of the hero while its copy scales on its own,
   so they show from a hero 1280px wide and 760px tall, where they clear it.
 - The field passes behind the hero's copy dimmed by a soft radial shade, and the subline carries its own text shadow, so
-  the copy reads cleanly with no visible box.
+  the copy reads cleanly with no visible box. The field also dims itself to a quarter behind the headline, subline,
+  and buttons, fading back over 32px around each, and only there: over the brightest 1% of field pixels behind it, the
+  headline holds 4.6:1 and the subline 11.7:1.
 - Renderers, in order: WebGPU, WebGL2 (with `EXT_color_buffer_float`, else straight additive), then one still canvas 2D
   frame. Asking for a context claims the canvas, so a failed renderer leaves a fresh one. A lost GPU device is replaced
   once; after a second loss the field uses WebGL2 or 2D.
@@ -133,10 +141,15 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   window. The close carries 520 and shows only side by side, where it has room beside its copy.
 
 Between, the cord (`Weave`) leaves the hero window's bottom and carries the braid down the page on the GPU, as the hero
-draws it: it gathers in the gap above each section, with the section's event on its knot, and comes apart behind the
-section into loose strands, each keeping its colour, dimmed under the prose. It draws down ahead of the reader on a
-scroll timeline; without scroll timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds
-still.
+draws it. Its course is a smooth curve, like a hanging rope: it crosses each section's gap, with the section's event
+on its knot, still on its way to the section's centre, which it reaches 30% of the way to the next gap; it wanders off
+course in two slow waves of up to 40px, and sways with time, up to 22px over 11 and 17 seconds, easing in after the
+window and out before it ends, so the seam and the voice demo hold still. Behind each section it comes apart in three
+overlapping stages and gathers again the same way: the plait loosens (its swing widens and its pitch lengthens), its
+three strands drift apart as loose ropes still swinging around each other, and only then does each rope fray into
+its fibres. Strands keep their colour and fibres throughout; under the prose the strands dim to 4%, fading back over
+120px, so the prose holds 6.9:1 or more. It draws down ahead of the reader on a scroll timeline; without scroll
+timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds still.
 
 Measured in Chromium 156 on an RTX 3070 (Vulkan), hero on screen at 2000×1100:
 
