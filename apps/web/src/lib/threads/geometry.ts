@@ -141,6 +141,8 @@ export const SHAPE = {
   bends: 9,
   /** The share of threads that stray from their ribbon onto a lane of their own and wander between the streams. */
   stray: 0.1,
+  /** How much of its warmth a strand keeps right at the back of the braid. */
+  cool: 0.35,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
@@ -289,6 +291,17 @@ const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
     Math.hypot(p2[0] - p1[0], p2[1] - p1[1])) /
   3
 
+/**
+ * How far strand `strand` of the braid has turned `u` along it at time `t`. The twist integrates one turn per `pitch`
+ * radii along a spine whose radius narrows linearly: a logarithm. Mirrors `twist` in `place` in the shaders.
+ */
+const twistOf = (field: Field, strand: number, u: number, t: number) =>
+  (spineLength(field) / (SHAPE.pitch * field.cord * SHAPE.swell)) *
+    TAU *
+    Math.log((1 + SHAPE.swell) / (1 + SHAPE.swell * (1 - u))) -
+  t * SHAPE.spin +
+  (strand * TAU) / 3
+
 /** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
 export function position(field: Field, i: number, u: number, t: number): Point {
   const { start: p0, control: p1, end: p2, cord } = field
@@ -311,13 +324,7 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const bend = wander.reach * Math.sin(u * wander.bends + t * 0.12 + wander.phase)
   const current = width * (lane + SHAPE.wave * held * sway + bend)
 
-  // The twist's angle integrates one turn per `pitch` radii along a spine whose radius narrows linearly: a logarithm.
-  const turns = spineLength(field) / (SHAPE.pitch * cord * SHAPE.swell)
-  const twist =
-    turns * TAU * Math.log((1 + SHAPE.swell) / (1 + SHAPE.swell * a)) -
-    t * SHAPE.spin +
-    (strand * TAU) / 3
-  const braided = radius * band(twist, jitter, edge, u, drift)
+  const braided = radius * band(twistOf(field, strand, u, t), jitter, edge, u, drift)
   const offset = current + (braided - current) * ease(joins - SHAPE.join, joins, u)
   return [x + nx * offset, y + ny * offset]
 }
@@ -331,16 +338,25 @@ const ribbonPick = (ribbon: number) => {
 }
 
 /**
+ * How warm a strand `braided` (0 to 1) into the braid is at `depth`, from its warmth `w`: a gold strand falling
+ * behind its neighbours leans violet, as the concept's do, rather than darkening to brown. Mirrors `cool` in the shaders.
+ */
+export const cool = (w: number, depth: number, braided: number) =>
+  w * (1 + (SHAPE.cool + (1 - SHAPE.cool) * (0.5 + 0.5 * depth) - 1) * braided)
+
+/**
  * How warm thread `i` is at `u` along it and time `t`: 0 violet, 1 amber. Every thread runs violet to amber and back,
- * the gradient flowing toward the end; in the funnel most share their ribbon's phase, in the braid their strand's.
- * Mirrors `warmth` and its use in the shaders; `braided` is how far into the braid `u` is, 0 to 1.
+ * the gradient flowing toward the end; in the funnel most share their ribbon's phase, in the braid their strand's, and
+ * a strand behind the braid's others leans violet. Mirrors `warmth` and its use, through `cool`, in the shaders;
+ * `braided` is how far into the braid `u` is, 0 to 1.
  */
 export const warmth = (field: Field, i: number, u: number, t: number, braided: number) => {
   const { ribbon, strand } = thread(field, i)
   const pick = hash(i + 9.7) < SHAPE.coherence ? ribbonPick(ribbon) : hash(i + 4.4)
   const rate = SHAPE.gradient * (1 + (SHAPE.braidGradient - 1) * braided)
   const phase = u * rate - t * SHAPE.flow + pick + (strand / 3 - pick) * braided
-  return smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
+  const w = smoothstep(-SHAPE.turn, SHAPE.turn, Math.sin(TAU * phase) + SHAPE.warm)
+  return cool(w, Math.sin(2 * twistOf(field, strand, u, t)), braided)
 }
 
 /**
