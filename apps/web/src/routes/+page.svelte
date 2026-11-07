@@ -146,6 +146,19 @@ function copyBox() {
   return { right: copy.right - origin.left, bottom: copy.bottom - origin.top }
 }
 
+/**
+ * The hero's text, as boxes in the field's pixels: the headline, the subline, and the buttons. The field dims behind
+ * each, only there, so the text reads over its light.
+ */
+function textBoxes(): NonNullable<Field['text']> {
+  if (!heroSection || !heroCopy) return []
+  const origin = heroSection.getBoundingClientRect()
+  return [...heroCopy.querySelectorAll('h1, .lede, .actions')].map((element) => {
+    const r = element.getBoundingClientRect()
+    return [r.left - origin.left, r.top - origin.top, r.right - origin.left, r.bottom - origin.top]
+  })
+}
+
 /** The hero: hundreds of threads streaming in from the left, braiding into the Discord window's left edge. */
 function hero(
   { width, height }: { width: number; height: number },
@@ -167,7 +180,11 @@ function hero(
       intensity: 0.75,
       labels: [],
     } satisfies Omit<Field, 'braid'>
-    const field: Field = { ...shape, braid: braidBetween(shape, 0, copy?.right ?? width * 0.45) }
+    const field: Field = {
+      ...shape,
+      braid: braidBetween(shape, 0, copy?.right ?? width * 0.45),
+      text: textBoxes(),
+    }
     seam = seamOf(field)
     const labelled = width >= LABELLED && height >= LABELLED_HEIGHT
     return { ...field, labels: labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : [] }
@@ -189,6 +206,7 @@ function hero(
   return {
     ...shape,
     braid: braidBetween(shape, 1, copy?.bottom ?? height * 0.5),
+    text: textBoxes(),
   }
 }
 

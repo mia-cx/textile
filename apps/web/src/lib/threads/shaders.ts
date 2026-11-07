@@ -10,7 +10,16 @@ import {
   TEXELS,
   UNBRAID,
 } from './cord'
-import { CROWD, MAX_LABELS, OKLAB, SEGMENTS, SHAPE } from './geometry'
+import {
+  CROWD,
+  MAX_LABELS,
+  MAX_TEXT,
+  OKLAB,
+  SEGMENTS,
+  SHAPE,
+  TEXT_FADE,
+  TEXT_LIGHT,
+} from './geometry'
 
 /** A matrix given by rows as a shader's mat3 arguments, which run by columns. */
 const columns = (rows: ReadonlyArray<ReadonlyArray<number>>) =>
@@ -45,9 +54,10 @@ const OKLAB_RGB = columns(OKLAB.rgb)
  *   4–7  labels: at, lane
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
- *   11 where the plait is whole, where the bundles start to gather, -, -
+ *   11 where the plait is whole, where the bundles start to gather, how many text boxes, -
+ *   12–14  text boxes over the field: left, top, right, bottom
  */
-export const UNIFORM_VEC4S = 12
+export const UNIFORM_VEC4S = 15
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
 /** The first bloom target's size, as a fraction of the canvas's CSS size: the same glare at every pixel ratio. */
 export const BLOOM_SCALE = 0.25
@@ -157,6 +167,8 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('SPIN', float(SHAPE.spin)),
     declare('LABELLED', float(SHAPE.labelled)),
     declare('DIM', float(SHAPE.dim)),
+    declare('SKEW', float(SHAPE.skew)),
+    declare('GLOW', float(SHAPE.glow)),
     declare('COHERENCE', float(SHAPE.coherence)),
     declare('GRADIENT', float(SHAPE.gradient)),
     declare('BRAID_GRADIENT', float(SHAPE.braidGradient)),
@@ -201,6 +213,10 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('LEVELS', float(BLOOM_LEVELS)),
     // How much more saturated than AgX's base look the tone map leaves colour.
     declare('SATURATION', float(1.5)),
+    // How much light shows behind text over the hero's field, and where its dimming fades: see behindText in geometry.ts.
+    declare('TEXT_LIGHT', float(TEXT_LIGHT)),
+    declare('TEXT_FADE_IN', float(TEXT_FADE[0])),
+    declare('TEXT_FADE_OUT', float(TEXT_FADE[1])),
   ].join('\n')
 
 /** What every WGSL thread module and the tone pass share, for a scene of `vec4s` uniforms. */
@@ -408,6 +424,17 @@ fn threadOf(i: f32) -> Thread {
   return Thread(lane, pin, leaves, joins, strandOf(side), phase, fibre(i, across), ribbon, wander, select(1.0, TRACED, lead));
 }
 
+// How much of a thread's light shows at p: less behind the text over the field. Mirrors behindText in geometry.ts.
+fn behindText(p: vec2f) -> f32 {
+  var light = 1.0;
+  for (var r = 0u; r < u32(U[11].z); r++) {
+    let box = U[12u + r];
+    let outside = max(max(box.x - p.x, p.x - box.z), max(box.y - p.y, p.y - box.w));
+    light = min(light, mix(TEXT_LIGHT, 1.0, smoothstep(TEXT_FADE_IN, TEXT_FADE_OUT, outside)));
+  }
+  return light;
+}
+
 // Where a thread is u along it: in CSS px, how far it has gathered into its strand (0 to 1), how far the plait has
 // grown, and its strand's depth in the plait.
 struct Placed { at: vec2f, braided: f32, plait: f32, depth: f32 };
@@ -464,17 +491,17 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let breathing = breath(th.strand, u, t);
   let hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   let colour = blend(cool(warmth(hue), here.depth, knit));
-  var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
+  var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW);
   if (th.lead > 1.0) { own = 1.0; }
   if (i < U[3].w) { own = LABELLED; }
   // Bands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
   // each gives less light there, its band's edges more than its inside.
-  let shade = mix(own, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
+  let shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
 
   var out: Out;
   let res = U[0].xy;
   out.clip = vec4f(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
-  out.colour = colour * shade * U[3].z;
+  out.colour = colour * shade * U[3].z * behindText(here.at);
   out.across = side;
   out.pulse = vec2f(
     u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
@@ -723,6 +750,17 @@ Thread threadOf(float i) {
   return Thread(lane, pin, leaves, joins, strandOf(side), phase, fibre(i, across), ribbon, wander, lead ? TRACED : 1.0);
 }
 
+float behindText(vec2 p) {
+  float light = 1.0;
+  for (int r = 0; r < ${MAX_TEXT}; r++) {
+    if (float(r) >= U[11].z) break;
+    vec4 box = U[12 + r];
+    float outside = max(max(box.x - p.x, p.x - box.z), max(box.y - p.y, p.y - box.w));
+    light = min(light, mix(TEXT_LIGHT, 1.0, smoothstep(TEXT_FADE_IN, TEXT_FADE_OUT, outside)));
+  }
+  return light;
+}
+
 struct Placed { vec2 at; float braided; float plait; float depth; };
 
 Placed place(Thread th, float u) {
@@ -770,12 +808,12 @@ void main() {
   float breathing = breath(th.strand, u, t);
   float hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   vec3 colour = blend(cool(warmth(hue), here.depth, knit));
-  float own = i < U[3].w ? LABELLED : th.lead > 1.0 ? 1.0 : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
-  float shade = mix(own, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
+  float own = i < U[3].w ? LABELLED : th.lead > 1.0 ? 1.0 : DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW);
+  float shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
 
   vec2 res = U[0].xy;
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
-  vColour = colour * shade * U[3].z;
+  vColour = colour * shade * U[3].z * behindText(here.at);
   vAcross = side;
   vPulse = vec2(
     u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
@@ -930,9 +968,9 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     declare('DRIFT_SPAN', float(DRIFT_SPAN)),
     // How far above its tip the cord fades into the page, in px: 14rem.
     declare('FADE', float(224)),
-    // How bright loose strands are, behind a section, and how much of that shows behind its prose.
-    declare('LOOSE_LIGHT', float(0.55)),
-    declare('COPY_LIGHT', float(0.2)),
+    // How much of the strands' light shows behind a section's prose.
+    declare('COPY_LIGHT', float(0.04)),
+    declare('COPY_FADE', float(120)),
     declare('LOOSE_HUE', float(LOOSE_HUE)),
     // How many of a peeling strand's fibres, along its outer edge, carry the lead on when it peels from the cord.
     declare('PEEL_LEAD', float(PEEL_LEAD)),
@@ -1026,13 +1064,14 @@ fn place(th: Thread, k: f32) -> Placed {
   return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w);
 }
 
-// How much light shows at p: less behind a section's prose, fading in over a few pixels around it.
+// How much light shows at p: less behind a section's prose, fading back in over COPY_FADE px around it, so neither
+// the strands nor their glare cross the words.
 fn behindCopy(p: vec2f) -> f32 {
   var light = 1.0;
   for (var r = 0u; r < u32(U[2].z); r++) {
     let box = U[11u + r];
     let outside = max(max(box.x - p.x, p.x - box.z), max(box.y - p.y, p.y - box.w));
-    light = min(light, mix(COPY_LIGHT, 1.0, smoothstep(-8.0, 40.0, outside)));
+    light = min(light, mix(COPY_LIGHT, 1.0, smoothstep(0.0, COPY_FADE, outside)));
   }
   return light;
 }
@@ -1068,9 +1107,9 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   // The lead burns brighter all the way down, on the cord and on the strand that carries it on where the cord ends:
   // TRACED times the brightest of the rest.
   let leads = th.lead * here.leads;
-  let own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0), 1.0, leads);
+  let own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW), 1.0, leads);
   let lead = 1.0 + (TRACED - 1.0) * leads;
-  let shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
+  let shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
   // The cord fades out over FADE above its tip, and dims behind prose.
   let tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
 
@@ -1165,7 +1204,7 @@ float behindCopy(vec2 p) {
     if (float(r) >= U[2].z) break;
     vec4 box = U[11 + r];
     float outside = max(max(box.x - p.x, p.x - box.z), max(box.y - p.y, p.y - box.w));
-    light = min(light, mix(COPY_LIGHT, 1.0, smoothstep(-8.0, 40.0, outside)));
+    light = min(light, mix(COPY_LIGHT, 1.0, smoothstep(0.0, COPY_FADE, outside)));
   }
   return light;
 }
@@ -1192,9 +1231,9 @@ void main() {
   float hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
   vec3 colour = blend(cool(warmth(hue), here.depth, knit));
   float leads = th.lead * here.leads;
-  float own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0), 1.0, leads);
+  float own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW), 1.0, leads);
   float lead = 1.0 + (TRACED - 1.0) * leads;
-  float shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
+  float shade = mix(own * GLOW, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
   float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
 
   vec2 res = U[0].xy;

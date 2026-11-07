@@ -37,7 +37,28 @@ export interface Field {
   readonly intensity: number
   /** The first threads carry these labels, in order. At most four. */
   readonly labels: ReadonlyArray<Label>
+  /**
+   * Boxes of text over the field, as left, top, right, bottom in its pixels: threads passing behind them dim, smoothly
+   * and only there, so the text reads over the field's light. At most MAX_TEXT.
+   */
+  readonly text?: ReadonlyArray<readonly [left: number, top: number, right: number, bottom: number]>
 }
+
+export const MAX_TEXT = 3
+/**
+ * How much of a thread's light shows behind text, and how its dimming fades out: from TEXT_FADE[0] px inside a text
+ * box's edge to TEXT_FADE[1] px outside it.
+ */
+export const TEXT_LIGHT = 0.25
+export const TEXT_FADE = [-8, 32] as const
+
+/** How much of a thread's light shows at `x`, `y` on `field`: less behind its text. Mirrors `behindText` in the shaders. */
+export const behindText = (field: Field, x: number, y: number) =>
+  (field.text ?? []).slice(0, MAX_TEXT).reduce((light, [left, top, right, bottom]) => {
+    const outside = Math.max(left - x, x - right, top - y, y - bottom)
+    const t = Math.min(1, Math.max(0, (outside - TEXT_FADE[0]) / (TEXT_FADE[1] - TEXT_FADE[0])))
+    return Math.min(light, TEXT_LIGHT + (1 - TEXT_LIGHT) * t * t * (3 - 2 * t))
+  }, 1)
 
 export const MAX_LABELS = 4
 /** Points along each thread, spaced by `along`. Enough for smooth curves at 2000px wide. */
@@ -168,8 +189,15 @@ export const SHAPE = {
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
   labelled: 2,
-  /** The dimmest thread's brightness, against 1 for the brightest: low, so the dark shows between bright fibres. */
-  dim: 0.1,
+  /**
+   * A thread's own brightness, against 1 for the brightest: `dim` + (1 − `dim`) × a random number to the power `skew`,
+   * so most fibres are moderate and a few bright, and none so dim it reads as background. Loose, a fibre glows `glow`
+   * times that: the braid stays the hottest light, but a loose strand reads as the same light fanned out, not a dimmed
+   * copy of it.
+   */
+  dim: 0.22,
+  skew: 2,
+  glow: 1.7,
   /** The share of threads that take their ribbon's colour phase, not their own: high, so colours run in bundles. */
   coherence: 0.9,
   /**
@@ -560,9 +588,9 @@ export const warmth = (field: Field, i: number, u: number, t: number, braided: n
 }
 
 /**
- * A thread's brightness, as the shaders pick it, `knitted` (0 to 1) of the way into the plait: there a band's edge
- * fibres burn brighter and its inner ones dimmer. The lead burns brighter all the way. Breathing is left out: the 2D
- * renderers draw one still frame.
+ * A thread's brightness, as the shaders pick it, `knitted` (0 to 1) of the way into the plait: loose, it glows; there
+ * a band's edge fibres burn brighter and its inner ones dimmer. The lead burns brighter all the way. Breathing is left
+ * out: the 2D renderers draw one still frame.
  */
 export const brightness = (field: Field, i: number, knitted = 0) => {
   const own =
@@ -570,10 +598,11 @@ export const brightness = (field: Field, i: number, knitted = 0) => {
       ? SHAPE.labelled
       : isTraced(i)
         ? 1
-        : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** 3
+        : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** SHAPE.skew
   // Inside a band the fibres glow more evenly than in the funnel: the cube root of their own brightness.
   const inBand = thread(field, i).edge ? SHAPE.edgeLight : SHAPE.innerLight * Math.cbrt(own)
-  return (own + (inBand - own) * knitted) * (isTraced(i) ? SHAPE.traced : 1)
+  const loose = own * SHAPE.glow
+  return (loose + (inBand - loose) * knitted) * (isTraced(i) ? SHAPE.traced : 1)
 }
 
 /**

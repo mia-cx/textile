@@ -1,10 +1,12 @@
 import {
   along,
+  behindText,
   blend,
   brightness,
   type Field,
   knit,
   MAX_LABELS,
+  MAX_TEXT,
   position,
   SEGMENTS,
   thread,
@@ -51,7 +53,9 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
     u.set([label.at, label.lane], 16 + i * 4)
   for (const [i, rgb] of palette.threads.entries()) u.set(rgb, 32 + i * 4)
   u.set([...palette.background, EXPOSURE], 40)
-  u.set([whole, gathers], 44)
+  const text = (field.text ?? []).slice(0, MAX_TEXT)
+  u.set([whole, gathers, text.length], 44)
+  for (const [i, box] of text.entries()) u.set(box, 48 + i * 4)
   return u
 }
 
@@ -131,7 +135,7 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
             x,
             y,
             rgb: mixed(warmth(field, i, u, time, braided)),
-            alpha: 0.8 * light * field.intensity,
+            alpha: 0.8 * light * field.intensity * behindText(field, x, y),
           }
         })
         // In short pieces, each a gradient from its first point's colour to its last's, so the colour follows the

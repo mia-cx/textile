@@ -138,7 +138,7 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
       const th = cordThread(i)
       const span = laid.paths[th.path]
       if (!span || span.count < 2) return []
-      const own = 0.5 * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2))
+      const own = 0.5 * SHAPE.glow * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** SHAPE.skew)
       const points = Array.from({ length: span.count }, (_, k) => {
         const { warmth, leads } = cordWarmth(laid, i, span.first + k, time, th)
         return {
