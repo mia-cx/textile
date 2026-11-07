@@ -96,8 +96,8 @@ function clearOfCopy(field: Field, label: Label) {
 const TIP_GAP = 4
 /**
  * The hero's braid forms in the open gap between the copy and the window, at every width: threads start to leave the
- * current at the copy's edge, and the braid is whole for the last BRAIDED share of the gap. Each thread's turn scales
- * with the gap, so a narrow gap turns them in no tighter, against the plait's own turns, than a wide one.
+ * current at the copy's edge, and the braid is whole for the last BRAIDED share of the gap. Each thread's join scales
+ * with the gap, so even in a narrow one it turns in more gently than the plait itself turns.
  */
 const BRAIDED = 0.1
 
@@ -421,9 +421,10 @@ function close(
   }
   /* The cord's light falls on the window where it arrives (`--tip`): the top's middle when stacked, the left edge's
      middle side by side, as `hero` ends it. It falls off as the inverse square of the distance from the cord's end,
-     1.8 / (1 + (r / reach)²) in the stops below, clipped at white within a reach of the cord: bright along the rim,
-     which faces the cord, and faint across the face beside it, which the light only grazes. Hot near the cord, as the
-     tone map burns the hottest light toward white. */
+     1.8 / (1 + (r / reach)²) in the stops below, clipped at full strength: bright along the rim, which faces the cord,
+     and faint across the face beside it, which the light only grazes. White nearest the cord, as the tone map burns the
+     hottest light white, and violet beyond. Both layers sit above the window, whose backdrop filter stacks it on its
+     own. */
   .hero-window {
     --tip: 50% 0;
     /* About the cord's width where it arrives: light from all of it, not from a point. */
@@ -435,6 +436,7 @@ function close(
   .hero-window::after {
     content: '';
     position: absolute;
+    z-index: 1;
     inset: 0;
     border-radius: 1.125rem;
     background: radial-gradient(

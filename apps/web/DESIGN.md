@@ -77,17 +77,16 @@ for event labels, the 2D fallback, the section strands, and the social card.
 
 - Threads enter along the whole left edge and follow a quadratic curve to the target's edge, inside a funnel whose
   nearly straight edges close in steadily until they meet the braid's outline, tangent to it, where the braid is whole,
-  so there is no knee, no waist, and no straight run. They travel in eleven ribbons, narrower than the gaps between them, that share a lane, a sway, and a
-  colour (golden-ratio steps, so neighbours differ: silver at the edges, amber among violet toward the middle), so the funnel
-  reads as separate strands of fibre on the dark.
+  so there is no knee, no waist, and no straight run. They travel in eleven ribbons, narrower than the gaps between
+  them, that share a lane, a sway, and a colour (golden-ratio steps, so neighbours differ: silver at the edges, amber
+  among violet toward the middle), so the funnel reads as separate strands of fibre on the dark.
 - Across `braid`, threads keep leaving the funnel for a three-strand braid inside it, inner lanes mostly first and the
-  outermost last. The hero measures it from its layout: threads behind the headline, subline, and buttons stay loose,
-  the braid forms in the open gap between the copy's right edge and the window's left edge, at every width, and it is
-  whole only for the last tenth of that gap. Each thread's turn scales with the gap, so a narrow one turns threads in
-  no tighter, against the plait's own turns, than a wide one. Its
-  strands are violet, amber, and violet toward silver. The braid narrows linearly to `cord` and keeps one long helix
-  angle (11 radii per twist), so each crossing has room, twisting tighter as it goes to meet the target at its
-  thinnest. The hero's cord stops just short of the window; the window drops its black shadow there, so the cord's end
+  outermost last. The hero measures it from its layout, again when webfonts load: threads behind the headline,
+  subline, and buttons stay loose, the braid forms in the open gap between the copy's right edge and the window's left
+  edge, at every width, and it is whole only for the last tenth of that gap. Each thread's join scales with the gap,
+  so even in a narrow one it turns in more gently than the plait itself turns. Its strands are violet, amber, and
+  violet toward silver. The braid narrows linearly to `cord` and keeps one helix angle, a long pitch of 11 radii per
+  twist (about 34°), so each crossing has room, twisting tighter as it goes to meet the target at its thinnest. The hero's cord stops just short of the window; the window drops its black shadow there, so the cord's end
   stays bright, and a frame around it, which the window's clipping can't cut, takes the cord's light: on its rim, which
   faces the cord, and faintly across its face, falling off as the inverse square of the distance from the cord's end.
 - The threads emit light, in linear units with real range: a lone fibre in the current gives about 0.1, the braid's

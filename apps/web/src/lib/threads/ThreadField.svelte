@@ -5,7 +5,8 @@ import { hex, type Palette, type Renderer, type RGB, still, webgl2, webgpu } fro
 
 /**
  * A live field of luminous threads that braid into `target`, drawn with WebGPU, else WebGL2, else one still canvas 2D
- * frame. `layout` places the field for the box's size and the target's box within it, and runs again on every resize.
+ * frame. `layout` places the field for the box's size and the target's box within it, and runs again on every resize
+ * and when webfonts finish loading.
  * Decorative: the page around it says what it shows.
  *
  * Each label rides its thread: the frame loop moves its mark by the same math the shaders run.
@@ -165,6 +166,8 @@ onMount(() => {
   const resize = new ResizeObserver(measure)
   resize.observe(box)
   if (target) resize.observe(target)
+  // Webfonts swap in after the first layout and reflow the copy that `layout` may measure.
+  document.fonts.addEventListener('loadingdone', measure)
   const seen = new IntersectionObserver(([entry]) => {
     visible = entry?.isIntersecting ?? false
     refresh()
@@ -187,6 +190,7 @@ onMount(() => {
     destroyed = true
     cancelAnimationFrame(frame)
     resize.disconnect()
+    document.fonts.removeEventListener('loadingdone', measure)
     seen.disconnect()
     document.removeEventListener('visibilitychange', onVisibility)
     motion.removeEventListener('change', onMotion)

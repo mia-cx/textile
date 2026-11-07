@@ -7,7 +7,7 @@ import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
  * across the curve. Pulses of light run along every thread toward the end, and in the braid, glints spark along each
  * fibre where its band turns toward the light.
  *
- * Light is linear, in units where a lone fibre in the current gives about 0.1 and a glint a hundred times that. The
+ * Light is linear, in units where a lone fibre in the current gives about 0.1 and a glint a few hundred times that. The
  * threads add their light into a half-float target, and a frame then scatters a share of it as glare, as a lens or the
  * air does: `shrink` averages the light into the first of BLOOM_LEVELS bloom targets (`BLOOM_SCALE` of the CSS size),
  * `down` halves it level by level, and `up` adds each level back into the one above, blurring it with a tent. Each
