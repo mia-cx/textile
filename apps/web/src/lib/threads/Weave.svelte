@@ -37,6 +37,11 @@ const MAX_DPR = 2
 /** The moment reduced motion and the 2D fallback show, and the longest step between frames, as the hero's. */
 const STILL_TIME = 12
 const MAX_STEP = 0.1
+/**
+ * How far down the page the cord's tip is when it is simply drawn: far past any page, and finite, because the shaders
+ * fade the cord in the span above its tip.
+ */
+const NO_TIP = 1e7
 /** How many lost GPU devices the cord replaces before it stops asking for WebGPU. */
 const MAX_GPU_RECOVERIES = 1
 
@@ -63,12 +68,13 @@ onMount(() => {
   let destroyed = false
   /** Whether the renderer holds the current cord: a new layout waits to upload until the cord next draws. */
   let loaded = false
+  /** Whether the canvas still holds a frame of the cord. */
+  let painted = false
 
   /** The part of the cord the screen shows now, with the canvas's margin, and how far down it is drawn. */
   const view = () => {
     const top = scrollY - offset - innerHeight * MARGIN
-    const tip =
-      scrolled && motion.matches ? scrollY - offset + innerHeight * TIP : Number.POSITIVE_INFINITY
+    const tip = scrolled && motion.matches ? scrollY - offset + innerHeight * TIP : NO_TIP
     return { left: 0, top, tip }
   }
   const draw = () => {
@@ -78,6 +84,16 @@ onMount(() => {
     const shown = view()
     canvas.style.translate = `0 ${shown.top}px`
     renderer.draw(palette, time, shown)
+    painted = true
+  }
+  /**
+   * Clears the last frame, once, when the cord stops showing in a visible tab, as when the reader scrolls back above
+   * where it starts: the frame would otherwise stay on the canvas, frozen where the cord no longer is.
+   */
+  const rest = () => {
+    if (!painted || !renderer || !visible || document.hidden) return
+    renderer.clear()
+    painted = false
   }
   /** Whether any of the cord is drawn on the canvas where it is now: above the tip, within the screen and its margin. */
   const shows = (laid: Cord) => {
@@ -91,7 +107,7 @@ onMount(() => {
   const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
   const tick = (now: number) => {
     frame = 0
-    if (!live()) return
+    if (!live()) return rest()
     if (animates()) time += Math.min((now - last) / 1000, MAX_STEP)
     last = now
     draw()
@@ -99,7 +115,8 @@ onMount(() => {
   }
   /** Draws on the next frame, and keeps drawing while the cord moves; still, it draws again only as the page scrolls. */
   const wake = () => {
-    if (frame !== 0 || !live()) return
+    if (frame !== 0) return
+    if (!live()) return rest()
     last = performance.now()
     frame = requestAnimationFrame(tick)
   }

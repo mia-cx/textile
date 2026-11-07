@@ -27,6 +27,8 @@ export interface CordRenderer {
   readonly kind: 'webgpu' | 'webgl2' | '2d'
   load(cord: Cord): void
   draw(palette: Palette, time: number, view: View): void
+  /** Clears the canvas, as when the cord no longer shows where it is. */
+  clear(): void
   destroy(): void
   /** Settles when the renderer can no longer draw, as when the browser resets the GPU; the cord then starts over. */
   readonly lost?: Promise<unknown>
@@ -75,6 +77,8 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       const longest = Math.max(shown.count, ...peels.map((peel) => peel.count))
       painter.paint(uniforms, longest * 2, CORD_THREADS + peels.length * PEEL_THREADS)
     },
+    // No threads: every pass runs on empty light, and the tone pass leaves the canvas transparent.
+    clear: () => painter.paint(uniforms, 0, 0),
     destroy: () => painter.destroy(),
   }
 }
@@ -172,6 +176,10 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         context.stroke(piece.path)
       }
       context.restore()
+    },
+    clear() {
+      context.setTransform(1, 0, 0, 1, 0, 0)
+      context.clearRect(0, 0, canvas.width, canvas.height)
     },
     destroy() {},
   }
