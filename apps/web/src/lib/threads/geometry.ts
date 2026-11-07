@@ -178,16 +178,16 @@ export const SHAPE = {
    * neighbours a third of a cycle apart.
    */
   gradient: 2.4,
-  braidGradient: 10,
+  braidGradient: 8,
   /** How fast the gradient flows toward the window, in cycles per second. */
   flow: 0.06,
   /**
    * How each cycle splits between violet and amber: below 0 keeps more of it violet. And how soft the turn between
-   * them is: low, so a thread is violet or amber for most of its length and passes the pinkish mix between them
-   * quickly, as the concept's strands do.
+   * them is: soft enough that a band fades from one into the other over most of a crossing, as the concept's do,
+   * while each colour still holds saturated between the turns.
    */
   warm: -0.12,
-  turn: 0.45,
+  turn: 0.75,
   /**
    * The strands breathe: a slow swell of light and warmth, `breath` cycles per second, that travels toward the window
    * in `breathWaves` waves per unit along, a third of a cycle apart between strands. `breathLight` is how much brighter
@@ -200,19 +200,20 @@ export const SHAPE = {
   /**
    * The lead: a few fibres that burn `traced` times brighter than the brightest of the rest, all the way along, so the
    * eye can follow one strand from the current through the braid and down the page. They are threads `traceFirst` on,
-   * `traceCount` of them, with ribbon `traceRibbon`'s colour, on a lane of their own, `traceLane` across the current
-   * and `traceHalf` wide: high, inside the labelled threads, so it runs in clear dark above the hero's headline before
-   * it gathers into the top strand. In the braid they ride their strand's edge, `trace` across its band and inward in
-   * steps of `traceStep`.
+   * `traceCount` of them, on a lane of their own, `traceLane` across the current and `traceHalf` wide: high, inside the
+   * labelled threads, above the hero's headline, before they gather into the top strand. They take the colour and sway
+   * of ribbon `traceRibbon`, on the far side of the current, so they move unlike the bundles beside them and cross them
+   * as a strand of their own. In the braid they ride their strand's edge, `trace` across its band and inward in steps of
+   * `traceStep`.
    */
   traceFirst: 4,
-  traceCount: 6,
-  traceRibbon: 1,
+  traceCount: 4,
+  traceRibbon: 7,
   traceLane: -0.8,
   traceHalf: 0.02,
   trace: 0.98,
   traceStep: 0.04,
-  traced: 5,
+  traced: 4,
 } as const
 
 /** The same hash the shaders use: a thread's index to a stable pseudo-random number in [0, 1). */
@@ -513,7 +514,11 @@ export const warmth = (field: Field, i: number, u: number, t: number, braided: n
  */
 export const brightness = (field: Field, i: number, knitted = 0) => {
   const own =
-    i < field.labels.length ? SHAPE.labelled : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** 3
+    i < field.labels.length
+      ? SHAPE.labelled
+      : isTraced(i)
+        ? 1
+        : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** 3
   // Inside a band the fibres glow more evenly than in the funnel: the cube root of their own brightness.
   const inBand = thread(field, i).edge ? SHAPE.edgeLight : SHAPE.innerLight * Math.cbrt(own)
   return (own + (inBand - own) * knitted) * (isTraced(i) ? SHAPE.traced : 1)

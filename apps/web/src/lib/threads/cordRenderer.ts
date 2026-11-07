@@ -147,7 +147,8 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         const { warmth, leads } = cordWarmth(laid, i, span.first + k, time, th)
         return {
           at: place(laid, i, span.first + k, time, th).point,
-          colour: css(blend(warmth), Math.min(1, own * (leads ? SHAPE.traced : 1))),
+          // The lead is TRACED times the brightest of the rest.
+          colour: css(blend(warmth), Math.min(1, leads ? 0.5 * SHAPE.traced : own)),
         }
       })
       // Neighbouring pieces share their end point, so the thread runs on unbroken. Each piece's colour runs along its

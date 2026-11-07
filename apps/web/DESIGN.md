@@ -84,28 +84,32 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
 - `braid` holds three points along the field. From `gathers`, the bundles start gathering into three strands side by
   side, inner lanes mostly first; from `forms`, the strands grow their swing into a plait over half the stretch to
   `whole`, and every thread has joined its strand by 70% of it. The hero measures them from its layout, again when
-  webfonts load: the bundles start to gather behind the copy, 1.2 gaps before its right edge; the plait forms only in
-  the open gap between the copy and the window, at every width; and it is whole where it meets the window. Each thread
-  eases in with no corner, so the plait has no visible start. The braid narrows linearly to `cord` and keeps one helix
-  angle, a long pitch of 11 radii per twist (about 34°), so each crossing has room, twisting tighter as it goes to meet
-  the target at its thinnest. The hero's cord stops just short of the window; the window
+  webfonts load: the bundles start to gather behind the copy, 1.2 gaps before its right edge and at least 360px, so
+  they converge over a long stretch even where the gap is narrow; the plait forms only in the open gap between the copy
+  and the window, at every width, never behind the window, whose glass would show it through the messages; and it is
+  whole where it meets the window. Each thread eases in with no corner, so the plait has no visible start. The braid
+  narrows linearly to `cord` and keeps one helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing
+  has room, twisting tighter as it goes to meet the target at its thinnest. The hero's cord stops just short of the
+  window; the window
   drops its black shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping
   can't cut, takes the cord's light: on its rim, which faces the cord, and faintly across its face, falling off as the
   inverse square of the distance from the cord's end.
 - Only violet and amber: every thread runs violet to amber and back along its length, the gradient flowing toward the
-  target, faster in the plait (10 cycles per field length against 2.4 in the current). As threads gather they take
+  target, faster in the plait (8 cycles per field length against 2.4 in the current). As threads gather they take
   their strand's phase, a third of a cycle from its neighbours', so each band shows both colours and no band is one
-  colour. The rate is integrated along the field, so the colour never sweeps where it changes. Every strand breathes:
+  colour; a band fades from one into the other over most of a crossing. The rate is integrated along the field, so the colour never sweeps where it changes. Every strand breathes:
   a slow wave of light (±22%) and warmth, about six seconds long, travelling toward the target.
 - The threads emit light, in linear units with real range: a lone fibre in the current gives about 0.1, the braid's
   bands a few times that, and glints a few hundred times. Glints spark on a fifth of the braid's fibres where a strand
-  passes over its neighbour, and on loose fibres too, at one place in a hundred, at the same intensity, so they bloom.
+  passes over its neighbour, burning warm white. On loose fibres they spark at one place in a hundred, in the fibre's
+  own violet or amber, so a loose glint reads as a hot fibre rather than a grey fleck.
   Each thread is one instance, a triangle strip of 201 point pairs (crowded toward the end, where the braid twists
   tightest) widened 2px for its own halo. Pulses of light run along every thread toward the target, at its own phase in
   the funnel and in step within the braid, so they travel along it. Threads add their light into a half-float target.
-- The lead: six fibres that burn five times brighter than the brightest of the rest, on a lane of their own inside the
-  labelled threads, in clear dark above the headline. They gather into the top strand and ride its band's edge through
-  the plait. The page's cord carries the hero's strands on as themselves: its thread `i` is the hero's thread `i`, in
+- The lead: four fibres that burn four times brighter than the brightest of the rest, on a lane of their own inside
+  the labelled threads, above the headline. They take the colour and sway of a bundle on the far side of the current,
+  so they move unlike the bundles beside them and cross them as a strand of their own. They gather into the top strand
+  and ride its band's edge through the plait. The page's cord carries the hero's strands on as themselves: its thread `i` is the hero's thread `i`, in
   the same strand, with the same fibre, and it picks up the hero's twist, colour, and drift where the hero's cord meets
   the window, carried on behind the window to its bottom. So the lead runs down the whole cord, on its strand's side as
   the strands part behind each section, and on into the strand that leaves the cord where it comes apart in voice.

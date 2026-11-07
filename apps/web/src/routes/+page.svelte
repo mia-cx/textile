@@ -103,11 +103,13 @@ function clearOfCopy(field: Field, label: Label) {
 /** How far short of the window's edge the cord ends, in CSS pixels. */
 const TIP_GAP = 4
 /**
- * The hero's bundles start to gather GATHER times the gap's width before the copy's edge, behind the copy, so they
- * converge over a long stretch. The plait forms only in the open gap between the copy and the window, at every width:
- * its strands start to wind at the copy's edge and wind tighter all the way to the window, where the plait is whole.
+ * The hero's plait forms only in the open gap between the copy and the window, at every width: its strands start to
+ * wind at the copy's edge and wind tighter all the way to the window, where the plait is whole. (Not behind the window:
+ * its glass would show the plait through its messages.) The bundles start to gather behind the copy, GATHER times the
+ * gap before its edge and at least MIN_GATHER pixels, so they converge over a long stretch even where the gap is narrow.
  */
 const GATHER = 1.2
+const MIN_GATHER = 360
 
 type Spine = Pick<Field, 'start' | 'control' | 'end'>
 
@@ -125,12 +127,12 @@ function crossing(field: Spine, axis: 0 | 1, value: number) {
 }
 
 /**
- * Where `field` braids: its bundles gather from well behind the copy, its plait forms where its spine leaves the copy,
- * at `copyEdge` on `axis`, and it is whole where it meets the window, at `windowEdge`.
+ * Where `field` braids: its plait forms where its spine leaves the copy, at `copyEdge` on `axis`, and is whole at its
+ * end, the window; its bundles gather from well before that, behind the copy.
  */
-function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number, windowEdge: number) {
-  const gathers = crossing(field, axis, copyEdge - (windowEdge - copyEdge) * GATHER)
-  return [gathers, crossing(field, axis, copyEdge), 1] as const
+function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number) {
+  const gather = Math.max((field.end[axis] - copyEdge) * GATHER, MIN_GATHER)
+  return [crossing(field, axis, copyEdge - gather), crossing(field, axis, copyEdge), 1] as const
 }
 
 /** Where the hero's strands stand where they meet the window, so the page's cord carries them on below it. */
@@ -165,10 +167,7 @@ function hero(
       intensity: 0.75,
       labels: [],
     } satisfies Omit<Field, 'braid'>
-    const field: Field = {
-      ...shape,
-      braid: braidBetween(shape, 0, copy?.right ?? width * 0.45, end[0] + TIP_GAP),
-    }
+    const field: Field = { ...shape, braid: braidBetween(shape, 0, copy?.right ?? width * 0.45) }
     seam = seamOf(field)
     const labelled = width >= LABELLED && height >= LABELLED_HEIGHT
     return { ...field, labels: labelled ? LABELS.filter((label) => clearOfCopy(field, label)) : [] }
@@ -189,7 +188,7 @@ function hero(
   } satisfies Omit<Field, 'braid'>
   return {
     ...shape,
-    braid: braidBetween(shape, 1, copy?.bottom ?? height * 0.5, end[1]),
+    braid: braidBetween(shape, 1, copy?.bottom ?? height * 0.5),
   }
 }
 

@@ -164,13 +164,15 @@ const constants = (declare: (name: string, value: string) => string) =>
     // with the flow (thread lengths per second). In the braid they spark on GLINT_SHARE of the fibres where a strand
     // passes over its neighbour, brightest on its band's edge fibres, and burn a few hundred times a lone fibre's light.
     // On loose fibres, LOOSE_GLINTS of the places a glint could be spark, at LOOSE_GLINT: a few glints at a time, each
-    // on a fibre of its own, as bright as the braid's, so they bloom too.
+    // on a fibre of its own and alone hot enough to bloom, as the braid's do where many fibres spark together.
     declare('GLINTS', float(8)),
     declare('GLINT_SPEED', float(0.05)),
     declare('GLINT_LIGHT', float(200)),
     declare('GLINT_SHARE', float(0.2)),
-    declare('LOOSE_GLINT', float(260)),
+    // LOOSE_WHITE is how far toward white a loose glint's own colour leans: a little, so it reads as a hot fibre.
+    declare('LOOSE_GLINT', float(90)),
     declare('LOOSE_GLINTS', float(0.01)),
+    declare('LOOSE_WHITE', float(0.1)),
     // How dark a fibre is behind the braid, against in front of it, and how much hotter it burns on a crossing's crest.
     declare('BACK', float(0.2)),
     declare('CREST', float(4)),
@@ -306,11 +308,11 @@ fn pulse(phase: f32, light: f32) -> f32 {
 
 // A glint's light where a fibre is phase of the way through its glints (g: x its phase, y its loose light, z its braid
 // light, w its seed): short, sharp sparks, each centred on a whole phase. A loose fibre sparks at only LOOSE_GLINTS of
-// them, picked by its seed.
-fn glint(g: vec4f) -> f32 {
+// them, picked by its seed. Loose glints in x, the braid's in y.
+fn glint(g: vec4f) -> vec2f {
   var c = 0.5 + 0.5 * cos(TAU * g.x);
   c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
-  return c * (g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS) + g.z);
+  return c * vec2f(g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS), g.z);
 }
 
 @fragment
@@ -318,9 +320,13 @@ fn fs(v: Out) -> @location(0) vec4f {
   let d = abs(v.across) * ${HALF_WIDTH};
   let core = exp(-(d * d) / 0.3);
   let halo = 0.1 * exp(-(d * d) / 1.6);
-  // A glint adds warm-white light of its own, as bright as the fibre's strongest channel, so it burns white over a band
-  // whose own colour is already saturated, rather than adding more of that colour.
-  let spark = ${SPARK_WHITE('vec3f')} * max(v.colour.r, max(v.colour.g, v.colour.b)) * glint(v.glint);
+  // A glint adds light of its own, as bright as the fibre's strongest channel: in the braid warm white, so it burns
+  // white over a band whose own colour is already saturated; on a loose fibre mostly the fibre's own hue, so it blooms
+  // violet or amber rather than flecking the current with grey.
+  let peak = max(v.colour.r, max(v.colour.g, v.colour.b));
+  let g = glint(v.glint);
+  let white = ${SPARK_WHITE('vec3f')};
+  let spark = peak * (mix(v.colour / max(peak, 1e-6), white, LOOSE_WHITE) * g.x + white * g.y);
   return vec4f((v.colour * pulse(v.pulse.x, v.pulse.y) + spark) * (core + halo), 1.0);
 }`
 
@@ -414,6 +420,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
   var own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
+  if (th.lead > 1.0) { own = 1.0; }
   if (i < U[3].w) { own = LABELLED; }
   // Bands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
   // each gives less light there, its band's edges more than its inside.
@@ -697,7 +704,7 @@ void main() {
   float breathing = breath(th.strand, u, t);
   float hue = hueOf(u, eased(U[3].x, mix(U[3].x, U[11].x, PLAIT), u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
-  float own = i < U[3].w ? LABELLED : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
+  float own = i < U[3].w ? LABELLED : th.lead > 1.0 ? 1.0 : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float shade = mix(own, braidLight(here.depth, th.fibre, own), knit) * th.lead * (1.0 + BREATH_LIGHT * breathing) * smoothstep(0.0, 0.06, u);
 
   vec2 res = U[0].xy;
@@ -731,14 +738,17 @@ float pulse(float phase, float light) {
   float crest4 = crest * crest * crest * crest;
   return 0.55 + light * crest4 * crest4 * crest4;
 }
-float glint(vec4 g) {
+vec2 glint(vec4 g) {
   float c = 0.5 + 0.5 * cos(TAU * g.x);
   c = c * c; c = c * c; c = c * c; c = c * c; c = c * c; c = c * c;
-  return c * (g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS) + g.z);
+  return c * vec2(g.y * step(hash(round(g.x) * 0.731 + g.w), LOOSE_GLINTS), g.z);
 }
 void main() {
   float d = abs(vAcross) * ${HALF_WIDTH};
-  vec3 spark = ${SPARK_WHITE('vec3')} * max(vColour.r, max(vColour.g, vColour.b)) * glint(vGlint);
+  float peak = max(vColour.r, max(vColour.g, vColour.b));
+  vec2 g = glint(vGlint);
+  vec3 white = ${SPARK_WHITE('vec3')};
+  vec3 spark = peak * (mix(vColour / max(peak, 1e-6), white, LOOSE_WHITE) * g.x + white * g.y);
   colour = vec4((vColour * pulse(vPulse.x, vPulse.y) + spark) * (exp(-(d * d) / 0.3) + 0.1 * exp(-(d * d) / 1.6)), 1.0);
 }
 `
@@ -961,9 +971,11 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let breathing = breath(th.strand, run + U[2].w, t);
   let hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
   let colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
-  let own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
-  // The lead burns brighter all the way down, on the cord and on the strand that carries it on where the cord ends.
-  let lead = 1.0 + (TRACED - 1.0) * th.lead * here.leads;
+  // The lead burns brighter all the way down, on the cord and on the strand that carries it on where the cord ends:
+  // TRACED times the brightest of the rest.
+  let leads = th.lead * here.leads;
+  let own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0), 1.0, leads);
+  let lead = 1.0 + (TRACED - 1.0) * leads;
   let shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
   // The cord fades out over FADE above its tip, and dims behind prose.
   let tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
@@ -1073,8 +1085,9 @@ void main() {
   float breathing = breath(th.strand, run + U[2].w, t);
   float hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
   vec3 colour = linear(mix(U[8].rgb, U[9].rgb, cool(warmth(hue), here.depth, knit)));
-  float own = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
-  float lead = 1.0 + (TRACED - 1.0) * th.lead * here.leads;
+  float leads = th.lead * here.leads;
+  float own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0), 1.0, leads);
+  float lead = 1.0 + (TRACED - 1.0) * leads;
   float shade = mix(own * LOOSE_LIGHT, braidLight(here.depth, th.fibre, own), knit) * lead * (1.0 + BREATH_LIGHT * breathing);
   float tip = 1.0 - smoothstep(U[1].z - FADE, U[1].z, here.at.y);
 
