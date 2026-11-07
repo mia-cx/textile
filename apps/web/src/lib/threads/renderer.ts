@@ -1,5 +1,6 @@
 import {
   along,
+  brightness,
   CROWD,
   type Field,
   MAX_LABELS,
@@ -7,7 +8,7 @@ import {
   SEGMENTS,
   SHAPE,
   thread,
-  tint,
+  warmth,
 } from './geometry'
 import {
   BLOOM_SCALE,
@@ -24,9 +25,9 @@ import {
   VERTICES_PER_THREAD,
 } from './shaders'
 
-/** The colours a field draws with, read from the page's tokens: three thread colours and the ink behind them. */
+/** The colours a field draws with, read from the page's tokens: the two thread colours and the ink behind them. */
 export interface Palette {
-  readonly threads: readonly [violet: RGB, amber: RGB, silver: RGB]
+  readonly threads: readonly [violet: RGB, amber: RGB]
   readonly background: RGB
 }
 export type RGB = readonly [r: number, g: number, b: number]
@@ -41,7 +42,7 @@ export interface Renderer {
 }
 
 /** How much light the tone map lets through: higher is brighter, saturating sooner. */
-const EXPOSURE = 1.25
+const EXPOSURE = 1.45
 
 /** Sizes are CSS pixels: the canvas's own size divided by `dpr`. */
 const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: number) => {
@@ -54,7 +55,7 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
   for (const [i, label] of field.labels.slice(0, MAX_LABELS).entries())
     u.set([label.at, label.lane], 16 + i * 4)
   for (const [i, rgb] of palette.threads.entries()) u.set(rgb, 32 + i * 4)
-  u.set([...palette.background, EXPOSURE], 44)
+  u.set([...palette.background, EXPOSURE], 40)
   return u
 }
 
@@ -385,6 +386,8 @@ export function webgl2(canvas: HTMLCanvasElement): Renderer | undefined {
 /** Points per thread in the 2D fallback, and how many threads it draws at most: one still frame, drawn once. */
 const STILL_SEGMENTS = SEGMENTS
 const STILL_THREADS = 320
+/** Points per piece a thread is stroked in, each piece its own colour along the gradient. */
+const STILL_PIECE = 8
 /** How much light each thread gives in the still frame's braid, where they overlap. */
 const BRAID_STILL = 0.3
 
@@ -403,16 +406,13 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       context.fillStyle = css(palette.background, 1)
       context.fillRect(0, 0, canvas.width, canvas.height)
       context.globalCompositeOperation = 'lighter'
-      const [violet, amber, silver] = palette.threads
-      const [vr, vg, vb] = violet
-      const [sr, sg, sb] = silver
-      // The braid's strands, as the shaders' `strandColour`: violet, amber, and violet toward silver.
-      const strands: ReadonlyArray<RGB> = [
-        violet,
-        amber,
-        [vr + (sr - vr) * 0.6, vg + (sg - vg) * 0.6, vb + (sb - vb) * 0.6],
+      const [violet, amber] = palette.threads
+      const blend = (w: number): RGB => [
+        violet[0] + (amber[0] - violet[0]) * w,
+        violet[1] + (amber[1] - violet[1]) * w,
+        violet[2] + (amber[2] - violet[2]) * w,
       ]
-      /** One thread's points from `from` to `to` (of STILL_SEGMENTS), stroked with a faint halo under a fine core. */
+      /** Thread `i` from point `from` to `to` (of STILL_SEGMENTS), stroked with a faint halo under a fine core. */
       const stroke = (i: number, from: number, to: number, rgb: RGB, alpha: number) => {
         context.beginPath()
         for (let s = from; s <= to; s++) {
@@ -429,22 +429,28 @@ export function still(canvas: HTMLCanvasElement): Renderer | undefined {
       }
       const count = Math.min(field.count, STILL_THREADS)
       for (let i = 0; i < count; i++) {
-        const { colour, brightness } = tint(field, i)
-        const { joins, strand } = thread(field, i)
-        const alpha = 0.8 * brightness * field.intensity
-        // In the funnel a thread takes its own colour; from halfway into the braid, its strand's, dimmer, as hundreds
-        // of threads share it. `into` is the point there: `along` inverted.
+        const { joins } = thread(field, i)
+        const alpha = 0.8 * brightness(field, i) * field.intensity
+        // From halfway into the braid, a thread gives less light, as hundreds share it. `into` is the point there:
+        // `along` inverted.
         const into = Math.ceil((1 - (1 - (joins - SHAPE.join / 2)) ** (1 / CROWD)) * STILL_SEGMENTS)
-        stroke(i, 0, into, palette.threads[colour] ?? violet, alpha)
-        stroke(i, into, STILL_SEGMENTS, strands[strand] ?? violet, alpha * BRAID_STILL)
+        // In short pieces, so its colour follows the gradient along it.
+        for (let s = 0; s < STILL_SEGMENTS; s += STILL_PIECE) {
+          const to = Math.min(s + STILL_PIECE, STILL_SEGMENTS)
+          const braided = s >= into ? 1 : 0
+          const colour = blend(
+            warmth(field, i, along((s + to) / 2 / STILL_SEGMENTS), time, braided),
+          )
+          stroke(i, s, to, colour, braided ? alpha * BRAID_STILL : alpha)
+        }
       }
       // The flare where the cord ends.
       const [x, y] = field.end
       const radius = field.cord * 8
       const flare = context.createRadialGradient(x, y, 0, x, y, radius)
       flare.addColorStop(0, css([1, 1, 1], 0.9 * field.intensity))
-      flare.addColorStop(0.15, css(palette.threads[2], 0.5 * field.intensity))
-      flare.addColorStop(1, css(palette.threads[0], 0))
+      flare.addColorStop(0.15, css(blend(0.5), 0.5 * field.intensity))
+      flare.addColorStop(1, css(violet, 0))
       context.fillStyle = flare
       context.fillRect(x - radius, y - radius, radius * 2, radius * 2)
     },

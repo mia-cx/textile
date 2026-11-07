@@ -9,16 +9,16 @@ import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
  * light to a small target (`BLOOM_SCALE` of the CSS size), `blur` spreads it across and then down, and `tone` maps the
  * light, its bloom, and a flare where the cord ends over the ink.
  *
- * Uniforms are twelve vec4s, packed by `pack` in renderer.ts:
+ * Uniforms are eleven vec4s, packed by `pack` in renderer.ts:
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  start.xy, control.xy
  *   2  end.xy, spread, cord
  *   3  braid, count, intensity, label count
  *   4–7  labels: at, lane
- *   8–10 colours: violet, amber, silver
- *   11 background rgb, exposure
+ *   8–9  colours: violet, amber
+ *   10 background rgb, exposure
  */
-export const UNIFORM_VEC4S = 12
+export const UNIFORM_VEC4S = 11
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
 /** The bloom target's size, as a fraction of the canvas's CSS size: the same blur radius at every pixel ratio. */
 export const BLOOM_SCALE = 0.25
@@ -53,6 +53,11 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('HUE', float(SHAPE.hue)),
     declare('SPIN', float(SHAPE.spin)),
     declare('LABELLED', float(SHAPE.labelled)),
+    declare('DIM', float(SHAPE.dim)),
+    declare('COHERENCE', float(SHAPE.coherence)),
+    declare('GRADIENT', float(SHAPE.gradient)),
+    declare('FLOW', float(SHAPE.flow)),
+    declare('WARM', float(SHAPE.warm)),
     declare('SEGMENTS', float(SEGMENTS)),
     declare('CROWD', float(CROWD)),
     // How much light each thread gives in the braid, where hundreds of them overlap.
@@ -64,8 +69,10 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PULSE_LIGHT', float(2.2)),
     declare('BRAID_PULSE_LIGHT', float(0.6)),
     // How much of the bloom adds back, and how bright the flare is where the cord ends.
-    declare('BLOOM', float(1.1)),
+    declare('BLOOM', float(0.8)),
     declare('FLARE_LIGHT', float(2.5)),
+    // How far the densest light burns toward white: partly, so the hottest crossings keep their colour.
+    declare('WHITE_HOT', float(0.35)),
   ].join('\n')
 
 const commonWgsl = /* wgsl */ `
@@ -74,23 +81,14 @@ ${constants((name, value) => `const ${name} = ${value};`)}
 fn hash(n: f32) -> f32 { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
 fn ribbonOf(i: f32) -> f32 { return floor(hash(i + 1.3) * RIBBONS); }
 fn along(fraction: f32) -> f32 { return 1.0 - pow(1.0 - fraction, CROWD); }
-fn paint(pick: f32) -> vec3f {
-  if (pick < 0.48) { return U[8].rgb; }
-  if (pick < 0.8) { return U[9].rgb; }
-  return U[10].rgb;
-}
-// The braid's strands: violet, amber, and violet toward silver, so it stays coloured rather than turning white, with
-// one warm strand among two cool ones.
-fn strandColour(strand: u32) -> vec3f {
-  if (strand == 2u) { return mix(U[8].rgb, U[10].rgb, 0.6); }
-  return U[8u + strand].rgb;
-}
+// How warm a thread is at a phase (in gradient cycles): 0 violet, 1 amber. Mirrors warmth in geometry.ts.
+fn warmth(phase: f32) -> f32 { return pow(0.5 + 0.5 * sin(TAU * phase), WARM); }
 // Light to colour without bleaching it: the brightest channel saturates as 1 - e^(-x) and the others keep their share
 // of it, so dense light keeps its hue; only the densest, at the braid's crossings and where the cord ends, burns toward
 // a warm white, as hot filament does.
 fn tone(hdr: vec3f) -> vec3f {
-  let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3f')}, smoothstep(2.0, 5.0, peak) * 0.85);
+  let peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[10].w;
+  return mix(hdr * U[10].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3f')}, smoothstep(2.5, 6.0, peak) * WHITE_HOT);
 }
 `
 
@@ -154,12 +152,14 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let tangent = dir / max(length(dir), 1e-4);
   let pos = here.xy + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  // Most threads take their ribbon's colour in the funnel; in the braid, each takes its strand's.
+  // Each thread runs violet to amber and back along its length, the gradient flowing toward the window. In the funnel
+  // most threads share their ribbon's phase; in the braid, each takes its strand's.
   var pick = hash(i + 4.4);
-  if (hash(i + 9.7) < 0.75) { pick = fract(ribbonOf(i) * 0.618034 + HUE); }
-  let strand = u32(i) % 3u;
-  let colour = mix(paint(pick), strandColour(strand), here.z);
-  var brightness = 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
+  if (hash(i + 9.7) < COHERENCE) { pick = fract(ribbonOf(i) * 0.618034 + HUE); }
+  let strand = f32(u32(i) % 3u) / 3.0;
+  let flow = u * GRADIENT - U[0].w * FLOW;
+  let colour = mix(U[8].rgb, U[9].rgb, warmth(flow + mix(pick, strand, here.z)));
+  var brightness = DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   if (i < U[3].w) { brightness = LABELLED; }
   // Strands in front of the braid catch the light; those behind fall into shadow. Many threads share the braid, so
   // each gives less light there.
@@ -278,7 +278,7 @@ fn down(v: Screen) -> @location(0) vec4f { return blur(v.uv, vec2f(0.0, 1.0)); }
  * inside a wider violet glow.
  */
 const flare = (vec3: string) =>
-  `mix(U[8].rgb, mix(U[10].rgb, ${vec3}(1.0), 0.5), exp(-r * 0.6)) * FLARE_LIGHT * U[3].z * (2.0 * exp(-r * r * 0.5) + 0.5 * exp(-r * 0.35))`
+  `mix(U[8].rgb, mix(mix(U[8].rgb, U[9].rgb, 0.5), ${vec3}(1.0), 0.5), exp(-r * 0.6)) * FLARE_LIGHT * U[3].z * (2.0 * exp(-r * r * 0.5) + 0.5 * exp(-r * 0.35))`
 
 export const toneWgsl = /* wgsl */ `${commonWgsl}
 ${fullscreenWgsl}
@@ -296,7 +296,7 @@ fn fs(v: Screen) -> @location(0) vec4f {
     + flare(distance(css, U[2].xy) / U[2].w);
   let mapped = tone(hdr);
   let dither = (hash(v.at.x * 0.137 + v.at.y * 1.173) - 0.5) / 255.0;
-  return vec4f(U[11].rgb + mapped + dither, 1.0);
+  return vec4f(U[10].rgb + mapped + dither, 1.0);
 }
 `
 
@@ -307,11 +307,10 @@ ${constants((name, value) => `const float ${name} = ${value};`)}
 float hash(float n) { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); }
 float ribbonOf(float i) { return floor(hash(i + 1.3) * RIBBONS); }
 float along(float fraction) { return 1.0 - pow(1.0 - fraction, CROWD); }
-vec3 paint(float pick) { return pick < 0.48 ? U[8].rgb : pick < 0.8 ? U[9].rgb : U[10].rgb; }
-vec3 strandColour(int strand) { return strand == 2 ? mix(U[8].rgb, U[10].rgb, 0.6) : U[8 + strand].rgb; }
+float warmth(float phase) { return pow(0.5 + 0.5 * sin(TAU * phase), WARM); }
 vec3 tone(vec3 hdr) {
-  float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[11].w;
-  return mix(hdr * U[11].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3')}, smoothstep(2.0, 5.0, peak) * 0.85);
+  float peak = max(max(hdr.r, hdr.g), max(hdr.b, 1e-4)) * U[10].w;
+  return mix(hdr * U[10].w * (1.0 - exp(-peak)) / peak, ${WARM_WHITE('vec3')}, smoothstep(2.5, 6.0, peak) * WHITE_HOT);
 }
 `
 
@@ -371,9 +370,10 @@ void main() {
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.xy + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
-  float pick = hash(i + 9.7) < 0.75 ? fract(ribbonOf(i) * 0.618034 + HUE) : hash(i + 4.4);
-  vec3 colour = mix(paint(pick), strandColour(int(mod(i, 3.0))), here.z);
-  float brightness = i < U[3].w ? LABELLED : 0.22 + 0.78 * pow(hash(i + 2.2), 3.0);
+  float pick = hash(i + 9.7) < COHERENCE ? fract(ribbonOf(i) * 0.618034 + HUE) : hash(i + 4.4);
+  float flow = u * GRADIENT - U[0].w * FLOW;
+  vec3 colour = mix(U[8].rgb, U[9].rgb, warmth(flow + mix(pick, mod(i, 3.0) / 3.0, here.z)));
+  float brightness = i < U[3].w ? LABELLED : DIM + (1.0 - DIM) * pow(hash(i + 2.2), 3.0);
   float facing = 0.15 + 0.85 * (0.5 + 0.5 * here.w);
   float shade = mix(1.0, facing * BRAID_LIGHT, here.z) * smoothstep(0.0, 0.06, u);
 
@@ -469,6 +469,6 @@ void main() {
   vec3 hdr = texelFetch(light, ivec2(gl_FragCoord.xy), 0).rgb + texture(bloom, vUv).rgb * BLOOM + flare(distance(css, U[2].xy) / U[2].w);
   vec3 mapped = tone(hdr);
   float dither = (hash(gl_FragCoord.x * 0.137 + gl_FragCoord.y * 1.173) - 0.5) / 255.0;
-  colour = vec4(U[11].rgb + mapped + dither, 1.0);
+  colour = vec4(U[10].rgb + mapped + dither, 1.0);
 }
 `

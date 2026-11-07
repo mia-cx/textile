@@ -95,7 +95,6 @@ onMount(() => {
       threads: [
         hex(style.getPropertyValue('--thread-violet')),
         hex(style.getPropertyValue('--thread-amber')),
-        hex(style.getPropertyValue('--thread-silver')),
       ],
       background: rgb(style.backgroundColor),
     }

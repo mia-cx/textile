@@ -38,8 +38,8 @@
   --focus: light-dark(#6d3df0, #b9a2ff);
 
   /* The threads. Decoration only, never text. */
-  --thread-violet: #9a6bff;
-  --thread-amber: #ffad5a;
+  --thread-violet: #7a45ff;
+  --thread-amber: #ff7a2a;
   --thread-silver: #d4d7ea;
 
   /* Code panels are ink in both modes. */

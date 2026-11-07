@@ -79,9 +79,9 @@ export const SHAPE = {
   ribbons: 11,
   ribbon: 0.1,
   /**
-   * Where the ribbons' colours start in their golden-ratio steps: from the top, violet, amber, violet, silver, violet,
-   * violet, amber, violet, silver, amber, violet. Amber runs high, low, and through the middle, among violet, and the
-   * outermost ribbons stay violet, darker than silver where they pass the page's header.
+   * Where the ribbons' colours start in their golden-ratio steps: from the top, violet, orchid, violet, amber, violet,
+   * violet, amber, violet, amber, orchid, violet. Amber runs high, low, and through the middle, among violet, and the
+   * outermost ribbons stay violet, darkest where they pass the page's header.
    */
   hue: 0,
   /** How much of the way a thread takes to join the braid, and how far along the last thread has joined. */
@@ -96,6 +96,16 @@ export const SHAPE = {
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
   labelled: 2,
+  /** The dimmest thread's brightness, against 1 for the brightest: low, so the dark shows between bright fibres. */
+  dim: 0.1,
+  /** The share of threads that take their ribbon's colour phase, not their own: high, so colours run in streams. */
+  coherence: 0.9,
+  /** How many violet-to-amber cycles each thread runs along its length. */
+  gradient: 1.4,
+  /** How fast the gradient flows toward the window, in cycles per second. */
+  flow: 0.06,
+  /** How long each cycle stays violet before it warms: higher keeps more of the field violet. */
+  warm: 1.6,
 } as const
 
 /** The same hash the shaders use: a thread's index to a stable pseudo-random number in [0, 1). */
@@ -178,11 +188,8 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   return [x + nx * offset, y + ny * offset]
 }
 
-/** A colour index from a pick in [0, 1): violet, amber, or silver, in the field's proportions. */
-const paint = (pick: number) => (pick < 0.48 ? 0 : pick < 0.8 ? 1 : 2)
 /**
- * A ribbon's colour pick: steps of the golden ratio, so neighbouring ribbons differ and every field gets all three
- * colours in proportion. Mirrors `ribbonPick` in the shaders.
+ * A ribbon's gradient phase: steps of the golden ratio, so neighbouring ribbons differ. Mirrors `pick` in the shaders.
  */
 const ribbonPick = (ribbon: number) => {
   const x = ribbon * 0.618034 + SHAPE.hue
@@ -190,13 +197,17 @@ const ribbonPick = (ribbon: number) => {
 }
 
 /**
- * A thread's colour in the funnel (0 violet, 1 amber, 2 silver) and its brightness, as the shaders pick them. Most
- * threads take their ribbon's colour. In the braid, each takes its strand's colour instead.
+ * How warm thread `i` is at `u` along it and time `t`: 0 violet, 1 amber. Every thread runs violet to amber and back,
+ * the gradient flowing toward the end; in the funnel most share their ribbon's phase, in the braid their strand's.
+ * Mirrors `warmth` and its use in the shaders; `braided` is how far into the braid `u` is, 0 to 1.
  */
-export const tint = (field: Field, i: number) => {
+export const warmth = (field: Field, i: number, u: number, t: number, braided: number) => {
   const { ribbon } = thread(field, i)
-  return {
-    colour: paint(hash(i + 9.7) < 0.75 ? ribbonPick(ribbon) : hash(i + 4.4)),
-    brightness: i < field.labels.length ? SHAPE.labelled : 0.22 + 0.78 * hash(i + 2.2) ** 3,
-  }
+  const pick = hash(i + 9.7) < SHAPE.coherence ? ribbonPick(ribbon) : hash(i + 4.4)
+  const phase = u * SHAPE.gradient - t * SHAPE.flow + pick + ((i % 3) / 3 - pick) * braided
+  return (0.5 + 0.5 * Math.sin(TAU * phase)) ** SHAPE.warm
 }
+
+/** A thread's brightness, as the shaders pick it. */
+export const brightness = (field: Field, i: number) =>
+  i < field.labels.length ? SHAPE.labelled : SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** 3
