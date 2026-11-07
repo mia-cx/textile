@@ -1,4 +1,4 @@
-import { CORD_THREADS, DRIFT_SPAN, FAN, MAX_COPY, PEEL_THREADS, ROW, TEXELS } from './cord'
+import { CORD_THREADS, DRIFT_SPAN, MAX_COPY, PEEL_THREADS, ROW, TEXELS } from './cord'
 import { CROWD, MAX_LABELS, SEGMENTS, SHAPE } from './geometry'
 
 /**
@@ -62,6 +62,9 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('INWARD', float(SHAPE.inward)),
     declare('STAGGER', float(SHAPE.stagger)),
     declare('SCATTER', float(SHAPE.scatter)),
+    declare('WANDER', float(SHAPE.wander)),
+    declare('BENDS', float(SHAPE.bends)),
+    declare('STRAY', float(SHAPE.stray)),
     declare('PINNED', float(SHAPE.pinned)),
     declare('LABEL_PHASE', float(SHAPE.labelPhase)),
     declare('HUE', float(SHAPE.hue)),
@@ -132,7 +135,7 @@ fn fibre(i: f32, across: f32) -> vec3f {
 // How far from the spine a fibre lies, in braid radii, where its strand has turned twist and u along the fibre: its
 // strand's swing across the plait, and its place across its band. Mirrors band in geometry.ts.
 fn band(twist: f32, f: vec3f, u: f32) -> f32 {
-  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * cos(twist) * cos(twist));
+  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * pow(0.5 + 0.5 * sin(2.0 * twist), 2.0));
 }
 // How near the viewer a strand is where it has turned twist, -1 to 1: a plait's strand passes over one neighbour and
 // under the other as it swings across, so its depth turns twice as fast as its swing.
@@ -199,16 +202,18 @@ export const threadWgsl = /* wgsl */ `${commonWgsl}
 ${fragmentWgsl}
 
 // What makes one thread itself: its lane, its label's place (or -1), where it joins the braid, its strand, its sway's
-// phase, its fibre (as fibre returns it), and its ribbon. Mirrors thread in geometry.ts.
-struct Thread { lane: f32, pin: f32, joins: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32 };
+// phase, its fibre (as fibre returns it), its ribbon, and its wander: how many bends, where they start, how far.
+// Mirrors thread in geometry.ts.
+struct Thread { lane: f32, pin: f32, joins: f32, strand: f32, phase: f32, fibre: vec3f, ribbon: f32, wander: vec3f };
 
 fn threadOf(i: f32) -> Thread {
   let braid = U[3].x;
   let ribbon = ribbonOf(i);
   let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   var across = (hash(i + 0.5) - 0.5) * 2.0;
-  var lane = centre + across * RIBBON / 2.0;
-  var side = centre;
+  let stray = hash(i + 12.7) < STRAY;
+  var lane = select(centre + across * RIBBON / 2.0, hash(i + 13.1) * 2.0 - 1.0, stray);
+  var side = select(centre, lane, stray);
   var pin = -1.0;
   if (i < U[3].w) { let label = U[4u + u32(i)]; pin = label.x; lane = label.y; side = label.y; across = sign(label.y); }
   let order = INWARD * abs(side) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1);
@@ -216,7 +221,8 @@ fn threadOf(i: f32) -> Thread {
   if (pin >= 0.0) { joins = max(joins, min(JOINED, pin + JOIN * 1.5)); }
   var phase = hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
   if (pin >= 0.0) { phase = i * LABEL_PHASE; }
-  return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon);
+  let wander = vec3f(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, select(WANDER, 0.0, pin >= 0.0));
+  return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon, wander);
 }
 
 // Where a thread is u along it: in CSS px, how far into the braid (0 to 1), and its strand's depth in the plait.
@@ -235,7 +241,8 @@ fn place(th: Thread, u: f32) -> Placed {
   var held = 1.0;
   if (th.pin >= 0.0) { let d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
-  let current = width * (th.lane + WAVE * held * sway);
+  let bend = th.wander.z * sin(u * th.wander.x + t * 0.12 + th.wander.y);
+  let current = width * (th.lane + WAVE * held * sway + bend);
 
   let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   let turns = spine / (PITCH * cord * SWELL);
@@ -429,7 +436,7 @@ vec3 fibre(float i, float across) {
   return vec3(jitter, edge ? 1.0 : 0.0, hash(i + 4.7) * TAU);
 }
 float band(float twist, vec3 f, float u) {
-  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * cos(twist) * cos(twist));
+  return sin(twist) + (f.x + (1.0 - f.y) * DRIFT * sin(u * WEAVE + f.z)) * FRAY * (FLAT + (1.0 - FLAT) * pow(0.5 + 0.5 * sin(2.0 * twist), 2.0));
 }
 float depthOf(float twist) { return sin(2.0 * twist); }
 float braidLight(float depth, vec3 f, float own) {
@@ -455,15 +462,16 @@ out float vAcross;
 out vec2 vPulse;
 out vec2 vGlint;
 
-struct Thread { float lane; float pin; float joins; float strand; float phase; vec3 fibre; float ribbon; };
+struct Thread { float lane; float pin; float joins; float strand; float phase; vec3 fibre; float ribbon; vec3 wander; };
 
 Thread threadOf(float i) {
   float braid = U[3].x;
   float ribbon = ribbonOf(i);
   float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   float across = (hash(i + 0.5) - 0.5) * 2.0;
-  float lane = centre + across * RIBBON / 2.0;
-  float side = centre;
+  bool stray = hash(i + 12.7) < STRAY;
+  float lane = stray ? hash(i + 13.1) * 2.0 - 1.0 : centre + across * RIBBON / 2.0;
+  float side = stray ? lane : centre;
   float pin = -1.0;
   for (int k = 0; k < ${MAX_LABELS}; k++) {
     if (float(k) < U[3].w && float(k) == i) {
@@ -474,7 +482,8 @@ Thread threadOf(float i) {
   float joins = braid + (JOINED - braid) * min(1.0, order);
   if (pin >= 0.0) joins = max(joins, min(JOINED, pin + JOIN * 1.5));
   float phase = pin >= 0.0 ? i * LABEL_PHASE : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER;
-  return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon);
+  vec3 wander = vec3(3.0 + (BENDS - 3.0) * hash(i + 5.5), hash(i + 6.7) * TAU, pin >= 0.0 ? 0.0 : WANDER);
+  return Thread(lane, pin, joins, strandOf(side), phase, fibre(i, across), ribbon, wander);
 }
 
 struct Placed { vec2 at; float braided; float depth; };
@@ -492,7 +501,8 @@ Placed place(Thread th, float u) {
   float held = 1.0;
   if (th.pin >= 0.0) { float d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
-  float current = width * (th.lane + WAVE * held * sway);
+  float bend = th.wander.z * sin(u * th.wander.x + t * 0.12 + th.wander.y);
+  float current = width * (th.lane + WAVE * held * sway + bend);
 
   float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   float turns = spine / (PITCH * cord * SWELL);
@@ -663,7 +673,6 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     declare('PEEL_THREADS', float(PEEL_THREADS)),
     declare('ROW', float(ROW)),
     declare('TEXELS', float(TEXELS)),
-    declare('FAN', float(FAN)),
     declare('DRIFT_SPAN', float(DRIFT_SPAN)),
     // How far above its tip the cord fades into the page, in px: 14rem.
     declare('FADE', float(224)),
@@ -677,23 +686,21 @@ ${cordConstants((name, value) => `const ${name} = ${value};`)}
 ${fragmentWgsl}
 @group(0) @binding(1) var paths: texture_2d<f32>;
 
-// What makes one cord thread itself: its path (0 the cord, then the peels), its lane, its strand, how late it
-// comes apart, its sway's phase, its ribbon, and its fibre. Mirrors cordThread in cord.ts.
-struct Thread { path: f32, lane: f32, strand: f32, order: f32, phase: f32, ribbon: f32, fibre: vec3f };
+// What makes one cord thread itself: its path (0 the cord, then the peels), its lane, its strand, its sway's phase, its ribbon, and its fibre. Mirrors cordThread in cord.ts.
+struct Thread { path: f32, lane: f32, strand: f32, phase: f32, ribbon: f32, fibre: vec3f };
 
 fn threadOf(i: f32) -> Thread {
   if (i >= CORD_THREADS) {
     let peel = floor((i - CORD_THREADS) / PEEL_THREADS);
     let j = i - CORD_THREADS - peel * PEEL_THREADS;
     let across = (j + 0.5) / PEEL_THREADS * 2.0 - 1.0;
-    return Thread(1.0 + peel, across, peel - 3.0 * floor(peel / 3.0), 0.0, 0.0, peel, fibre(i, across));
+    return Thread(1.0 + peel, across, peel - 3.0 * floor(peel / 3.0), 0.0, peel, fibre(i, across));
   }
   let ribbon = ribbonOf(i);
   let centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   let across = (hash(i + 0.5) - 0.5) * 2.0;
-  let order = min(1.0, INWARD * abs(centre) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1));
   return Thread(
-    0.0, centre + across * RIBBON / 2.0, strandOf(centre), order,
+    0.0, centre + across * RIBBON / 2.0, strandOf(centre),
     hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER, ribbon, fibre(i, across),
   );
 }
@@ -719,15 +726,17 @@ struct Placed { at: vec2f, loose: f32, depth: f32, s: f32, light: f32 };
 fn place(th: Thread, k: f32) -> Placed {
   let a = texel(k, 0.0); let b = texel(k, 1.0); let c = texel(k, 2.0);
   let t = U[0].w; let radius = U[3].x;
-  let loose = pow(max(b.y, 1e-6), 1.0 + FAN * th.order);
+  let loose = b.y;
   let twist = b.x / (PITCH * radius) * TAU - t * SPIN + th.strand * TAU / 3.0;
   let braided = radius * band(twist, th.fibre, b.x / DRIFT_SPAN);
   var sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  let spread = b.w + th.lane * b.z + sway;
-  return Placed(a.xy + a.zw * braided * (1.0 - loose) + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
+  let spread = th.lane * b.z + sway;
+  // The braid's swing fades faster than the strands part, so a strand coming loose straightens rather than crimps.
+  let held = (1.0 - loose) * (1.0 - loose) * (1.0 - loose);
+  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
 }
 
 // How much light shows at p: less behind a section's prose, fading in over a few pixels around it.
@@ -790,21 +799,20 @@ out float vAcross;
 out vec2 vPulse;
 out vec2 vGlint;
 
-struct Thread { float path; float lane; float strand; float order; float phase; float ribbon; vec3 fibre; };
+struct Thread { float path; float lane; float strand; float phase; float ribbon; vec3 fibre; };
 
 Thread threadOf(float i) {
   if (i >= CORD_THREADS) {
     float peel = floor((i - CORD_THREADS) / PEEL_THREADS);
     float j = i - CORD_THREADS - peel * PEEL_THREADS;
     float across = (j + 0.5) / PEEL_THREADS * 2.0 - 1.0;
-    return Thread(1.0 + peel, across, mod(peel, 3.0), 0.0, 0.0, peel, fibre(i, across));
+    return Thread(1.0 + peel, across, mod(peel, 3.0), 0.0, peel, fibre(i, across));
   }
   float ribbon = ribbonOf(i);
   float centre = (ribbon + 0.5) / RIBBONS * 2.0 - 1.0 + (hash(ribbon + 11.0) - 0.5) * 0.15;
   float across = (hash(i + 0.5) - 0.5) * 2.0;
-  float order = min(1.0, INWARD * abs(centre) + (1.0 - INWARD) * hash(ribbon + 7.1) + STAGGER * hash(i + 7.1));
   return Thread(
-    0.0, centre + across * RIBBON / 2.0, strandOf(centre), order,
+    0.0, centre + across * RIBBON / 2.0, strandOf(centre),
     hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SCATTER, ribbon, fibre(i, across)
   );
 }
@@ -826,15 +834,16 @@ struct Placed { vec2 at; float loose; float depth; float s; float light; };
 Placed place(Thread th, float k) {
   vec4 a = texel(k, 0.0); vec4 b = texel(k, 1.0); vec4 c = texel(k, 2.0);
   float t = U[0].w; float radius = U[3].x;
-  float loose = pow(max(b.y, 1e-6), 1.0 + FAN * th.order);
+  float loose = b.y;
   float twist = b.x / (PITCH * radius) * TAU - t * SPIN + th.strand * TAU / 3.0;
   float braided = radius * band(twist, th.fibre, b.x / DRIFT_SPAN);
   float sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  float spread = b.w + th.lane * b.z + sway;
-  return Placed(a.xy + a.zw * braided * (1.0 - loose) + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
+  float spread = th.lane * b.z + sway;
+  float held = (1.0 - loose) * (1.0 - loose) * (1.0 - loose);
+  return Placed(a.xy + a.zw * braided * held + c.xy * spread * loose, loose, depthOf(twist), b.x, c.z);
 }
 
 float behindCopy(vec2 p) {

@@ -51,8 +51,12 @@ const labelSide = (text: string, x: number, prefer: 'left' | 'right', width: num
 
 /** Pixels between samples along a path: fine enough that the braid's twists stay smooth. */
 const STEP = 4
-/** The share of a section's width its loose strands spread across. */
+/**
+ * The share of a section's width its loose strands spread across, at most, and the tightest turn, in px, a strand may
+ * make as it swells apart and gathers: the strands spread around the cord, as far as that turn allows.
+ */
 const SPREAD = 0.92
+const MIN_TURN = 180
 /** Texels per sample, and samples per row of the texture: rows stay within every GPU's smallest texture limit. */
 export const TEXELS = 3
 export const ROW = 682
@@ -99,7 +103,6 @@ interface Sample {
   readonly s: number
   readonly open: number
   readonly width: number
-  readonly centre: number
   readonly axis: Point
   readonly light: number
 }
@@ -238,15 +241,18 @@ export function weave(
 
   const cord: Sample[] = frame(spine).map((p, i) => {
     const span = spans[i]
-    if (!span) return { ...p, open: 0, width: 0, centre: 0, axis: [1, 0], light: 1 }
+    if (!span) return { ...p, open: 0, width: 0, axis: [1, 0], light: 1 }
     const t = Math.min(1, Math.max(0, (p.y - span.from) / (span.to - span.from)))
     const open = swell(t, span.closes)
-    const middle = (span.box.left + span.box.right) / 2
+    // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
+    const height = (span.to - span.from) * (span.closes ? 1 : 2)
     return {
       ...p,
       open,
-      width: ((span.box.right - span.box.left) / 2) * SPREAD,
-      centre: middle - p.x,
+      width: Math.min(
+        ((span.box.right - span.box.left) / 2) * SPREAD,
+        height ** 2 / (2 * Math.PI ** 2 * MIN_TURN),
+      ),
       axis: [1, 0],
       // Behind the last section the strands fade out toward its foot.
       light: span.closes ? 1 : 1 - open,
@@ -260,7 +266,6 @@ export function weave(
       open: 1,
       // Fibres splay apart mid-way and gather again at each end.
       width: radius * 0.6 * (0.4 + Math.sin((p.s / total) * Math.PI)),
-      centre: 0,
       axis: [p.nx, p.ny],
       light: smoothstep(0, 24, p.s),
     }))
@@ -275,7 +280,7 @@ export function weave(
   for (const path of all) {
     for (const [k, p] of path.entries()) {
       data.set(
-        [p.x, p.y, p.nx, p.ny, p.s, p.open, p.width, p.centre, ...p.axis, p.light, 0],
+        [p.x, p.y, p.nx, p.ny, p.s, p.open, p.width, 0, ...p.axis, p.light, 0],
         (first + k) * TEXELS * 4,
       )
     }
@@ -333,7 +338,6 @@ export const cordThread = (i: number) => {
       path: 1 + peel,
       lane: across,
       strand: peel % 3,
-      order: 0,
       phase: 0,
       ribbon: peel,
       ...fibre(i, across),
@@ -342,29 +346,15 @@ export const cordThread = (i: number) => {
   const ribbon = Math.floor(hash(i + 1.3) * SHAPE.ribbons)
   const centre = ((ribbon + 0.5) / SHAPE.ribbons) * 2 - 1 + (hash(ribbon + 11) - 0.5) * 0.15
   const across = (hash(i + 0.5) - 0.5) * 2
-  const order = Math.min(
-    1,
-    SHAPE.inward * Math.abs(centre) +
-      (1 - SHAPE.inward) * hash(ribbon + 7.1) +
-      SHAPE.stagger * hash(i + 7.1),
-  )
   return {
     path: 0,
     lane: centre + (across * SHAPE.ribbon) / 2,
     strand: Math.min(2, Math.max(0, Math.floor((centre + 1) * 1.5))),
-    // Inner ribbons stay closer to the braid: they come apart later and gather sooner.
-    order,
     phase: hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
     ribbon,
     ...fibre(i, across),
   }
 }
-
-/**
- * How much later the last thread to come apart does so than the first: a thread's looseness is the strands' swell
- * raised to 1 + FAN × its order, which keeps it as smooth as the swell.
- */
-export const FAN = 1.5
 
 /**
  * Thread `i` at its path's sample `k` at time `t`: where it is, and how loose it is there (0 braided, 1 loose). Reads
@@ -374,9 +364,10 @@ export const FAN = 1.5
 export function place(cord: Cord, i: number, k: number, t: number, th = cordThread(i)) {
   const o = k * TEXELS * 4
   const d = cord.data
-  const [x = 0, y = 0, nx = 0, ny = 0, s = 0, open = 0, width = 0, centre = 0, ax = 0, ay = 0] =
-    d.subarray(o, o + 10)
-  const loose = Math.max(open, 1e-6) ** (1 + FAN * th.order)
+  const [x = 0, y = 0, nx = 0, ny = 0, s = 0, loose = 0, width = 0, , ax = 0, ay = 0] = d.subarray(
+    o,
+    o + 10,
+  )
   const twist = (s / (SHAPE.pitch * cord.radius)) * TAU - t * SHAPE.spin + (th.strand * TAU) / 3
   const braided = cord.radius * band(twist, th.jitter, th.edge, s / DRIFT_SPAN, th.drift)
   const sway =
@@ -386,10 +377,12 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
         (Math.sin(s * 0.004 + t * 0.35 + th.phase) * 0.6 +
           Math.sin(s * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4)
       : 0
-  const spread = centre + th.lane * width + sway
+  const spread = th.lane * width + sway
+  // The braid's swing fades faster than the strands part, so a strand coming loose straightens rather than crimps.
+  const held = (1 - loose) ** 3
   const point: Point = [
-    x + nx * braided * (1 - loose) + ax * spread * loose,
-    y + ny * braided * (1 - loose) + ay * spread * loose,
+    x + nx * braided * held + ax * spread * loose,
+    y + ny * braided * held + ay * spread * loose,
   ]
   return { point, loose, twist, s }
 }

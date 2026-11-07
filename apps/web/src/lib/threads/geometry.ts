@@ -66,11 +66,11 @@ export const SHAPE = {
   /**
    * The braid is a three-strand plait: each strand swings from side to side across it, `sin(twist)` braid radii from its
    * spine, passing over one neighbour and under the other, its depth `sin(2 twist)`. Each strand is a flat band of
-   * fibres, `fray` braid radii either side of its centre where it crosses the middle, and `flat` of that where it turns
-   * back at the braid's edge.
+   * fibres, `fray` braid radii either side of its centre where it passes in front, and `flat` of that where it passes
+   * behind: a band swells as it swings out over its neighbours, so the braid's outline bulges at every crossing.
    */
-  fray: 0.7,
-  flat: 0.35,
+  fray: 0.6,
+  flat: 0.15,
   /**
    * The share of a band's fibres that run along its two edges, in `edgeLanes` close lanes `edgeStep` apart (in the
    * band's -1 to 1): crisp, bright lines, each fibre still visible, around the dimmer fibres inside. Those spread over
@@ -98,7 +98,7 @@ export const SHAPE = {
    * gaps between them, so the current reads as separate strands of fibre on the dark.
    */
   ribbons: 11,
-  ribbon: 0.1,
+  ribbon: 0.18,
   /**
    * Where the ribbons' colours start in their golden-ratio steps: from the top, violet, orchid, violet, amber, violet,
    * violet, amber, violet, amber, orchid, violet. Amber runs high, low, and through the middle, among violet, and the
@@ -118,8 +118,11 @@ export const SHAPE = {
    */
   inward: 0.5,
   stagger: 0.06,
-  /** How far out of step with its ribbon a thread sways, in radians: a little, so each ribbon stays one bundle. */
-  scatter: 0.3,
+  /**
+   * How far out of step with its ribbon a thread sways, in radians: enough that a ribbon's fibres fan apart and drift
+   * at slightly different angles, as the concept's loose streams do.
+   */
+  scatter: 1.4,
   /** The share of the current's sway a labelled thread keeps at its knot: the knot rides it, but stays near home. */
   pinned: 0.35,
   /**
@@ -127,6 +130,15 @@ export const SHAPE = {
    * the CPU while the GPU draws it, and the two compute the hash with different float precision.
    */
   labelPhase: 2.4,
+  /**
+   * How far each thread wanders off its lane on a slow curve of its own, as a share of the funnel's width, and how many
+   * such curves it can run along its length, at most: each fibre bends a little differently, so streams thin out,
+   * split, and cross softly. It narrows with the funnel, so where the ribbons meet they cross at shallow angles.
+   */
+  wander: 0.06,
+  bends: 9,
+  /** The share of threads that stray from their ribbon onto a lane of their own and wander between the streams. */
+  stray: 0.1,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
@@ -185,8 +197,13 @@ export const thread = (field: Field, i: number) => {
   const centre = ((ribbon + 0.5) / SHAPE.ribbons) * 2 - 1 + (hash(ribbon + 11) - 0.5) * 0.15
   // A labelled thread rides its ribbon's outer edge, at its label's lane.
   const across = label ? Math.sign(label.lane) : (hash(i + 0.5) - 0.5) * 2
-  const lane = label ? label.lane : centre + (across * SHAPE.ribbon) / 2
-  const side = label ? label.lane : centre
+  const stray = !label && hash(i + 12.7) < SHAPE.stray
+  const lane = label
+    ? label.lane
+    : stray
+      ? hash(i + 13.1) * 2 - 1
+      : centre + (across * SHAPE.ribbon) / 2
+  const side = label || stray ? lane : centre
   const order = Math.min(
     1,
     SHAPE.inward * Math.abs(side) +
@@ -200,6 +217,12 @@ export const thread = (field: Field, i: number) => {
     joins: label ? Math.max(joins, Math.min(SHAPE.joined, label.at + SHAPE.join * 1.5)) : joins,
     strand: strandOf(side),
     phase: label ? i * SHAPE.labelPhase : hash(ribbon + 3.3) * TAU + hash(i + 3.3) * SHAPE.scatter,
+    // A labelled thread doesn't wander: its knot rides it, placed on the CPU.
+    wander: {
+      bends: 3 + (SHAPE.bends - 3) * hash(i + 5.5),
+      phase: hash(i + 6.7) * TAU,
+      reach: label ? 0 : SHAPE.wander,
+    },
     ...fibre(i, across),
     ribbon,
   }
@@ -248,14 +271,13 @@ const funnelWidth = ({ spread, cord }: Field, u: number) =>
 /**
  * How far from the braid's spine a fibre at `jitter` across its band lies, in braid radii, where its strand has turned
  * `twist`: its strand's swing across the plait, and its place across the band, which is widest where the strand
- * crosses the middle. The band narrows as cos², not |cos|, which has a corner where it turns back. Mirrors `band` in
- * the shaders.
+ * passes in front and thinnest behind. Mirrors `band` in the shaders.
  */
 export const band = (twist: number, jitter: number, edge: boolean, along: number, drift: number) =>
   Math.sin(twist) +
   (jitter + (edge ? 0 : SHAPE.drift * Math.sin(along * SHAPE.weave + drift))) *
     SHAPE.fray *
-    (SHAPE.flat + (1 - SHAPE.flat) * Math.cos(twist) ** 2)
+    (SHAPE.flat + (1 - SHAPE.flat) * ((1 + Math.sin(2 * twist)) / 2) ** 2)
 
 /** About how long the spine is, in pixels: between its chord and its control polygon. Mirrors the shaders. */
 const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
@@ -267,7 +289,7 @@ const spineLength = ({ start: p0, control: p1, end: p2 }: Field) =>
 /** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
 export function position(field: Field, i: number, u: number, t: number): Point {
   const { start: p0, control: p1, end: p2, cord } = field
-  const { lane, pin, joins, strand, phase, jitter, drift, edge } = thread(field, i)
+  const { lane, pin, joins, strand, phase, wander, jitter, drift, edge } = thread(field, i)
   const a = 1 - u
   const x = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0]
   const y = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1]
@@ -283,7 +305,8 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const held = pin < 0 ? 1 : 1 - (1 - SHAPE.pinned) * Math.exp(-(((u - pin) / 0.09) ** 2))
   const sway =
     Math.sin(u * 4.5 + t * 0.35 + phase) * 0.6 + Math.sin(u * 9 - t * 0.23 + phase * 1.7) * 0.4
-  const current = width * (lane + SHAPE.wave * held * sway)
+  const bend = wander.reach * Math.sin(u * wander.bends + t * 0.12 + wander.phase)
+  const current = width * (lane + SHAPE.wave * held * sway + bend)
 
   // The twist's angle integrates one turn per `pitch` radii along a spine whose radius narrows linearly: a logarithm.
   const turns = spineLength(field) / (SHAPE.pitch * cord * SHAPE.swell)
