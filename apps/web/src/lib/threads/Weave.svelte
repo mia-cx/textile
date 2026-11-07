@@ -24,8 +24,8 @@ import { hex, type Palette } from './renderer'
 
 /** Wide enough for the side-by-side layouts the cord runs between. */
 const WIDE = '(min-width: 64rem)'
-/** The cord's braid radius, as the hero's ends at the window. */
-const CORD = 7
+/** The cord's braid radius: a little thinner than the hero's where it meets the window, as it carries on down the page. */
+const CORD = 10
 /** How far left of a panel the cord gathers when it enters from the side. */
 const LANE = 110
 /** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */

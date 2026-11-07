@@ -42,7 +42,7 @@ const STEP = 4
  * How much of a section's height the cord takes to come apart below its gap, and to gather again above the next, and
  * the most it takes: long, so strands sweep in and out as gently as the hero's funnel narrows.
  */
-const RISE = 0.45
+const RISE = 0.5
 const MAX_RISE = 800
 /** The share of a section's width its loose strands spread across. */
 const SPREAD = 0.92
@@ -323,7 +323,7 @@ export const cordThread = (i: number) => {
 }
 
 /** How much of the way from braided to loose each thread takes to come apart. */
-export const LOOSEN = 0.55
+export const LOOSEN = 0.8
 
 /**
  * Thread `i` at its path's sample `k` at time `t`: where it is, and how loose it is there (0 braided, 1 loose). Reads
