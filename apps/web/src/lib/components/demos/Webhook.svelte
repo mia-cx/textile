@@ -26,10 +26,9 @@ function send(withSecret: boolean) {
 }
 </script>
 
-<!-- The page's cord arrives at the request and runs on, braided, behind it down into the window the workflow posts
-     in, below it: the request on its way. -->
-<div class="webhook" data-weave="top" data-weave-at="0.5" data-weave-held>
-    <div class="request">
+<!-- The page's cord gathers above the request's middle and comes apart behind both panels. -->
+<div class="webhook" data-weave="top" data-weave-at="0.5">
+    <div class="request" data-weave-panel>
       <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <pre class="http" tabindex="0" role="region" aria-label="The webhook request"><span class="method">POST</span> {ROUTE}

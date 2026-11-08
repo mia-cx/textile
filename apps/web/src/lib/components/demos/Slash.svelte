@@ -27,8 +27,8 @@ function onsubmit(event: SubmitEvent) {
 }
 </script>
 
-<!-- The page's cord comes down the page's middle, apart behind the words above, and braided again into the window. -->
-<div data-weave="top" data-weave-at="0.5" data-weave-held>
+<!-- The page's cord comes down the page's middle and comes apart behind the words and the window alike. -->
+<div data-weave="top" data-weave-at="0.5">
   <Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window" live>
     {#each replies as reply (reply.id)}
       <Message author="Weaver" bot time={today(9 * 60 + 10 + reply.id)} used={{ by: 'you', command: '/standup' }}>

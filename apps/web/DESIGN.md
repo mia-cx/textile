@@ -154,11 +154,8 @@ section, in the gutter between a demo and its words (`data-weave="gutter"`), or 
 section it comes apart in three overlapping stages and gathers again the same way: the plait loosens (its swing widens
 and its pitch lengthens), its three strands drift apart as loose ropes still swinging around each other, and only then
 does each rope fray into its fibres. A loose rope's fibres run a little apart in the colour cycle, so each rope shows
-both colours. Where a section carries something from one panel into the next (`data-weave-held`: Slash commands,
-Webhook updates), the cord runs through the demo braided, straight and still, showing between panels as the thing
-travelling. Above a centred demo (Slash commands) it first comes apart on its line: its three ropes part
-symmetrically, the outer two arcing out around the heading and copy, 56px clear of their widest line, still ropes with
-a little swing, then sweep back together behind the demo's top edge and braid again. Where loose strands pass behind
+both colours. It stays unbraided for the section's whole height, behind its words and its panels alike, and braids
+again only in the gap before the next section. Where loose strands pass behind
 panels stacked with a narrow gap, the gap dims like words, so no clipped stubs show. In Voice the cord ends: its plait
 loosens into three ropes, and each strand runs on along its own path, the same fibres, twist and colour, at full
 width, behind its speaker's avatar to its middle, the right rope to the top speaker so none cross. Strands keep their colour and fibres throughout; behind each line of the

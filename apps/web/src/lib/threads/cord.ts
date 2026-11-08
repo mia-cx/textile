@@ -52,12 +52,6 @@ export interface Stop {
   readonly enter: Point
   /** The points the peeled strands reach, each level with what it enters. */
   readonly ends: ReadonlyArray<Point>
-  /**
-   * Where the cord runs through the section braided instead, carrying something from one panel down into the next:
-   * coming apart only behind the words above the demo, if any, braided again where it enters it (`gather`), then
-   * straight down to the demo's foot (`foot`), before it turns toward the next section.
-   */
-  readonly held: { readonly gather: number | undefined; readonly foot: number } | undefined
 }
 
 /**
@@ -185,7 +179,7 @@ export interface Cord {
  *   2  axis x, axis y, light, carries the lead (0 or 1)
  *   3  how far along the cord's route it is (px from the window, a peel carrying on from where it leaves), whether it is
  *      on a strand's own path (0 or 1: there the path is the strand's centre, not the cord's), how much its strands
- *      swing (`swings`: 1, less where they arc, settling to 0 at a strand's own end), -
+ *      swing (`swings`: 1, settling to 0 at a strand's own end), -
  */
 interface Sample {
   readonly x: number
@@ -270,15 +264,6 @@ const KNOT_LOOK = 80
 const ENDING = { open: 0.6, spread: 7, turn: 0.5, settle: 80 } as const
 
 /**
- * How the cord comes apart behind the words above a held demo, a centred section's: its three ropes part symmetrically
- * around its line and arc out around the words, `margin` px clear of their widest line, then sweep back together to
- * braid again `under` px behind the demo's top edge. They part as far as `open` (ropes, hardly frayed, so each stays one
- * fibrous rope) and swing `swings` as much as elsewhere, so they hold their curve. Each arc rises over the first `ramp`
- * of the way and falls over the last.
- */
-const ARC = { margin: 56, under: 170, open: 0.62, swings: 0.4, ramp: 0.5 } as const
-
-/**
  * A strand peeling off at a panel's edge: its fibres leave `fat` braid radii wide and its light comes up over its first
  * `rise` px.
  */
@@ -288,30 +273,21 @@ const PEEL = { fat: 1.3, rise: 60 } as const
  * The cord's course across the page, x as a function of y: a smooth curve through `anchors` (rising in y), each crossed
  * on a tangent its neighbours set, so it bends more and less as a hanging rope does, never on a fixed diagonal, plus
  * a slow wander that eases in after the first anchor and out before the last, where the cord must meet the window and
- * the demo it ends in, and around each `still` stretch, which it runs straight down. Returns the course and how much
- * the cord sways at each height (0 at its ends and on its still stretches).
+ * the demo it ends in. Returns the course and how much the cord sways at each height (0 at its ends).
  */
-function course(anchors: ReadonlyArray<Point>, still: ReadonlyArray<readonly [number, number]>) {
+function course(anchors: ReadonlyArray<Point>) {
   const ys = anchors.map(([, y]) => y)
   const top = ys[0] ?? 0
   const bottom = ys.at(-1) ?? 0
-  const stilled = (y: number) => still.some(([from, to]) => y >= from && y <= to)
   const tangent = (k: number) => {
     const previous = anchors[k - 1]
     const next = anchors[k + 1]
-    // A still stretch runs straight down, so it leaves and meets its anchors heading straight down too.
-    if (!previous || !next || stilled(anchors[k]?.[1] ?? 0)) return 0
+    if (!previous || !next) return 0
     return (next[0] - previous[0]) / (next[1] - previous[1])
   }
-  /** How far into the cord's free stretch `y` is, 0 at its ends and still stretches to 1 a WANDER_EASE away. */
+  /** How far into the cord's free stretch `y` is, 0 at its ends to 1 a WANDER_EASE away. */
   const free = (y: number) =>
-    Math.min(
-      easeIn(top, top + WANDER_EASE, y),
-      1 - easeIn(bottom - WANDER_EASE, bottom, y),
-      ...still.map(
-        ([from, to]) => 1 - easeIn(from - WANDER_EASE, from, y) + easeIn(to, to + WANDER_EASE, y),
-      ),
-    )
+    Math.min(easeIn(top, top + WANDER_EASE, y), 1 - easeIn(bottom - WANDER_EASE, bottom, y))
   const x = (y: number) => {
     // The segment whose anchors span y; at or past the last anchor, the last segment.
     const above = ys.findIndex((at) => at > y)
@@ -385,14 +361,6 @@ function frame(points: ReadonlyArray<Point>) {
   })
 }
 
-/** How far either side of its line the cord's ropes arc out behind `stop`'s words: ARC.margin clear of the widest. */
-function clearance(stop: Stop) {
-  const [x] = stop.pinch
-  return (
-    Math.max(0, ...stop.copy.map((line) => Math.max(x - line.left, line.right - x))) + ARC.margin
-  )
-}
-
 /**
  * Where the cord ends at `last` in a demo, its three strands' own paths on to `ends`: each from its rope's centre where
  * the cord ends, on its heading, arriving level. The rope on the right reaches the topmost end, so no two cross.
@@ -429,33 +397,19 @@ function strandPaths(last: Sample, ends: ReadonlyArray<Point>): Sample[][] {
 
 /**
  * A stretch the cord comes apart over, behind a section's `box`, from height `from` to `to`, braided again at its foot
- * if it `closes`; with `arc`, its ropes' centres arc out that far either side of the cord, behind a held demo's words.
+ * if it `closes`.
  */
 interface Stretch {
   readonly box: Box
   readonly from: number
   readonly to: number
   readonly closes: boolean
-  readonly arc?: number
 }
 
-/** How far the cord has come apart at height `y` in `stretch`, how wide it spreads, how bright, and how much it swings. */
-function spreadIn(
-  stretch: Stretch,
-  y: number,
-): Pick<Sample, 'open' | 'width' | 'light' | 'swings'> {
-  const { from, to, closes, arc, box } = stretch
+/** How far the cord has come apart at height `y` in `stretch`, how wide it spreads, and how bright. */
+function spreadIn(stretch: Stretch, y: number): Pick<Sample, 'open' | 'width' | 'light'> {
+  const { from, to, closes, box } = stretch
   const t = Math.min(1, Math.max(0, (y - from) / (to - from)))
-  if (arc !== undefined) {
-    // Ropes on the outer thirds stand `home` (2/3) of the width out, so the width puts their centres `arc` out.
-    const rise = easeIn(0, ARC.ramp, t) * easeIn(0, ARC.ramp, 1 - t)
-    return {
-      open: ARC.open * rise,
-      width: arc / (ARC.open * (2 / 3)),
-      light: 1,
-      swings: ARC.swings,
-    }
-  }
   const open = swell(t, closes)
   // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
   const height = (to - from) * (closes ? 1 : 2)
@@ -493,35 +447,18 @@ function endingIn(stop: Stop): Ending {
 }
 
 /**
- * How the cord passes `stop`'s section, before `next`'s (none for the last): the anchors its course passes, the stretches
- * it comes apart over, and those it runs straight and still through. It reaches the section's line a little after its
- * gap, on its way down. Held, it reaches its line before it enters the demo, arcs apart behind any words above it, and
- * keeps to its line, straight and still, to the demo's foot.
+ * How the cord passes `stop`'s section, before `next`'s (none for the last): the anchors its course passes, and the
+ * stretch it comes apart over, from this section's gap to the next, behind all of the section, words and panels alike.
+ * It reaches the section's line a little after its gap, on its way down.
  */
 function through(stop: Stop, next: Stop | undefined) {
-  const { pinch, held, box } = stop
+  const { pinch, box } = stop
   const to = next ? next.pinch[1] : box.bottom
-  const reach = (held ? stop.enter[1] : to) - pinch[1]
-  const line: Point = [pinch[0], pinch[1] + Math.min(reach * LAG, LAG_MAX)]
-  const anchors: Point[] = [line]
-  const spans: Stretch[] = []
-  const still: Array<readonly [number, number]> = []
-  if (!held) spans.push({ box, from: pinch[1], to, closes: !!next })
-  else {
-    if (held.gather !== undefined)
-      spans.push({
-        box,
-        from: pinch[1],
-        to: held.gather + ARC.under,
-        closes: true,
-        arc: clearance(stop),
-      })
-    anchors.push([pinch[0], held.foot])
-    still.push([line[1], held.foot])
-  }
+  const anchors: Point[] = [[pinch[0], pinch[1] + Math.min((to - pinch[1]) * LAG, LAG_MAX)]]
+  const span: Stretch = { box, from: pinch[1], to, closes: !!next }
   // The last section's strands come apart behind it and fade out at its foot.
   if (!next) anchors.push([pinch[0], box.bottom])
-  return { anchors, spans, still }
+  return { anchors, span }
 }
 
 /**
@@ -540,8 +477,6 @@ export function weave(
 ): Cord {
   /** The points the cord's course passes: where it leaves the window, then near each section's centre, then its end. */
   const anchors: Point[] = [start]
-  /** Stretches the cord runs straight and still through, from top to bottom: held sections. */
-  const still: Array<readonly [number, number]> = []
   /** The sections the cord comes apart behind, each between the gaps `from` and `to`. */
   const spans: Stretch[] = []
   /** Strands peeling off, and whether each carries the lead on: the lead's strand, where the cord comes apart. */
@@ -561,11 +496,10 @@ export function weave(
     }
     const passing = through(stop, stops[k + 1])
     anchors.push(...passing.anchors)
-    spans.push(...passing.spans)
-    still.push(...passing.still)
+    spans.push(passing.span)
   }
 
-  const path = course(anchors, still)
+  const path = course(anchors)
   const bottom = anchors.at(-1)?.[1] ?? start[1]
   const steps = Math.max(1, Math.ceil((bottom - start[1]) / STEP))
   const spine = Array.from({ length: steps + 1 }, (_, k): Point => {

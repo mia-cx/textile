@@ -21,10 +21,10 @@ import { hex, type Palette } from './renderer'
 /**
  * The hero's cord carried on down the page: it leaves the bottom of `[data-weave-start]` braided, and for each section
  * that names its event in `data-weave-label`, gathers in the gap above it, with the event's name on a knot there, then
- * comes apart behind the section into loose ribbons of fibre across its width, dimmed behind its `[data-weave-copy]`, and gathers again
- * in the gap below. The gap's knot sits over the section's `[data-weave]` element: above `data-weave-at` along its top,
- * or, with `data-weave="gutter"`, in the gutter between it and the section's words, and comes down there. With `data-weave-held`, it comes apart only behind the words above the demo, if any, gathers again
- * where it enters the demo, and runs through it braided, from panel to panel. Panels sit above the cord.
+ * comes apart behind the whole section, its words and panels alike, into loose ribbons of fibre across its width,
+ * dimmed behind its `[data-weave-copy]`, and gathers again only in the gap below. The gap's knot sits over the section's
+ * `[data-weave]` element: above `data-weave-at` along its top, or, with `data-weave="gutter"`, in the gutter between it
+ * and the section's words, and comes down there. Panels sit above the cord.
  *
  * A strand peels off into each `[data-weave-end]` in a section, on behind its left edge (or, with
  * `data-weave-end="window"`, the Discord window's around it) to BEHIND past it or its middle, so its end never shows: from the right edge of the section's `[data-weave-split]`, or, with no
@@ -338,14 +338,8 @@ onMount(() => {
         label: section.dataset.weaveLabel ?? '',
         pinch: [x, (above + content.top) / 2],
         box: content,
-        // A held section's gap shows the braid on purpose: the thing travelling from panel to panel.
-        copy: [...words(copy), ...('weaveHeld' in entry.dataset ? [] : between(section))],
+        copy: [...words(copy), ...between(section)],
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
-        // Held, it comes apart behind the words above the demo, if they are above it, and runs braided through it.
-        held:
-          'weaveHeld' in entry.dataset
-            ? { gather: prose.bottom < panel.top ? panel.top : undefined, foot: panel.bottom }
-            : undefined,
         enter: [x, panel.top],
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
           const wall = rect(
