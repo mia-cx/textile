@@ -101,7 +101,7 @@ export function cordWebgl2(canvas: HTMLCanvasElement): CordRenderer | undefined 
 
 /** Every how many of the cord's threads the 2D fallback strokes, and how many samples long each piece of one is. */
 const STILL_EVERY = 3
-const STILL_PIECE = 24
+const STILL_PIECE = 4
 
 /**
  * A stretch of one thread, as the 2D fallback strokes it: how far up and down it reaches, how far along the cord's route
@@ -114,9 +114,6 @@ interface Piece {
   readonly path: Path2D
   readonly style: CanvasGradient
 }
-
-/** Samples between the colour stops along a piece: close enough to follow the gradient's turns smoothly. */
-const STILL_STOP = 8
 
 /**
  * The fallback without a GPU: the same cord as canvas 2D strokes, still, each thread turning violet to amber along it
@@ -158,9 +155,21 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         }
       })
       // Neighbouring pieces share their end point, so the thread runs on unbroken. Each piece's colour runs along its
-      // chord, with a stop every few samples where that sample falls on it.
-      return Array.from({ length: Math.ceil((points.length - 1) / STILL_PIECE) }, (_, n) => {
-        const run = points.slice(n * STILL_PIECE, (n + 1) * STILL_PIECE + 1)
+      // chord, with a stop at each end. Each piece is drawn at one light as the tip fades the cord, so pieces are
+      // short, a small step of the fade apiece, and each thread's start at a different sample, so no steps line up
+      // across the cord.
+      const shift = (i * 7) % STILL_PIECE
+      const starts = [
+        0,
+        ...Array.from(
+          { length: Math.ceil(points.length / STILL_PIECE) },
+          (_, n) => shift + n * STILL_PIECE,
+        ),
+      ].filter(
+        (start, n, all) => start < points.length - 1 && (n === 0 || start > (all[n - 1] ?? -1)),
+      )
+      return starts.map((start, n) => {
+        const run = points.slice(start, (starts[n + 1] ?? points.length - 1) + 1)
         const [x0, y0] = run[0]?.at ?? [0, 0]
         const [x1, y1] = run.at(-1)?.at ?? [0, 0]
         const length = (x1 - x0) ** 2 + (y1 - y0) ** 2 || 1
@@ -169,7 +178,7 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         for (const [k, { at, colour }] of run.entries()) {
           const [x, y] = at
           k === 0 ? path.moveTo(x, y) : path.lineTo(x, y)
-          if (k % STILL_STOP !== 0 && k !== run.length - 1) continue
+          if (k !== 0 && k !== run.length - 1) continue
           const along = ((x - x0) * (x1 - x0) + (y - y0) * (y1 - y0)) / length
           style.addColorStop(Math.min(1, Math.max(0, along)), colour)
         }

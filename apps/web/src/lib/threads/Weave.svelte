@@ -114,8 +114,9 @@ onMount(() => {
       const mark = marks[i]
       if (!mark) continue
       mark.style.translate = `${knot.x + swayAt(knot.y, time) * knot.sways}px ${knot.y}px`
-      const reached = Math.min(1, Math.max(0, (seen.tip - (cord.gaps[i] ?? 0)) / (FADE / 2)))
-      mark.style.opacity = String(reached)
+      // As lit as the cord is under it: the shaders' fade above the tip, at the knot's gap.
+      const t = Math.min(1, Math.max(0, (seen.tip - (cord.gaps[i] ?? 0)) / FADE))
+      mark.style.opacity = String(t * t * (3 - 2 * t))
     }
     painted = true
   }
