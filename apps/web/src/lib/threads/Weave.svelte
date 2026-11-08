@@ -3,6 +3,7 @@ import { onMount, tick as rendered, untrack } from 'svelte'
 import { advance, STILL_TIME } from './clock'
 import {
   type Box,
+  CORD_RADIUS,
   type Cord,
   carry,
   FADE,
@@ -43,8 +44,6 @@ let { seam }: { seam?: Seam | undefined } = $props()
 
 /** Wide enough for the side-by-side layouts the cord runs between. */
 const WIDE = '(min-width: 64rem)'
-/** The cord's braid radius: a little thinner than the hero's where it meets the window, as it carries on down the page. */
-const CORD = 10
 /** How far around each line of words the cord dims fully, in px: past the glyphs, so their edges stay clear. */
 const WORD_ROOM = 12
 /** How far left of a panel the cord gathers when it enters from the side. */
@@ -319,9 +318,9 @@ onMount(() => {
     cord = weave(
       [(from.left + from.right) / 2, from.bottom],
       stops,
-      CORD,
+      CORD_RADIUS,
       origin.width,
-      seam ? carry(seam, hidden, CORD) : NO_SEAM,
+      seam ? carry(seam, hidden, CORD_RADIUS) : NO_SEAM,
     )
     knots = cord.knots
     // The new knots' marks mount after this layout: show them as revealed once they have.

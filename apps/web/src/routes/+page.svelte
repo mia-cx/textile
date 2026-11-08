@@ -12,6 +12,7 @@ import Section from '$lib/components/Section.svelte'
 import Seo from '$lib/components/Seo.svelte'
 import { CRON, ROUTE, STANDUP_POST, standupReply } from '$lib/landing'
 import { GITHUB_URL, ORIGIN, page } from '$lib/site'
+import { CORD_RADIUS } from '$lib/threads/cord'
 import {
   type Field,
   type Label,
@@ -43,7 +44,6 @@ let signIn = $state<HTMLElement>()
 
 /** Below this width the hero stacks, and its threads come down into the top of the Discord window. */
 const SIDE_BY_SIDE = 960
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /**
  * The hero's event labels, each on a bright thread at the current's outer edge: two above the headline and two below
@@ -118,8 +118,8 @@ function labelBox(field: Field, label: Label): NonNullable<Field['text']>[number
   ]
 }
 /**
- * How far under the edge of what it lights a cord ends, in CSS pixels: its hot point runs into the window or the button,
- * which sit above the field, so the light reads as entering them, with no gap.
+ * How far under the edge of what it lights a cord ends, in CSS pixels: the braid runs on at full radius under the window
+ * or the button, which sit above the field, so it reads as passing behind them, with no gap.
  */
 const TIP_INSET = 3
 /**
@@ -192,7 +192,8 @@ function hero(
 ): Field {
   const copy = copyBox()
   if (width >= SIDE_BY_SIDE) {
-    // The cord ends just short of the window, so its hot point shows; the window's edge glows where it meets it.
+    // The braid passes behind the window's left edge, which glows where it arrives, and comes out of its bottom as the
+    // page's cord: one braid.
     const end: Point = target
       ? [target.x + TIP_INSET, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
@@ -201,7 +202,8 @@ function hero(
       control: [end[0] * 0.5, height * 0.5],
       end,
       spread: height * 0.54,
-      cord: clamp(width * 0.006, 7, 13),
+      // The page cord's radius: one braid passing behind the window and on down the page.
+      cord: CORD_RADIUS,
       count: width > 1600 ? 560 : 440,
       intensity: 0.75,
       labels: [],
@@ -245,8 +247,8 @@ function hero(
 /**
  * The close: threads braiding into the sign-in button, as the hero's braid into its window, at the hero's weight and
  * light. They gather into loose ropes from well back, curl as they near the button, and form a short plait, CLOSE_PLAIT
- * pixels, about a twist and a half at the hero's pitch, which keeps its thickness to the button and ends just short of
- * its edge, a hot point that lights the button (`.cord-lit`). Only side by side; stacked, the close shows no field.
+ * pixels, about a twist and a half at the hero's pitch, at the page cord's radius, which runs on at full thickness
+ * behind the button's edge and lights its rim (`.cord-lit`). Only side by side; stacked, the close shows no field.
  */
 const CLOSE_PLAIT = 220
 const CLOSE_GATHER = 640
@@ -262,7 +264,7 @@ function close(
     control: [end[0] * 0.55, end[1]],
     end,
     spread: height * 0.5,
-    cord: clamp(width * 0.0045, 7, 10),
+    cord: CORD_RADIUS,
     count: width > 1600 ? 420 : 340,
     intensity: 0.6,
     labels: [],
@@ -492,8 +494,8 @@ function close(
      edge's middle side by side, as `hero` ends it; the close's sign-in button, at its left edge's middle. It falls off
      as the inverse square of the distance from the cord's end, 1.8 / (1 + (r / reach)²) in the stops below, clipped at
      full strength: bright along the rim, which faces the cord, and faint across the face beside it, which the light
-     only grazes. White nearest the cord, as the tone map burns the hottest light white, and violet beyond. Both layers
-     sit above the element. */
+     only grazes. White nearest the cord, as the tone map burns the hottest light white, and violet beyond. `--tall`
+     stretches it along the edge, for a whole braid arriving rather than a point. Both layers sit above the element. */
   .cord-lit {
     --tip: 50% 0;
     /* About the cord's width where it arrives: light from all of it, not from a point. */
@@ -510,7 +512,7 @@ function close(
     inset: 0;
     border-radius: var(--lit-radius);
     background: radial-gradient(
-      circle at var(--tip),
+      ellipse calc(var(--reach) * 24) calc(var(--reach) * 24 * var(--tall, 1)) at var(--tip),
       var(--hot) 0,
       var(--hot) calc(var(--reach) * 0.4),
       color-mix(in srgb, var(--lit) 90%, transparent) var(--reach),
@@ -542,6 +544,9 @@ function close(
     }
     .hero-window {
       --tip: 0 50%;
+      /* A full braid arrives here, so its light is a band about as tall as the braid along the left edge. */
+      --reach: 2.5rem;
+      --tall: 1.6;
       width: 100%;
       justify-self: end;
     }

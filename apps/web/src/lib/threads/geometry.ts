@@ -188,13 +188,6 @@ export const SHAPE = {
   stray: 0.06,
   /** How much of its warmth a strand keeps right at the back of the braid: most, so an amber band stays amber. */
   cool: 0.6,
-  /**
-   * Over the last `point` px, about its last twist, the braid draws in to `pointWidth` of its width: its strands converge
-   * gradually, each fibre still visible, to a hot point where it meets what it lights, the hero's window or the close's
-   * button. Never a needle.
-   */
-  point: 110,
-  pointWidth: 0.35,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */
@@ -482,11 +475,7 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const ny = tx / length
 
   // The braid's radius narrows linearly to `cord`; the funnel narrows onto the braid.
-  // The braid draws in to a hot point over the last `point` px, where it meets what it lights.
-  const radius =
-    cord *
-    (1 + SHAPE.swell * a) *
-    (1 + (SHAPE.pointWidth - 1) * ease(1 - SHAPE.point / spineLength(field), 1, u))
+  const radius = cord * (1 + SHAPE.swell * a)
   const width = funnelWidth(field, u)
   const held = pin < 0 ? 1 : 1 - (1 - SHAPE.pinned) * Math.exp(-(((u - pin) / 0.09) ** 2))
   const sway =

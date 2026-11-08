@@ -64,6 +64,11 @@ const labelSide = (text: string, x: number, prefer: 'left' | 'right', width: num
   return prefer
 }
 
+/**
+ * The braid's radius where it meets the hero's window and down the page from it, in px: one braid passing behind the
+ * window, so the hero's plait arrives at the cord's own radius, and the close's at its button too.
+ */
+export const CORD_RADIUS = 10
 /** Pixels between samples along a path: fine enough that the braid's twists stay smooth. */
 const STEP = 4
 /**

@@ -211,8 +211,6 @@ const constants = (declare: (name: string, value: string) => string) =>
     // How dark a fibre is behind the braid, against in front of it, and how much hotter it burns on a crossing's crest.
     declare('BACK', float(0.2)),
     declare('CREST', float(4)),
-    declare('POINT', float(SHAPE.point)),
-    declare('POINT_WIDTH', float(SHAPE.pointWidth)),
     declare('COOL', float(SHAPE.cool)),
     // The share of all light that scatters into glare, and the bloom levels it spreads over.
     declare('GLARE', float(0.06)),
@@ -466,8 +464,7 @@ fn place(th: Thread, u: f32) -> Placed {
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
-  // The braid draws in to a hot point over the last POINT px, where it meets what it lights.
-  let radius = cord * (1.0 + SWELL * a) * mix(1.0, POINT_WIDTH, ease(1.0 - POINT / spine, 1.0, u));
+  let radius = cord * (1.0 + SWELL * a);
   let form = forming(u);
   let width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   var held = 1.0;
@@ -802,8 +799,7 @@ Placed place(Thread th, float u) {
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
   float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
-  // The braid draws in to a hot point over the last POINT px, where it meets what it lights.
-  float radius = cord * (1.0 + SWELL * a) * mix(1.0, POINT_WIDTH, ease(1.0 - POINT / spine, 1.0, u));
+  float radius = cord * (1.0 + SWELL * a);
   vec3 form = forming(u);
   float width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   float held = 1.0;
