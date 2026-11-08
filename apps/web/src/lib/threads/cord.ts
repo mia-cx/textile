@@ -385,6 +385,145 @@ function frame(points: ReadonlyArray<Point>) {
   })
 }
 
+/** How far either side of its line the cord's ropes arc out behind `stop`'s words: ARC.margin clear of the widest. */
+function clearance(stop: Stop) {
+  const [x] = stop.pinch
+  return (
+    Math.max(0, ...stop.copy.map((line) => Math.max(x - line.left, line.right - x))) + ARC.margin
+  )
+}
+
+/**
+ * Where the cord ends at `last` in a demo, its three strands' own paths on to `ends`: each from its rope's centre where
+ * the cord ends, on its heading, arriving level. The rope on the right reaches the topmost end, so no two cross.
+ */
+function strandPaths(last: Sample, ends: ReadonlyArray<Point>): Sample[][] {
+  const sorted = [...ends].sort((a, b) => a[1] - b[1])
+  return [0, 1, 2].map((strand) => {
+    const to = sorted[Math.min(2 - strand, sorted.length - 1)] ?? [last.x, last.y]
+    // Where its rope's centre is at the cord's end: `home` of the way out along the axis, as `place` sets it.
+    const home = (((strand - 1) * 2) / 3) * last.width * last.open * stages(last.open).apart
+    const from: Point = [last.x + last.axis[0] * home, last.y + last.axis[1] * home]
+    const heading: Point = [-last.axis[1], last.axis[0]]
+    const down = Math.abs(to[1] - from[1]) * 0.6
+    const across = Math.abs(to[0] - from[0]) * 0.6
+    const line = cubic(
+      from,
+      [from[0] + heading[0] * down, from[1] + heading[1] * down],
+      [to[0] - across, to[1]],
+      to,
+    )
+    // The first point is where the cord ends: the strand carries on from the next.
+    return frame(line)
+      .slice(1)
+      .map((p) => ({
+        ...p,
+        s: last.s + p.s,
+        open: last.open,
+        width: last.width,
+        light: 1,
+        sways: 0,
+      }))
+  })
+}
+
+/**
+ * A stretch the cord comes apart over, behind a section's `box`, from height `from` to `to`, braided again at its foot
+ * if it `closes`; with `arc`, its ropes' centres arc out that far either side of the cord, behind a held demo's words.
+ */
+interface Stretch {
+  readonly box: Box
+  readonly from: number
+  readonly to: number
+  readonly closes: boolean
+  readonly arc?: number
+}
+
+/** How far the cord has come apart at height `y` in `stretch`, how wide it spreads, how bright, and how much it swings. */
+function spreadIn(
+  stretch: Stretch,
+  y: number,
+): Pick<Sample, 'open' | 'width' | 'light' | 'swings'> {
+  const { from, to, closes, arc, box } = stretch
+  const t = Math.min(1, Math.max(0, (y - from) / (to - from)))
+  if (arc !== undefined) {
+    // Ropes on the outer thirds stand `home` (2/3) of the width out, so the width puts their centres `arc` out.
+    const rise = easeIn(0, ARC.ramp, t) * easeIn(0, ARC.ramp, 1 - t)
+    return {
+      open: ARC.open * rise,
+      width: arc / (ARC.open * (2 / 3)),
+      light: 1,
+      swings: ARC.swings,
+    }
+  }
+  const open = swell(t, closes)
+  // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
+  const height = (to - from) * (closes ? 1 : 2)
+  return {
+    open,
+    width: Math.min(
+      ((box.right - box.left) / 2) * SPREAD,
+      height ** 2 / (2 * Math.PI ** 2 * MIN_TURN),
+    ),
+    // Behind the last section the strands fade out toward its foot.
+    light: closes ? 1 : 1 - open,
+  }
+}
+
+/** Where the cord ends in a demo: from its gap (`from`) down to where it enters, and the ends its strands reach. */
+interface Ending {
+  readonly from: number
+  readonly enter: Point
+  readonly ends: ReadonlyArray<Point>
+}
+
+/**
+ * How the cord ends in `stop`'s demo: it runs on into it, straight to where it enters over all the height it has, so it
+ * never sweeps across flat, coming apart on the way into the strands that reach each end (see `ENDING`). It ends high
+ * enough above the first end for the strand to it to turn there gently.
+ */
+function endingIn(stop: Stop): Ending {
+  const [x, y] = stop.enter
+  const [ex, ey] = stop.ends.reduce((top, end) => (end[1] < top[1] ? end : top))
+  const enter: Point = [
+    x,
+    Math.max(stop.pinch[1] + STEP, Math.min(y, ey - Math.abs(ex - x) * ENDING.turn)),
+  ]
+  return { from: stop.pinch[1], enter, ends: stop.ends }
+}
+
+/**
+ * How the cord passes `stop`'s section, before `next`'s (none for the last): the anchors its course passes, the stretches
+ * it comes apart over, and those it runs straight and still through. It reaches the section's line a little after its
+ * gap, on its way down. Held, it reaches its line before it enters the demo, arcs apart behind any words above it, and
+ * keeps to its line, straight and still, to the demo's foot.
+ */
+function through(stop: Stop, next: Stop | undefined) {
+  const { pinch, held, box } = stop
+  const to = next ? next.pinch[1] : box.bottom
+  const reach = (held ? stop.enter[1] : to) - pinch[1]
+  const line: Point = [pinch[0], pinch[1] + Math.min(reach * LAG, LAG_MAX)]
+  const anchors: Point[] = [line]
+  const spans: Stretch[] = []
+  const still: Array<readonly [number, number]> = []
+  if (!held) spans.push({ box, from: pinch[1], to, closes: !!next })
+  else {
+    if (held.gather !== undefined)
+      spans.push({
+        box,
+        from: pinch[1],
+        to: held.gather + ARC.under,
+        closes: true,
+        arc: clearance(stop),
+      })
+    anchors.push([pinch[0], held.foot])
+    still.push([line[1], held.foot])
+  }
+  // The last section's strands come apart behind it and fade out at its foot.
+  if (!next) anchors.push([pinch[0], box.bottom])
+  return { anchors, spans, still }
+}
+
 /**
  * The cord from `start` down through each stop in turn, with `radius` its braid's radius: braided down to the first
  * gap, then behind each section coming apart across it and gathering again in the next gap, until a stop whose strands
@@ -404,18 +543,11 @@ export function weave(
   /** Stretches the cord runs straight and still through, from top to bottom: held sections. */
   const still: Array<readonly [number, number]> = []
   /** The sections the cord comes apart behind, each between the gaps `from` and `to`. */
-  /** `arc`: how far either side of the cord its ropes' centres arc out, behind a held demo's words. */
-  const spans: Array<{ box: Box; from: number; to: number; closes: boolean; arc?: number }> = []
+  const spans: Stretch[] = []
   /** Strands peeling off, and whether each carries the lead on: the lead's strand, where the cord comes apart. */
   const strands: Array<{ line: Point[]; leads: boolean }> = []
   const gaps: Array<{ text: string; y: number }> = []
-  /** Where the cord ends in a demo, if it does: from its gap down to where it enters, and the ends its strands reach. */
-  let ending: { from: number; enter: Point; ends: ReadonlyArray<Point> } | undefined
-  // It reaches each section's centre a little after its gap, on its way down.
-  const after = (pinch: Point, to: number): Point => [
-    pinch[0],
-    pinch[1] + Math.min((to - pinch[1]) * LAG, LAG_MAX),
-  ]
+  let ending: Ending | undefined
   for (const [k, stop] of stops.entries()) {
     gaps.push({ text: stop.label, y: stop.pinch[1] })
     const { split } = stop
@@ -423,45 +555,14 @@ export function weave(
       const beside = stop.ends.filter(([x]) => x > split[0])
       for (const end of beside) strands.push({ line: strandLine(split, end, [1, 0]), leads: false })
     } else if (stop.ends.length > 0) {
-      // The cord runs on into the demo, straight to where it enters over all the height it has, so it never sweeps
-      // across flat, coming apart on the way into the strands that reach each end (see `ENDING`). It ends high enough
-      // above the first end for the strand to it to turn there gently.
-      const [x, y] = stop.enter
-      const [ex, ey] = stop.ends.reduce((top, end) => (end[1] < top[1] ? end : top))
-      const end: Point = [
-        x,
-        Math.max(stop.pinch[1] + STEP, Math.min(y, ey - Math.abs(ex - x) * ENDING.turn)),
-      ]
-      anchors.push(end)
-      ending = { from: stop.pinch[1], enter: end, ends: stop.ends }
+      ending = endingIn(stop)
+      anchors.push(ending.enter)
       break
     }
-    const next = stops[k + 1]
-    const to = next ? next.pinch[1] : stop.box.bottom
-    const { held } = stop
-    // Held, it reaches its line before it enters the demo, and keeps to it, straight and still, to the demo's foot.
-    const line = after(stop.pinch, held ? stop.enter[1] : to)
-    anchors.push(line)
-    if (!held) spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
-    else {
-      if (held.gather !== undefined) {
-        const x = stop.pinch[0]
-        const arc =
-          Math.max(0, ...stop.copy.map((line) => Math.max(x - line.left, line.right - x))) +
-          ARC.margin
-        spans.push({
-          box: stop.box,
-          from: stop.pinch[1],
-          to: held.gather + ARC.under,
-          closes: true,
-          arc,
-        })
-      }
-      anchors.push([stop.pinch[0], held.foot])
-      still.push([line[1], held.foot])
-    }
-    // The last section's strands come apart behind it and fade out at its foot.
-    if (!next) anchors.push([stop.pinch[0], stop.box.bottom])
+    const passing = through(stop, stops[k + 1])
+    anchors.push(...passing.anchors)
+    spans.push(...passing.spans)
+    still.push(...passing.still)
   }
 
   const path = course(anchors, still)
@@ -497,68 +598,11 @@ export function weave(
         light: 1,
       }
     }
-    if (!span) return { ...base, open: 0, width: 0, light: 1 }
-    const t = Math.min(1, Math.max(0, (p.y - span.from) / (span.to - span.from)))
-    if (span.arc !== undefined) {
-      // Ropes on the outer thirds stand `home` (2/3) of the width out, so the width puts their centres `arc` out.
-      const rise = easeIn(0, ARC.ramp, t) * easeIn(0, ARC.ramp, 1 - t)
-      return {
-        ...base,
-        open: ARC.open * rise,
-        width: span.arc / (ARC.open * (2 / 3)),
-        light: 1,
-        swings: ARC.swings,
-      }
-    }
-    const open = swell(t, span.closes)
-    // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
-    const height = (span.to - span.from) * (span.closes ? 1 : 2)
-    return {
-      ...base,
-      open,
-      width: Math.min(
-        ((span.box.right - span.box.left) / 2) * SPREAD,
-        height ** 2 / (2 * Math.PI ** 2 * MIN_TURN),
-      ),
-      // Behind the last section the strands fade out toward its foot.
-      light: span.closes ? 1 : 1 - open,
-    }
+    return { ...base, ...(span ? spreadIn(span, p.y) : { open: 0, width: 0, light: 1 }) }
   })
-  // Where the cord ends in a demo, each of its strands runs on as its own path to its end: from its rope's centre where
-  // the cord ends, on down and over to the end. The rope on the right reaches the topmost end, so no two cross.
   const last = cord.at(-1)
-  const own: Sample[][] =
-    ending && last
-      ? [0, 1, 2].map((strand) => {
-          const ends = [...ending.ends].sort((a, b) => a[1] - b[1])
-          const [ex, ey] = ends[Math.min(2 - strand, ends.length - 1)] ?? [last.x, last.y]
-          // Where its rope's centre is at the cord's end: `home` of the way out along the axis, as `place` sets it.
-          const home = (((strand - 1) * 2) / 3) * last.width * last.open * stages(last.open).apart
-          const from: Point = [last.x + last.axis[0] * home, last.y + last.axis[1] * home]
-          const to: Point = [ex, ey]
-          // It leaves on the cord's heading and arrives level.
-          const heading: Point = [-last.axis[1], last.axis[0]]
-          const down = Math.abs(to[1] - from[1]) * 0.6
-          const across = Math.abs(to[0] - from[0]) * 0.6
-          const line = cubic(
-            from,
-            [from[0] + heading[0] * down, from[1] + heading[1] * down],
-            [to[0] - across, to[1]],
-            to,
-          )
-          // The first point is where the cord ends: the strand carries on from the next.
-          return frame(line)
-            .slice(1)
-            .map((p) => ({
-              ...p,
-              s: last.s + p.s,
-              open: last.open,
-              width: last.width,
-              light: 1,
-              sways: 0,
-            }))
-        })
-      : []
+  // Where the cord ends in a demo, each of its strands runs on as its own path to its end.
+  const own = ending && last ? strandPaths(last, ending.ends) : []
   const peeling = strands.slice(0, MAX_PEELS - own.length)
   const peels: Sample[][] = peeling.map(({ line }) => {
     const points = frame(line)

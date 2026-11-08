@@ -308,10 +308,13 @@ onMount(() => {
     const stops: Stop[] = []
     /** Each section's heading, on the page. */
     const headings: number[] = []
-    for (const section of root.querySelectorAll<HTMLElement>('[data-weave-label]')) {
-      const entry = section.querySelector<HTMLElement>('[data-weave]')
-      const copy = section.querySelector('[data-weave-copy]')
-      if (!entry || !copy) continue
+    /** `section`'s stop for the cord, its `entry` and `copy` found, below the last section's foot, `above`. */
+    const stopIn = (
+      section: HTMLElement,
+      entry: HTMLElement,
+      copy: Element,
+      above: number,
+    ): Stop => {
       // Strands spread across the section's whole width, inside its gutters, behind its panels and prose.
       const parts = [...section.children].map(rect)
       const whole = rect(section)
@@ -331,7 +334,7 @@ onMount(() => {
             : (prose.right + panel.left) / 2
           : panel.left + (panel.right - panel.left) * Number(entry.dataset.weaveAt ?? 0.5)
       const split = section.querySelector('[data-weave-split]')
-      stops.push({
+      return {
         label: section.dataset.weaveLabel ?? '',
         pinch: [x, (above + content.top) / 2],
         box: content,
@@ -350,8 +353,15 @@ onMount(() => {
           )
           return [wall.left + Math.min(BEHIND, (wall.right - wall.left) / 2), middle(rect(end))]
         }),
-      })
-      above = content.bottom
+      }
+    }
+    for (const section of root.querySelectorAll<HTMLElement>('[data-weave-label]')) {
+      const entry = section.querySelector<HTMLElement>('[data-weave]')
+      const copy = section.querySelector('[data-weave-copy]')
+      if (!entry || !copy) continue
+      const stop = stopIn(section, entry, copy, above)
+      stops.push(stop)
+      above = stop.box.bottom
       headings.push(rect(section.querySelector('h2') ?? copy).top + offset)
     }
     // Behind the window, the hero's strands run from its left edge's middle to its bottom's middle.
