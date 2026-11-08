@@ -189,11 +189,12 @@ export const SHAPE = {
   /** How much of its warmth a strand keeps right at the back of the braid: most, so an amber band stays amber. */
   cool: 0.6,
   /**
-   * Over the last `point` px the braid draws in to `pointWidth` of its width, a hot point where it meets what it lights:
-   * the hero's window, the close's button.
+   * Over the last `point` px, about its last twist, the braid draws in to `pointWidth` of its width: its strands converge
+   * gradually, each fibre still visible, to a hot point where it meets what it lights, the hero's window or the close's
+   * button. Never a needle.
    */
-  point: 48,
-  pointWidth: 0.12,
+  point: 110,
+  pointWidth: 0.35,
   /** How fast the braid turns, in radians per second: its crossings travel toward `end`. */
   spin: 0.9,
   /** How bright a labelled thread is, against 1 for the brightest of the rest: its fibre stands out on the dark. */

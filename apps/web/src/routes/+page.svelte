@@ -117,8 +117,11 @@ function labelBox(field: Field, label: Label): NonNullable<Field['text']>[number
     bottom + sway,
   ]
 }
-/** How far short of the window's edge the cord ends, in CSS pixels. */
-const TIP_GAP = 4
+/**
+ * How far under the edge of what it lights a cord ends, in CSS pixels: its hot point runs into the window or the button,
+ * which sit above the field, so the light reads as entering them, with no gap.
+ */
+const TIP_INSET = 3
 /**
  * The hero's plait forms over a long stretch, each change on its own ramp (see `forming` in geometry.ts). The bundles
  * start to gather into three loose ropes well behind the copy, GATHER times the gap between the copy and the window
@@ -191,7 +194,7 @@ function hero(
   if (width >= SIDE_BY_SIDE) {
     // The cord ends just short of the window, so its hot point shows; the window's edge glows where it meets it.
     const end: Point = target
-      ? [target.x - TIP_GAP, target.y + target.height * 0.5]
+      ? [target.x + TIP_INSET, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
     const shape = {
       start: [-width * 0.06, height * 0.5],
@@ -252,7 +255,7 @@ function close(
   target: DOMRect | undefined,
 ): Field {
   const end: Point = target
-    ? [target.x - TIP_GAP, target.y + target.height / 2]
+    ? [target.x + TIP_INSET, target.y + target.height / 2]
     : [width * 0.6, height * 0.6]
   const shape = {
     start: [-width * 0.08, height * 0.5],
@@ -575,17 +578,21 @@ function close(
   .close h2 {
     font-size: clamp(2.5rem, 1.3rem + 3.6vw, 5.5rem);
   }
-  /* The close's cord ends at its sign-in button's left edge and lights it, as the hero's lights its window: a smaller
-     reach, as the cord arrives thinner. Only side by side, where the close draws its threads. */
-  /* The button is small and already bright, so its face takes more of the light than the window's does, to read. */
+  /* The close's cord runs into its sign-in button's left edge and lights it, as the hero's lights its window: warm on
+     the rim where it enters, and only a faint warmth on the face beside it, so the button keeps its violet and its
+     label its contrast. Only side by side, where the close draws its threads. */
   .close .cord-lit {
     position: relative;
     --tip: 0 50%;
-    --reach: 3rem;
+    --reach: 1.75rem;
+    --hot: #ffd9b8;
+    --lit: color-mix(in srgb, var(--thread-amber) 60%, white);
     --lit-radius: var(--radius-pill);
   }
   .close .cord-lit::before {
-    opacity: 0.45;
+    opacity: 0.18;
+    /* Only the button's leading edge, ahead of its icon and label, so the label keeps its contrast. */
+    mask: linear-gradient(90deg, #000, transparent 2.5rem);
   }
   @media (max-width: 59.99rem) {
     .close .cord-lit::before,
