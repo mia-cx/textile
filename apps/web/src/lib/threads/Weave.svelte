@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount, untrack } from 'svelte'
+import { onMount, tick as rendered, untrack } from 'svelte'
 import { advance, STILL_TIME } from './clock'
 import {
   type Box,
@@ -108,15 +108,10 @@ onMount(() => {
     const seen = view()
     canvas.style.translate = `0 ${seen.top}px`
     renderer.draw(palette, time, seen)
-    // Each knot rides the cord's sway where it crosses its gap, by the same math the shaders run, and shows as the tip
-    // reaches it.
+    // Each knot rides the cord's sway where it crosses its gap, by the same math the shaders run.
     for (const [i, knot] of cord.knots.entries()) {
       const mark = marks[i]
-      if (!mark) continue
-      mark.style.translate = `${knot.x + swayAt(knot.y, time) * knot.sways}px ${knot.y}px`
-      // As lit as the cord is under it: the shaders' fade above the tip, at the knot's gap.
-      const t = Math.min(1, Math.max(0, (seen.tip - (cord.gaps[i] ?? 0)) / FADE))
-      mark.style.opacity = String(t * t * (3 - 2 * t))
+      if (mark) mark.style.translate = `${knot.x + swayAt(knot.y, time) * knot.sways}px ${knot.y}px`
     }
     painted = true
   }
@@ -151,8 +146,23 @@ onMount(() => {
     draw()
     if (animates()) frame = requestAnimationFrame(tick)
   }
+  /**
+   * Shows each knot as lit as the cord is under it, by the shaders' fade above the tip at the knot's gap: hidden while
+   * the cord is unrevealed there, whether or not the cord draws.
+   */
+  const reach = () => {
+    if (!cord) return
+    const { tip } = view()
+    for (const [i, gap] of cord.gaps.entries()) {
+      const mark = marks[i]
+      if (!mark) continue
+      const t = Math.min(1, Math.max(0, (tip - gap) / FADE))
+      mark.style.opacity = String(t * t * (3 - 2 * t))
+    }
+  }
   /** Draws on the next frame, and keeps drawing while the cord moves; still, it draws again only as the page scrolls. */
   const wake = () => {
+    reach()
     if (frame !== 0) return
     if (!live()) return rest()
     frame = requestAnimationFrame(tick)
@@ -244,6 +254,8 @@ onMount(() => {
       seam ? carry(seam, hidden, CORD) : NO_SEAM,
     )
     knots = cord.knots
+    // The new knots' marks mount after this layout: show them as revealed once they have.
+    void rendered().then(reach)
     // Each section's plateau: the cord drawn a fade past the next gap, where it is one plait again, or to the end of its
     // route for the last section; reached as the section's heading crosses HEADING of the way down the screen.
     const { gaps, length } = cord
@@ -373,12 +385,14 @@ onMount(() => {
 
   /* A knot on the cord where it gathers above a section, and the event's name beside it, as the hero labels its
      threads. */
+  /* Hidden until the cord reveals it: the script shows each as the tip reaches it. */
   .mark {
     position: absolute;
     top: 0;
     left: 0;
     width: 0;
     height: 0;
+    opacity: 0;
   }
   .mark::before {
     content: '';
