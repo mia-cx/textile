@@ -270,13 +270,13 @@ const KNOT_LOOK = 80
 const ENDING = { open: 0.6, spread: 7, turn: 0.5, settle: 80 } as const
 
 /**
- * How the cord comes apart behind the words above a held demo, a centred section's. Just below its knot the plait
- * loosens into three ropes, over `loosen` px, while they are still close together: as far as `open`, hardly frayed, so
- * each stays one fibrous rope, swinging `swings` as much as elsewhere so it holds its curve. Then the outer two arc out
- * symmetrically, reaching `margin` px clear of the words' widest line by `into` px into them, keep clear down their
- * whole height, and sweep back together below them to braid again `under` px behind the demo's top edge.
+ * How the cord comes apart behind the words above a held demo, a centred section's: its three ropes part symmetrically
+ * around its line and arc out around the words, `margin` px clear of their widest line, then sweep back together to
+ * braid again `under` px behind the demo's top edge. They part as far as `open` (ropes, hardly frayed, so each stays one
+ * fibrous rope) and swing `swings` as much as elsewhere, so they hold their curve. Each arc rises over the first `ramp`
+ * of the way and falls over the last.
  */
-const ARC = { margin: 48, into: 24, loosen: 120, under: 30, open: 0.62, swings: 0.4 } as const
+const ARC = { margin: 56, under: 170, open: 0.62, swings: 0.4, ramp: 0.5 } as const
 
 /**
  * A strand peeling off at a panel's edge: its fibres leave `fat` braid radii wide and its light comes up over its first
@@ -385,18 +385,12 @@ function frame(points: ReadonlyArray<Point>) {
   })
 }
 
-/**
- * How far either side of its line the cord's ropes arc out behind `stop`'s words (ARC.margin clear of the widest
- * line), and the words' top and bottom.
- */
-function clearance(stop: Stop): Arc {
+/** How far either side of its line the cord's ropes arc out behind `stop`'s words: ARC.margin clear of the widest. */
+function clearance(stop: Stop) {
   const [x] = stop.pinch
-  const { copy } = stop
-  return {
-    clear: Math.max(0, ...copy.map((line) => Math.max(x - line.left, line.right - x))) + ARC.margin,
-    top: Math.min(...copy.map((line) => line.top)),
-    bottom: Math.max(...copy.map((line) => line.bottom)),
-  }
+  return (
+    Math.max(0, ...stop.copy.map((line) => Math.max(x - line.left, line.right - x))) + ARC.margin
+  )
 }
 
 /**
@@ -433,23 +427,16 @@ function strandPaths(last: Sample, ends: ReadonlyArray<Point>): Sample[][] {
   })
 }
 
-/** How far the ropes' centres arc out either side of the cord (`clear`) around words from `top` to `bottom`. */
-interface Arc {
-  readonly clear: number
-  readonly top: number
-  readonly bottom: number
-}
-
 /**
  * A stretch the cord comes apart over, behind a section's `box`, from height `from` to `to`, braided again at its foot
- * if it `closes`; with `arc`, its ropes arc out around a held demo's words.
+ * if it `closes`; with `arc`, its ropes' centres arc out that far either side of the cord, behind a held demo's words.
  */
 interface Stretch {
   readonly box: Box
   readonly from: number
   readonly to: number
   readonly closes: boolean
-  readonly arc?: Arc
+  readonly arc?: number
 }
 
 /** How far the cord has come apart at height `y` in `stretch`, how wide it spreads, how bright, and how much it swings. */
@@ -460,17 +447,14 @@ function spreadIn(
   const { from, to, closes, arc, box } = stretch
   const t = Math.min(1, Math.max(0, (y - from) / (to - from)))
   if (arc !== undefined) {
-    // The plait loosens into ropes near the knot and braids again near the foot, the ropes close together there.
-    const open =
-      ARC.open * easeIn(from, from + ARC.loosen, y) * (1 - easeIn(to - ARC.loosen, to, y))
-    // Between, their centres arc out around the words and back: rising to `clear` into the words' top, holding beside
-    // them, falling back after their bottom. Each turn eases in and out, so the ropes have no corner.
-    const out = Math.max(from + ARC.loosen, arc.top + ARC.into)
-    const back = Math.min(arc.bottom, to - ARC.loosen)
-    // The sweep out starts once the ropes have half loosened, so they fork gently from the knot.
-    const centre = arc.clear * easeIn(from + ARC.loosen / 2, out, y) * (1 - easeIn(back, to, y))
-    // Ropes on the outer thirds stand `home` (2/3) of the width out, times how far they have parted.
-    return { open, width: centre / (ARC.open * (2 / 3)), light: 1, swings: ARC.swings }
+    // Ropes on the outer thirds stand `home` (2/3) of the width out, so the width puts their centres `arc` out.
+    const rise = easeIn(0, ARC.ramp, t) * easeIn(0, ARC.ramp, 1 - t)
+    return {
+      open: ARC.open * rise,
+      width: arc / (ARC.open * (2 / 3)),
+      light: 1,
+      swings: ARC.swings,
+    }
   }
   const open = swell(t, closes)
   // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
@@ -518,15 +502,13 @@ function through(stop: Stop, next: Stop | undefined) {
   const { pinch, held, box } = stop
   const to = next ? next.pinch[1] : box.bottom
   const reach = (held ? stop.enter[1] : to) - pinch[1]
-  // Arcing around words above its demo, it is on its line at its knot, so the arc parts symmetrically about it.
-  const arcs = held?.gather !== undefined
-  const line: Point = [pinch[0], pinch[1] + (arcs ? 0 : Math.min(reach * LAG, LAG_MAX))]
+  const line: Point = [pinch[0], pinch[1] + Math.min(reach * LAG, LAG_MAX)]
   const anchors: Point[] = [line]
   const spans: Stretch[] = []
   const still: Array<readonly [number, number]> = []
   if (!held) spans.push({ box, from: pinch[1], to, closes: !!next })
   else {
-    if (arcs && held.gather !== undefined)
+    if (held.gather !== undefined)
       spans.push({
         box,
         from: pinch[1],
