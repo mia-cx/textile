@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { COMMUNITY } from '../src/lib/site.ts'
 import { CENTRAL, cookiesOf, ORIGIN, request } from './server.ts'
 
 const CLIENT_ID = 'registered-client'
@@ -135,6 +136,21 @@ describe('Sign in through central', () => {
     const again = await request('/login', { headers: { cookie: cookiesOf(response) } })
     expect(new URL(again.headers.get('location') ?? '').pathname).toBe('/authorize')
     expect(central.calls).toEqual(['/register', '/register'])
+  })
+
+  it('tells someone central turned away after adding them to the waitlist that they’re in the server', async () => {
+    const { authorize, cookie } = await start(fakeCentral())
+    const response = await callback(cookie, {
+      error: 'access_denied',
+      waitlist: 'joined',
+      state: authorize.searchParams.get('state') ?? '',
+      iss: CENTRAL,
+    })
+    expect(response.headers.get('location')).toBe('/access?waitlist')
+    const page = await (await request('/access?waitlist')).text()
+    expect(page).toContain('You’re on the waitlist')
+    expect(page).toContain(`href="${COMMUNITY.server}"`)
+    expect(page).not.toContain('Join the Discord server')
   })
 
   // Proves a callback this browser didn't start, or that central didn't send, signs nobody in and redeems nothing.

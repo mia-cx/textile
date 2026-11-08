@@ -13,8 +13,9 @@ Authorization: Bearer YOUR_RELAY_OAUTH_ACCESS_TOKEN
 X-Discord-Bot-Token: YOUR_DISCORD_BOT_TOKEN
 ```
 
-- **The OAuth credential says which human is asking.** Login requests only Discord's `identify`
-  scope. Operators restrict access with `DISCORD_OAUTH_ALLOWED_USER_IDS`: unlisted accounts can't
+- **The OAuth credential says which human is asking.** Login requests Discord's `identify` scope,
+  plus `guilds.join` when the operator sets a community server, so sign-in can add the human to it.
+  Operators restrict access with `DISCORD_OAUTH_ALLOWED_USER_IDS`: unlisted accounts can't
   finish login or use credentials issued earlier. Stored tokens, scripts, workflows, and voice
   run only with that list set.
 - **The bot token says what may be done.** Login doesn't prove bot ownership or restrict a bot to

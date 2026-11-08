@@ -25,6 +25,7 @@ import { connectStorage } from '@discord-mcp/storage'
 import { NodeRuntime } from '@effect/platform-node'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { Cause, Config, Effect, Layer, Logger, Redacted } from 'effect'
+import { communityConfig } from './login.ts'
 import { checkPublicExposure } from './public-exposure.ts'
 import {
   buildRelayServer,
@@ -380,6 +381,8 @@ const main = Effect.gen(function* () {
     clientSecret: Config.redacted('DISCORD_OAUTH_CLIENT_SECRET'),
     encryptionKey: Config.redacted('OAUTH_ENCRYPTION_KEY'),
   })
+  const community = yield* communityConfig
+  const context = yield* Effect.context<never>()
   // Central holds no bot tokens: it only forwards them, voice sockets, and workflow routes to the
   // bot host that owns each bot.
   const members = tier === 'central' ? yield* membership : undefined
@@ -413,6 +416,8 @@ const main = Effect.gen(function* () {
       login: {
         ...oauth,
         ...(allowlist === undefined ? {} : { allowedUserIds: allowlist }),
+        ...(community === undefined ? {} : { community }),
+        log: (message) => Effect.runForkWith(context)(Effect.logWarning(message)),
         publicBaseUrl: config.publicBaseUrl || `http://127.0.0.1:${config.port}`,
       },
     },

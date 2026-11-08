@@ -18,6 +18,18 @@ let { data }: PageProps = $props()
     <form method="POST" action="/logout" class="mt-12 border-t border-rule pt-4">
       <button class="text-action" type="submit">Sign out</button>
     </form>
+  {:else if data.waitlist}
+    <h1 class="text-4xl font-extrabold sm:text-5xl">You’re on the waitlist</h1>
+    <p class="mt-5 text-lg">
+      You’re in {COMMUNITY.name} now. Access to Textile opens in rounds, by invitation. Follow progress
+      there until your round comes.
+    </p>
+    <div class="mt-8">
+      <a class="button button-primary" href={COMMUNITY.server}>Open the Discord server</a>
+    </div>
+    <p class="mt-12 border-t border-rule pt-4">
+      <a class="text-action" href="/login" data-sveltekit-reload>Sign in again</a>
+    </p>
   {:else if data.denied}
     <h1 class="text-4xl font-extrabold sm:text-5xl">You don’t have access yet</h1>
     <p class="mt-5 text-lg">
