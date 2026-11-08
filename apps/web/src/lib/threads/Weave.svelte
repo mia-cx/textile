@@ -278,21 +278,23 @@ onMount(() => {
           bottom: r.bottom - origin.top + WORD_ROOM,
         }))
     }
-    // The narrow gaps between `[data-weave-panel]`s stacked one above another, where they overlap across: the cord
-    // dims there as behind words, so its strands never show as rows of clipped stubs between the panels. Tabs keep
-    // their unselected panels in place, so the same gap can turn up more than once.
+    // The narrow gaps between the `[data-weave-panel]`s on show stacked one above another, where they overlap across:
+    // the cord dims there as behind words, so its strands never show as rows of clipped stubs between the panels.
+    // Tabs keep their unselected panels in place, hidden, so only the shown ones count.
     const between = (section: Element): Box[] => {
-      const panels = [...section.querySelectorAll('[data-weave-panel]')].map(rect)
-      const found = new Map<string, Box>()
-      for (const a of panels)
-        for (const b of panels) {
+      const panels = [...section.querySelectorAll('[data-weave-panel]')]
+        .filter((panel) => panel.checkVisibility({ visibilityProperty: true }))
+        .map(rect)
+      return panels.flatMap((a) =>
+        panels.flatMap((b) => {
           const left = Math.max(a.left, b.left)
           const right = Math.min(a.right, b.right)
           const gap = b.top - a.bottom
-          if (gap > 0 && gap <= STACKED && right > left)
-            found.set(`${left} ${a.bottom}`, { left, top: a.bottom, right, bottom: b.top })
-        }
-      return [...found.values()]
+          return gap > 0 && gap <= STACKED && right > left
+            ? [{ left, top: a.bottom, right, bottom: b.top }]
+            : []
+        }),
+      )
     }
     const start = root.querySelector('[data-weave-start]')
     if (!start) return
@@ -407,6 +409,9 @@ onMount(() => {
   remeasure = measure
   const resize = new ResizeObserver(measure)
   resize.observe(root)
+  // Switching tabs shows other panels in the same place, with other gaps between them.
+  const switched = new MutationObserver(measure)
+  switched.observe(root, { subtree: true, attributeFilter: ['inert'] })
   const seen = new IntersectionObserver(([entry]) => {
     visible = entry?.isIntersecting ?? false
     wake()
@@ -436,6 +441,7 @@ onMount(() => {
     remeasure = undefined
     cancelAnimationFrame(frame)
     resize.disconnect()
+    switched.disconnect()
     seen.disconnect()
     removeEventListener('scroll', onScroll)
     document.removeEventListener('visibilitychange', onScroll)
