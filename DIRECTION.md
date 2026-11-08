@@ -82,6 +82,21 @@ Local stdio uses the caller's environment token. `pnpm login` is the browser log
 use operator-supplied URLs; keep deployment hostnames out of this repository's docs and helper
 defaults. Read `README.md` for tools, configuration, and limitations.
 
+## Developer experience
+
+Textile is agent-first, but hand-written bots get a developer experience as good as Workers
+gives: agents work best on the tools a person would choose to use, so the human path is the
+baseline, not an afterthought. Agents and people publish the same bundle format through the same
+deploy API; the MCP tools are one client of it, and no client sends a whole bot in one request.
+
+- **CLI.** A `wrangler`-style CLI scaffolds a bot, runs it locally, and deploys from a terminal
+  or a GitHub Actions workflow.
+- **Bot environments.** Dev, staging, and production per bot, each its own Discord application,
+  with dev tunnels that run local code against live events and reload on save.
+- **Types and bindings.** Published TypeScript types for every hook (Gateway events, cron, HTTP
+  routes) and a typed `env` whose bindings (KV, schedules, routes, the Discord client) each bot
+  declares, as `@cloudflare/workers-types` and `wrangler.toml` do for Workers.
+
 ## Environments and deployment
 
 The olympus k3s homelab is dev and staging. Production runs on a managed Kubernetes provider, not
