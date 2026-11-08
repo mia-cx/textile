@@ -45,6 +45,8 @@ let { seam }: { seam?: Seam | undefined } = $props()
 
 /** Wide enough for the side-by-side layouts the cord runs between. */
 const WIDE = '(min-width: 64rem)'
+/** The widest gap between two stacked panels that the cord dims behind, in px, rather than show as clipped stubs. */
+const STACKED = 32
 /** How far around each line of words the cord dims fully, in px: past the glyphs, so their edges stay clear. */
 const WORD_ROOM = 12
 /** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */
@@ -276,6 +278,22 @@ onMount(() => {
           bottom: r.bottom - origin.top + WORD_ROOM,
         }))
     }
+    // The narrow gaps between `[data-weave-panel]`s stacked one above another, where they overlap across: the cord
+    // dims there as behind words, so its strands never show as rows of clipped stubs between the panels. Tabs keep
+    // their unselected panels in place, so the same gap can turn up more than once.
+    const between = (section: Element): Box[] => {
+      const panels = [...section.querySelectorAll('[data-weave-panel]')].map(rect)
+      const found = new Map<string, Box>()
+      for (const a of panels)
+        for (const b of panels) {
+          const left = Math.max(a.left, b.left)
+          const right = Math.min(a.right, b.right)
+          const gap = b.top - a.bottom
+          if (gap > 0 && gap <= STACKED && right > left)
+            found.set(`${left} ${a.bottom}`, { left, top: a.bottom, right, bottom: b.top })
+        }
+      return [...found.values()]
+    }
     const start = root.querySelector('[data-weave-start]')
     if (!start) return
     const from = rect(start)
@@ -310,7 +328,8 @@ onMount(() => {
         label: section.dataset.weaveLabel ?? '',
         pinch: [x, (above + content.top) / 2],
         box: content,
-        copy: words(copy),
+        // A held section's gap shows the braid on purpose: the thing travelling from panel to panel.
+        copy: [...words(copy), ...('weaveHeld' in entry.dataset ? [] : between(section))],
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
         // Held, it comes apart behind the words above the demo, if they are above it, and runs braided through it.
         held:

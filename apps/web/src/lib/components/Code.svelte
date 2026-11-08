@@ -5,7 +5,7 @@ import { highlight } from '$lib/highlight'
 let { source, label, title }: { source: string; label: string; title?: string } = $props()
 </script>
 
-<div class="code">
+<div class="code" data-weave-panel>
   {#if title}<p class="title">{title}</p>{/if}
   <!-- A sample wider than its panel scrolls sideways, so keyboard users can focus it to scroll. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->

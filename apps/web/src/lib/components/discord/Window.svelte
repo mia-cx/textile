@@ -25,7 +25,7 @@ let {
 } = $props()
 </script>
 
-<figure bind:this={window} class="window {className}" aria-label={label}>
+<figure bind:this={window} class="window {className}" aria-label={label} data-weave-panel>
   <div class="rail" aria-hidden="true">
     <span class="server"></span>
     <span class="server current"></span>

@@ -41,7 +41,10 @@ export interface Stop {
   readonly pinch: Point
   /** The section's content: its strands spread across it, behind the panels. */
   readonly box: Box
-  /** The section's words, line by line, tight to their text: strands passing behind dim under them, and only there. */
+  /**
+   * The section's words, line by line, tight to their text, and the narrow gaps between its stacked panels: strands
+   * passing behind dim there, and only there.
+   */
   readonly copy: ReadonlyArray<Box>
   /** Where strands peel off into the demo: a panel's right edge. Without one, the cord itself comes apart at `enter`. */
   readonly split: Point | undefined

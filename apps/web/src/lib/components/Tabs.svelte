@@ -36,7 +36,7 @@ function onkeydown(event: KeyboardEvent) {
 }
 </script>
 
-<div role="tablist" aria-label={label} class="tablist" tabindex="-1" {onkeydown}>
+<div role="tablist" aria-label={label} class="tablist" tabindex="-1" {onkeydown} data-weave-panel>
   {#each tabs as tab, i}
     <button
       bind:this={buttons[i]}
