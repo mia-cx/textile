@@ -133,12 +133,16 @@ let {
       grid-row: 1;
       align-self: center;
     }
+    /* The demo is far taller than the prose, so the prose sits level with its middle, as prose-right's does: no empty
+       band above the demo or block of dark under the prose. */
     [data-layout='prose-left'] .prose {
       grid-column: 1 / span 4;
+      grid-row: 1;
+      align-self: center;
     }
     [data-layout='prose-left'] .demo {
       grid-column: 5 / -1;
-      padding-top: 6rem;
+      grid-row: 1;
     }
     [data-layout='wide-right'] .prose {
       grid-column: 7 / -1;
