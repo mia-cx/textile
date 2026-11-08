@@ -742,6 +742,22 @@ export function nearCopy(cord: Cord, top: number, bottom: number) {
 }
 /** How far past its words a strand still dims, in px: COPY_FADE in the shaders. */
 export const COPY_REACH = 120
+/** How much of a strand's light shows right behind words. Mirrors COPY_LIGHT in the shaders. */
+export const COPY_LIGHT = 0.01
+
+/**
+ * How much light shows at `p` behind the cord's words and the gaps between its stacked panels: COPY_LIGHT right behind
+ * them, fading back in over COPY_REACH px around them. Mirrors `behindCopy` in the shaders, over every box at once.
+ */
+export function behindCopy(cord: Cord, [x, y]: Point) {
+  let light = 1
+  for (const box of cord.copy) {
+    if (box.top > y + COPY_REACH) break
+    const outside = Math.max(box.left - x, x - box.right, box.top - y, y - box.bottom)
+    light = Math.min(light, COPY_LIGHT + (1 - COPY_LIGHT) * smoothstep(0, COPY_REACH, outside))
+  }
+  return light
+}
 
 const TAU = Math.PI * 2
 

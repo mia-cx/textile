@@ -1,4 +1,5 @@
 import {
+  behindCopy,
   CORD_THREADS,
   type Cord,
   cordThread,
@@ -158,11 +159,15 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
         const o = k * TEXELS * 4
         // How bright the path is here, as the GPU's strands read it: coming up where a strand peels off a panel's edge.
         const light = laid.data[o + 10] ?? 1
+        const at = place(laid, i, k, time, th).point
         return {
-          at: place(laid, i, k, time, th).point,
+          at,
           route: laid.data[o + 12] ?? 0,
-          // The lead is TRACED times the brightest of the rest.
-          colour: css(mixed(warmth), Math.min(1, (leads ? 0.5 * SHAPE.traced : own) * light)),
+          // The lead is TRACED times the brightest of the rest, dimmed behind words and between stacked panels.
+          colour: css(
+            mixed(warmth),
+            Math.min(1, (leads ? 0.5 * SHAPE.traced : own) * light) * behindCopy(laid, at),
+          ),
         }
       })
       // Neighbouring pieces share their end point, so the thread runs on unbroken. Each piece's colour runs along its
