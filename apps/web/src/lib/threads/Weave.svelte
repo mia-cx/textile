@@ -58,6 +58,14 @@ const MAX_DPR = 2
  * fade the cord in the span above its tip.
  */
 const NO_TIP = 1e7
+/**
+ * The reveal's spring: its rate (1/s), critically damped, so a step settles in about a second; how close counts as
+ * settled (px, px/s); its longest substep and the longest frame it integrates (s).
+ */
+const REVEAL = 4.5
+const SETTLED = 0.5
+const SUBSTEP = 1 / 120
+const MAX_CHASE = 0.1
 /** The share of the tip's fade over which a knot comes in on the GPU, where the tone map shows the braid bright early. */
 const GPU_KNOT = 0.15
 /** How many lost GPU devices the cord replaces before it stops asking for WebGPU. */
@@ -96,13 +104,43 @@ onMount(() => {
   let loaded = false
   /** Whether the canvas still holds a frame of the cord. */
   let painted = false
+  /**
+   * Where the drawn tip is along the cord's route, and how fast it moves (px/s): it chases the scroll's step (`target`)
+   * on a critically damped spring, so a step eases in and out over about a second however fast the page scrolls.
+   */
+  let tip = 0
+  let speed = 0
+  /** The last frame's time, for the spring's step. */
+  let stepped = 0
 
-  /** The part of the cord the screen shows now, with the canvas's margin, and how far along its route it is drawn. */
-  const view = () => {
-    const top = scrollY - offset - innerHeight * MARGIN
-    const tip = motion.matches ? reveal(plateaus, scrollY) : NO_TIP
-    return { left: 0, top, tip }
+  /** Where the scroll asks the tip to be: its step for this scroll, or, with reduced motion, past the whole cord. */
+  const target = () => (motion.matches ? reveal(plateaus, scrollY) : NO_TIP)
+  /** Whether the tip is still on its way to the scroll's step. */
+  const settling = () => Math.abs(target() - tip) > SETTLED || Math.abs(speed) > SETTLED
+  /**
+   * Moves the tip toward its target over `dt` seconds, on a critically damped spring of rate REVEAL: no overshoot, slow
+   * out and slow in. With reduced motion it jumps.
+   */
+  const chase = (dt: number) => {
+    const to = target()
+    if (!motion.matches) {
+      tip = to
+      speed = 0
+      return
+    }
+    // Small substeps keep the integration stable through a long frame.
+    for (let left = Math.min(dt, MAX_CHASE); left > 0; left -= SUBSTEP) {
+      const h = Math.min(left, SUBSTEP)
+      speed += (REVEAL * REVEAL * (to - tip) - 2 * REVEAL * speed) * h
+      tip += speed * h
+    }
+    if (Math.abs(to - tip) <= SETTLED && Math.abs(speed) <= SETTLED) {
+      tip = to
+      speed = 0
+    }
   }
+  /** The part of the cord the screen shows now, with the canvas's margin, and how far along its route it is drawn. */
+  const view = () => ({ left: 0, top: scrollY - offset - innerHeight * MARGIN, tip })
   const draw = () => {
     if (!renderer || !cord || !palette) return
     if (!loaded) renderer.load(cord)
@@ -142,11 +180,19 @@ onMount(() => {
   const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
   const tick = (now: number) => {
     frame = 0
-    if (!live()) return rest()
+    chase((now - stepped) / 1000)
+    stepped = now
+    reach()
+    const moving = settling()
+    if (!live()) {
+      rest()
+      if (moving) frame = requestAnimationFrame(tick)
+      return
+    }
     // The hero's clock, so the cord's strands stay in step with the hero's they carry on.
     if (animates()) time = advance(now)
     draw()
-    if (animates()) frame = requestAnimationFrame(tick)
+    if (animates() || moving) frame = requestAnimationFrame(tick)
   }
   /**
    * Shows each knot as the cord under it looks: hidden while the cord is unrevealed there, whether or not the cord
@@ -166,9 +212,11 @@ onMount(() => {
   }
   /** Draws on the next frame, and keeps drawing while the cord moves; still, it draws again only as the page scrolls. */
   const wake = () => {
+    if (!motion.matches) chase(0)
     reach()
     if (frame !== 0) return
-    if (!live()) return rest()
+    if (!live() && !settling()) return rest()
+    stepped = performance.now()
     frame = requestAnimationFrame(tick)
   }
 
