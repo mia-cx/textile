@@ -52,7 +52,7 @@ pair, so `color-scheme` picks the side, as in Svartz.
 | `--rule`, `--rule-strong` | `#e2dfea`, `#c4bfd2` | `#221f2e`, `#3a3549` | Lines between things |
 | `--ink`, `--text`, `--muted` | `#110e1a`, `#2a2636`, `#615c70` | `#f4f2fa`, `#d9d6e4`, `#9f9bb0` | Headings, body, secondary |
 | `--accent`, `--accent-text` | `#6d3df0`, `#5c35d6` | `#7a45f0`, `#b9a2ff` | Violet: actions and links |
-| `--thread-violet`, `-amber`, `-silver` | | `#9a6bff`, `#ffad5a`, `#d4d7ea` | The threads only, never text |
+| `--thread-violet`, `-amber` | | `#9a6bff`, `#ffad5a` | The threads only, never text |
 | `--code-*` | ink `#0c0a14` | ink | Code panels are ink in both modes |
 
 White on the violet button is 5.3:1; muted on ink is 7.5:1; muted on light paper is 6.0:1. Colour never carries meaning

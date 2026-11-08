@@ -173,7 +173,8 @@ async function undo() {
               <defs>
                 <linearGradient id="voice-{i}" gradientUnits="userSpaceOnUse" x1="0" x2={STREAM.width} y1="0" y2="0">
                   <stop offset="0" class={i % 2 ? 'amber' : 'violet'} />
-                  <stop offset="0.5" class="both" />
+                  <stop offset="0.33" class={i % 2 ? 'warm' : 'cool'} />
+                  <stop offset="0.67" class={i % 2 ? 'cool' : 'warm'} />
                   <stop offset="1" class={i % 2 ? 'violet' : 'amber'} />
                 </linearGradient>
               </defs>
@@ -331,8 +332,13 @@ async function undo() {
   .amber {
     stop-color: var(--thread-amber);
   }
-  .both {
-    stop-color: color-mix(in oklab, var(--thread-violet), var(--thread-amber));
+  /* Between the two, mixed in OKLCH, which keeps their chroma, through magenta and pink as the threads run: a plain
+     OKLab mix would grey the middle. */
+  .cool {
+    stop-color: color-mix(in oklch, var(--thread-violet) 67%, var(--thread-amber));
+  }
+  .warm {
+    stop-color: color-mix(in oklch, var(--thread-violet) 33%, var(--thread-amber));
   }
   .voice-wave {
     stroke-width: 1.25;

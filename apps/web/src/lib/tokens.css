@@ -1,6 +1,6 @@
 /*
  * Textile's design tokens, shared by the site (apps/web) and the docs (apps/docs, through svartz.config.ts).
- * DESIGN.md explains each role. Ink and off-white, violet for actions; amber and silver live only in the threads.
+ * DESIGN.md explains each role. Ink and off-white, violet for actions; amber lives only in the threads.
  *
  * Colour mode: `color-scheme` drives every `light-dark()` pair, as in Svartz. The system decides, unless <html> has
  * `.light` or `.dark`, which the docs' colour toggle sets and stores (`svartz:color-mode`). A page that contains
@@ -40,7 +40,6 @@
   /* The threads. Decoration only, never text. */
   --thread-violet: #7a45ff;
   --thread-amber: #ff9f5a;
-  --thread-silver: #d4d7ea;
 
   /* Code panels are ink in both modes. */
   --code-bg: #0c0a14;

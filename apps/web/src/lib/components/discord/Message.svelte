@@ -92,7 +92,7 @@ let {
   }
   .avatar.bot {
     background:
-      conic-gradient(from 200deg, var(--thread-violet), var(--thread-amber), var(--thread-silver), var(--thread-violet));
+      conic-gradient(from 200deg, var(--thread-violet), var(--thread-amber), var(--thread-violet));
     box-shadow: inset 0 0 0 6px rgb(20 18 30);
   }
   .body {
