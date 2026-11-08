@@ -257,10 +257,17 @@ onMount(() => {
      * The words in `element`, line by line, as boxes around their text, WORD_ROOM wider all round: the strands dim fully
      * behind these alone, so even body-size text and links clear 4.5:1 over the brightest of them.
      */
+    // Each text node's own line boxes, so no element's block box, wider than its words, enters the mask.
     const words = (element: Element): Box[] => {
       const range = document.createRange()
-      range.selectNodeContents(element)
-      return [...range.getClientRects()]
+      const text = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      const lines: DOMRect[] = []
+      for (let node = text.nextNode(); node; node = text.nextNode()) {
+        if (!node.textContent?.trim()) continue
+        range.selectNodeContents(node)
+        lines.push(...range.getClientRects())
+      }
+      return lines
         .filter((r) => r.width > 0 && r.height > 0)
         .map((r) => ({
           left: r.left - origin.left - WORD_ROOM,
@@ -389,6 +396,11 @@ onMount(() => {
   const onScroll = () => wake()
   const onMotion = () => {
     if (!motion.matches) time = STILL_TIME
+    // Motion back on: the tip starts at the scroll's step, not from past the whole cord.
+    else {
+      tip = target()
+      speed = 0
+    }
     wake()
   }
   addEventListener('scroll', onScroll, { passive: true })
