@@ -23,7 +23,8 @@ import { hex, type Palette } from './renderer'
  * that names its event in `data-weave-label`, gathers in the gap above it, with the event's name on a knot there, then
  * comes apart behind the section into loose ribbons of fibre across its width, dimmed behind its `[data-weave-copy]`, and gathers again
  * in the gap below. The gap's knot sits over the section's `[data-weave]` element: above `data-weave-at` along its top,
- * or, with `data-weave="left"`, just left of it. Panels sit above the cord.
+ * or, with `data-weave="left"`, just left of it. With `data-weave-held`, the cord runs through the section braided
+ * instead, from panel to panel. Panels sit above the cord.
  *
  * A strand peels off into each `[data-weave-end]` in a section, to its left edge, or with `data-weave-end="window"`, to
  * the left edge of the Discord window around it: from the right edge of the section's `[data-weave-split]`, or, with no
@@ -304,6 +305,7 @@ onMount(() => {
         box: content,
         copy: words(copy),
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
+        held: 'weaveHeld' in entry.dataset ? panel.bottom : undefined,
         enter: side ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
           const wall = end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end

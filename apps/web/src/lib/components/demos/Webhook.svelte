@@ -26,9 +26,9 @@ function send(withSecret: boolean) {
 }
 </script>
 
-<!-- The page's cord arrives at the request and runs on behind it into the window the workflow posts in, below. -->
-<div class="frame">
-  <div class="webhook" data-weave="top" data-weave-at="0.5">
+<!-- The page's cord arrives at the request and runs on, braided, behind it down into the window the workflow posts
+     in, below it: the request on its way. -->
+<div class="webhook" data-weave="top" data-weave-at="0.5" data-weave-held>
     <div class="request">
       <!-- The route is wider than a phone, so the request scrolls sideways; keyboard users focus it to scroll. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -48,38 +48,20 @@ function send(withSecret: boolean) {
         {/if}
       </p>
     </div>
-    <div class="posts">
-      <Window channel="deploys" label="Where the workflow posts in Discord" class="webhook-window">
-        {#each posts as post (post.id)}
-          <Message author="Weaver" bot time={post.time}>{post.text}</Message>
-        {/each}
-      </Window>
-    </div>
-  </div>
+    <Window channel="deploys" label="Where the workflow posts in Discord" class="webhook-window">
+      {#each posts as post (post.id)}
+        <Message author="Weaver" bot time={post.time}>{post.text}</Message>
+      {/each}
+    </Window>
 </div>
 <p class="note">This demo doesn't send HTTP requests.</p>
 
 <style>
-  .frame {
-    container-type: inline-size;
-  }
+  /* The request above the window it posts in, one width. */
   .webhook {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
-  }
-  /* With room, the request and the window step down and to the right, from the call to where it lands, overlapping in
-     the middle, where the page's cord runs behind both. */
-  @container (min-width: 44rem) {
-    .webhook {
-      grid-template-columns: repeat(8, minmax(0, 1fr));
-    }
-    .request {
-      grid-column: 1 / span 6;
-    }
-    .posts {
-      grid-column: 3 / -1;
-    }
   }
   .request {
     padding: 1.25rem;

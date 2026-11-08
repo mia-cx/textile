@@ -49,6 +49,11 @@ export interface Stop {
   readonly enter: Point
   /** The points the peeled strands reach, each level with what it enters. */
   readonly ends: ReadonlyArray<Point>
+  /**
+   * Where the cord runs through the section braided instead, carrying something from one panel down into the next:
+   * straight down to this height, the panels' foot, before it turns toward the next section.
+   */
+  readonly held: number | undefined
 }
 
 /**
@@ -393,15 +398,20 @@ export function weave(
       // above the first end for the strand to it to turn there gently.
       const [x, y] = stop.enter
       const [ex, ey] = stop.ends.reduce((top, end) => (end[1] < top[1] ? end : top))
-      const end: Point = [x, Math.max(stop.pinch[1] + STEP, Math.min(y, ey - Math.abs(ex - x) * ENDING.turn))]
+      const end: Point = [
+        x,
+        Math.max(stop.pinch[1] + STEP, Math.min(y, ey - Math.abs(ex - x) * ENDING.turn)),
+      ]
       anchors.push(end)
       ending = { from: stop.pinch[1], enter: end, ends: stop.ends }
       break
     }
     const next = stops[k + 1]
     const to = next ? next.pinch[1] : stop.box.bottom
-    anchors.push(after(stop.pinch, to))
-    spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
+    if (stop.held === undefined) {
+      anchors.push(after(stop.pinch, to))
+      spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
+    } else anchors.push([stop.pinch[0], stop.held])
     // The last section's strands come apart behind it and fade out at its foot.
     if (!next) anchors.push([stop.pinch[0], stop.box.bottom])
   }
