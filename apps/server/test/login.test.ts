@@ -390,6 +390,34 @@ describe('Joining the waitlist at sign-in', () => {
     expect(guildCalls(oauth)).toHaveLength(before)
   })
 
+  // Discord's shared-resource limits can ask for a retry well after the bucket resets.
+  it('gives up on the join at its deadline, so a slow Discord can’t hold up sign-in', async () => {
+    const { oauth, log, relay } = withCommunity([PERSON])
+    oauth.state.guildReplies.push(
+      Response.json(
+        { message: 'You are being rate limited.', retry_after: 8, global: false },
+        {
+          status: 429,
+          headers: {
+            'retry-after': '8',
+            'x-ratelimit-scope': 'shared',
+            'x-ratelimit-limit': '2',
+            'x-ratelimit-remaining': '1',
+            'x-ratelimit-reset-after': '1',
+          },
+        },
+      ),
+    )
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const signingIn = login(relay)
+    await vi.waitFor(() => expect(guildCalls(oauth)).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(5_000)
+    const { tokens } = await signingIn
+    expect((await relay.fetch(mcp(tokens.access_token))).status).toBe(200)
+    expect(log.mock.calls.join('\n')).toContain(PERSON)
+    expect(oauth.members.size).toBe(0)
+  })
+
   it('turns away a person who isn’t allowed, telling their client they joined the waitlist', async () => {
     const { oauth, relay } = withCommunity(['345678901234567890'])
     const finished = await finishLogin(relay, await beginLogin(relay))

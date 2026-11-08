@@ -9,7 +9,7 @@ import {
   oauthMetadataResponse,
   verifyBearerToken,
 } from '@modelcontextprotocol/server'
-import { Config, Effect, Redacted, Schema } from 'effect'
+import { Config, Duration, Effect, Option, Redacted, Schema } from 'effect'
 import { EncryptJWT, type JWTPayload, jwtDecrypt } from 'jose'
 
 const FLOW_SECONDS = 600
@@ -54,8 +54,12 @@ const Registration = Schema.Struct({
 })
 
 const SNOWFLAKE = /^\d{17,21}$/
-/** Sign-in waits for the join, so Discord gets a few seconds and only short rate limits are absorbed. */
-const COMMUNITY_REST = { timeoutMs: 5_000, retries: 0, maxRateLimitWaitMs: 2_000 }
+/**
+ * Sign-in waits for the join, so the whole join, queueing and rate-limit waits included, gets this
+ * long. Only short rate limits are waited out at all.
+ */
+const JOIN_DEADLINE_MS = 5_000
+const COMMUNITY_REST = { timeoutMs: JOIN_DEADLINE_MS, retries: 0, maxRateLimitWaitMs: 2_000 }
 
 /**
  * The Discord server that everyone who signs in joins, with the Waitlist role. Discord adds a member
@@ -325,9 +329,19 @@ export const createDiscordLogin = (
               route: `${member}/roles/${community.waitlistRoleId}`,
               operationFamily: 'waitlist',
             })
-        }).pipe(Effect.provide(rest)),
+        }).pipe(
+          Effect.provide(rest),
+          // Interrupting at the deadline cancels the requests still queued or waiting to retry.
+          Effect.timeoutOption(Duration.millis(JOIN_DEADLINE_MS)),
+        ),
       )
-      if (joined._tag === 'Success') return true
+      if (joined._tag === 'Success') {
+        if (Option.isSome(joined.value)) return true
+        log(
+          `Couldn't add Discord user ${userId} to the waitlist: Discord didn't finish within ${JOIN_DEADLINE_MS} ms.`,
+        )
+        return false
+      }
       const error = renderCause(joined.cause)
       log(
         `Couldn't add Discord user ${userId} to the waitlist: ${error.code}${error.httpStatus === undefined ? '' : ` ${error.httpStatus}`}: ${error.message}`,

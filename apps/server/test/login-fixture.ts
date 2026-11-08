@@ -53,6 +53,8 @@ export const discordOAuth = () => {
     scope: 'identify',
     /** What the community server's member endpoints answer with when not 200. */
     guildStatus: 200,
+    /** Answers the member endpoints give, in order, before answering as above. */
+    guildReplies: [] as Array<Response>,
   }
   /** The community server's members, by user ID, with their roles. */
   const members = new Map<string, Set<string>>()
@@ -69,6 +71,8 @@ export const discordOAuth = () => {
     const bot = `Bot ${Redacted.value(community.botToken)}`
     if (new Headers(init.headers).get('authorization') !== bot)
       return Response.json({ message: '401: Unauthorized', code: 0 }, { status: 401 })
+    const scripted = state.guildReplies.shift()
+    if (scripted !== undefined) return scripted
     if (state.guildStatus !== 200)
       return Response.json(
         { message: 'Missing Permissions', code: 50013 },
@@ -90,6 +94,8 @@ export const discordOAuth = () => {
   }
   const network: typeof fetch = async (input, init) => {
     const path = new URL(String(input)).pathname
+    // Like fetch, an aborted request never reaches Discord.
+    init?.signal?.throwIfAborted()
     calls.push({ path, init })
     if (state.revoked) return Response.json({ error: 'invalid_token' }, { status: 401 })
     if (state.status !== 200) return Response.json({}, { status: state.status })

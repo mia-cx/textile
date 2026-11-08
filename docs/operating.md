@@ -123,8 +123,9 @@ so the bot must belong to the application named by `DISCORD_OAUTH_CLIENT_ID`. Se
 
 With the settings on, login asks Discord for `identify` and `guilds.join`. After Discord's
 callback, the relay adds the person with the Waitlist role, or gives the role to someone
-already in the server. It does this for everyone, before the allowlist check. A failed join
-never blocks a listed person's sign-in. The relay logs the failure, with the person's Discord
+already in the server. It does this for everyone, before the allowlist check. The join gets
+five seconds, rate-limit waits included. A failed or unfinished join never blocks a listed
+person's sign-in. The relay logs the failure, with the person's Discord
 user ID and Discord's error, but no credentials. A person the allowlist doesn't name goes back
 to their client with `error=access_denied`, plus `waitlist=joined` when the join worked.
 
