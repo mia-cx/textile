@@ -17,6 +17,12 @@ const URL_BASE = process.env.LOGO_URL ?? 'http://localhost:5173'
 const OUT = new URL('../static/icons/', import.meta.url)
 /** The sizes static/ serves: favicons, the header's mark at 2×, the touch icon, and the manifest's. */
 const SIZES = [16, 32, 48, 64, 128, 180, 192, 512]
+/**
+ * The favicons, drawn as little app icons on a rounded tile of ink, and how round its corners are, as a share of its
+ * size. The touch and manifest icons stay square: the systems that show them round their corners themselves.
+ */
+const FAVICONS = [16, 32, 48]
+const TILE_RADIUS = 0.22
 /** Below this size, the mark starts from the thicker capture. */
 const SMALL = 64
 /** The thicker capture's band half-width and intensity, on the 1024 page. */
@@ -92,17 +98,34 @@ function pass(src: Float32Array, from: number, to: number, lines: number) {
   return out
 }
 
-function icon(image: Image, size: number) {
+/**
+ * How much of a pixel at (x, y) a rounded square `size` across covers, its corners `radius` round: 1 inside, 0 outside,
+ * and the share in between along its edge, so the corners are smooth at any size.
+ */
+function cover(x: number, y: number, size: number, radius: number) {
+  const corner = (v: number) => Math.max(radius - (v + 0.5), v + 0.5 - (size - radius), 0)
+  const dx = corner(x)
+  const dy = corner(y)
+  return Math.min(1, Math.max(0, radius - Math.hypot(dx, dy) + 0.5))
+}
+
+/**
+ * The mark on the site's ink, as a square, or as a little app icon: the ink a rounded square with clear corners, so a
+ * favicon stands on its own dark tile in a light browser too.
+ */
+function icon(image: Image, size: number, rounded: boolean) {
   const data = pass(pass(image.data, image.size, size, image.size), image.size, size, size)
   const png = new PNG({ width: size, height: size })
   const extra = gain(size)
+  const radius = size * TILE_RADIUS
   for (let i = 0; i < size * size; i++) {
     for (let c = 0; c < 3; c++) {
       const base = ink[c] ?? 0
       const lit = base + Math.max(0, (data[i * 3 + c] ?? 0) - base) * extra
       png.data[i * 4 + c] = Math.round(toSrgb(Math.min(1, lit)) * 255)
     }
-    png.data[i * 4 + 3] = 255
+    const alpha = rounded ? cover(i % size, Math.floor(i / size), size, radius) : 1
+    png.data[i * 4 + 3] = Math.round(alpha * 255)
   }
   return PNG.sync.write(png)
 }
@@ -146,6 +169,9 @@ const mark = capture('')
 const thick = capture(THICK)
 mkdirSync(OUT, { recursive: true })
 for (const size of SIZES)
-  writeFileSync(new URL(`${size}.png`, OUT), icon(size <= SMALL ? thick : mark, size))
+  writeFileSync(
+    new URL(`${size}.png`, OUT),
+    icon(size <= SMALL ? thick : mark, size, FAVICONS.includes(size)),
+  )
 /** The header's mark, as light, at 2× its 32px. */
 writeFileSync(new URL('light-64.png', OUT), light(thick, 64))
