@@ -27,8 +27,8 @@ function onsubmit(event: SubmitEvent) {
 }
 </script>
 
-<!-- The page's cord enters the window's left edge, level with the composer, where the interaction starts. -->
-<div data-weave="left">
+<!-- The page's cord comes down the page's middle, apart behind the words above, and braided again into the window. -->
+<div data-weave="top" data-weave-at="0.5" data-weave-held>
   <Window channel="standup" label="Your bot answering /standup in Discord" class="slash-window" live>
     {#each replies as reply (reply.id)}
       <Message author="Weaver" bot time={today(9 * 60 + 10 + reply.id)} used={{ by: 'you', command: '/standup' }}>
@@ -36,7 +36,7 @@ function onsubmit(event: SubmitEvent) {
       </Message>
     {/each}
     {#snippet footer()}
-      <form class="composer" {onsubmit} data-weave-y>
+      <form class="composer" {onsubmit}>
         <label class="command" for="shipped">
           <span class="name">/standup</span>
           <span class="option">shipped</span>

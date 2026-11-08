@@ -51,9 +51,10 @@ export interface Stop {
   readonly ends: ReadonlyArray<Point>
   /**
    * Where the cord runs through the section braided instead, carrying something from one panel down into the next:
-   * straight down to this height, the panels' foot, before it turns toward the next section.
+   * coming apart only behind the words above the demo, if any, braided again where it enters it (`gather`), then
+   * straight down to the demo's foot (`foot`), before it turns toward the next section.
    */
-  readonly held: number | undefined
+  readonly held: { readonly gather: number | undefined; readonly foot: number } | undefined
 }
 
 /**
@@ -408,10 +409,14 @@ export function weave(
     }
     const next = stops[k + 1]
     const to = next ? next.pinch[1] : stop.box.bottom
-    if (stop.held === undefined) {
-      anchors.push(after(stop.pinch, to))
-      spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
-    } else anchors.push([stop.pinch[0], stop.held])
+    const { held } = stop
+    anchors.push(after(stop.pinch, held?.gather ?? to))
+    if (!held) spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
+    else {
+      if (held.gather !== undefined)
+        spans.push({ box: stop.box, from: stop.pinch[1], to: held.gather, closes: true })
+      anchors.push([stop.pinch[0], held.foot])
+    }
     // The last section's strands come apart behind it and fade out at its foot.
     if (!next) anchors.push([stop.pinch[0], stop.box.bottom])
   }

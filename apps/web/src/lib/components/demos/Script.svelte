@@ -11,7 +11,7 @@ const TITLES = ['One', 'Two', 'Three']
 <!-- The page's cord enters the one tool call, and three strands leave it, one into each message it sends. -->
 <div class="frame">
   <div class="script">
-    <div data-weave="top" data-weave-at="0.3" data-weave-split>
+    <div data-weave="top" data-weave-at="0.5" data-weave-split>
       <Code source={SCRIPT} title="discord_script_run" label="A script that sends three embeds" />
     </div>
     <Window channel="general" label="The three messages the script sends">

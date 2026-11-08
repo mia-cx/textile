@@ -23,8 +23,8 @@ import { hex, type Palette } from './renderer'
  * that names its event in `data-weave-label`, gathers in the gap above it, with the event's name on a knot there, then
  * comes apart behind the section into loose ribbons of fibre across its width, dimmed behind its `[data-weave-copy]`, and gathers again
  * in the gap below. The gap's knot sits over the section's `[data-weave]` element: above `data-weave-at` along its top,
- * or, with `data-weave="left"`, just left of it. With `data-weave-held`, the cord runs through the section braided
- * instead, from panel to panel. Panels sit above the cord.
+ * or, with `data-weave="gutter"`, in the gutter between it and the section's words, and comes down there. With `data-weave-held`, it comes apart only behind the words above the demo, if any, gathers again
+ * where it enters the demo, and runs through it braided, from panel to panel. Panels sit above the cord.
  *
  * A strand peels off into each `[data-weave-end]` in a section, to its left edge, or with `data-weave-end="window"`, to
  * the left edge of the Discord window around it: from the right edge of the section's `[data-weave-split]`, or, with no
@@ -47,8 +47,6 @@ let { seam }: { seam?: Seam | undefined } = $props()
 const WIDE = '(min-width: 64rem)'
 /** How far around each line of words the cord dims fully, in px: past the glyphs, so their edges stay clear. */
 const WORD_ROOM = 12
-/** How far left of a panel the cord gathers when it enters from the side. */
-const LANE = 110
 /** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */
 const MARGIN = 0.15
 /** How far down the screen a section's heading is when the cord is drawn through the whole section. */
@@ -293,11 +291,13 @@ onMount(() => {
         bottom: Math.max(...parts.map((r) => r.bottom)),
       }
       const panel = rect(entry)
-      const level = entry.querySelector('[data-weave-y]')
-      const side = entry.dataset.weave === 'left'
-      const x = side
-        ? panel.left - LANE
-        : panel.left + (panel.right - panel.left) * Number(entry.dataset.weaveAt ?? 0.5)
+      const prose = rect(copy)
+      const x =
+        entry.dataset.weave === 'gutter'
+          ? prose.left >= panel.right
+            ? (panel.right + prose.left) / 2
+            : (prose.right + panel.left) / 2
+          : panel.left + (panel.right - panel.left) * Number(entry.dataset.weaveAt ?? 0.5)
       const split = section.querySelector('[data-weave-split]')
       stops.push({
         label: section.dataset.weaveLabel ?? '',
@@ -305,8 +305,12 @@ onMount(() => {
         box: content,
         copy: words(copy),
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
-        held: 'weaveHeld' in entry.dataset ? panel.bottom : undefined,
-        enter: side ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
+        // Held, it comes apart behind the words above the demo, if they are above it, and runs braided through it.
+        held:
+          'weaveHeld' in entry.dataset
+            ? { gather: prose.bottom < panel.top ? panel.top : undefined, foot: panel.bottom }
+            : undefined,
+        enter: [x, panel.top],
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
           const wall = end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end
           return [rect(wall).left, middle(rect(end))]
