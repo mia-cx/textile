@@ -118,10 +118,11 @@ function labelBox(field: Field, label: Label): NonNullable<Field['text']>[number
   ]
 }
 /**
- * How far under the edge of what it lights a cord ends, in CSS pixels: the braid runs on at full radius under the window
- * or the button, which sit above the field, so it reads as passing behind them, with no gap.
+ * How far the hero's braid runs on behind the window's left edge, in CSS pixels: at full radius under its server rail,
+ * which sits above the field, so it reads as passing behind and its end never shows, and never behind the messages,
+ * whose glass would show it. The close's braid runs on to the middle of its button.
  */
-const TIP_INSET = 3
+const BEHIND = 24
 /**
  * The hero's plait forms over a long stretch, each change on its own ramp (see `forming` in geometry.ts). The bundles
  * start to gather into three loose ropes well behind the copy, GATHER times the gap between the copy and the window
@@ -195,7 +196,7 @@ function hero(
     // The braid passes behind the window's left edge, which glows where it arrives, and comes out of its bottom as the
     // page's cord: one braid.
     const end: Point = target
-      ? [target.x + TIP_INSET, target.y + target.height * 0.5]
+      ? [target.x + BEHIND, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
     const shape = {
       start: [-width * 0.06, height * 0.5],
@@ -247,8 +248,9 @@ function hero(
 /**
  * The close: threads braiding into the sign-in button, as the hero's braid into its window, at the hero's weight and
  * light. They gather into loose ropes from well back, curl as they near the button, and form a short plait, CLOSE_PLAIT
- * pixels, about a twist and a half at the hero's pitch, at the page cord's radius, which runs on at full thickness
- * behind the button's edge and lights its rim (`.cord-lit`). Only side by side; stacked, the close shows no field.
+ * pixels, about a twist and a half at the hero's pitch, at the page cord's radius, whole at the button's edge. It runs on
+ * at full thickness behind the button to its middle, so the opaque pill always hides its end, and lights its rim
+ * (`.cord-lit`). Only side by side; stacked, the close shows no field.
  */
 const CLOSE_PLAIT = 220
 const CLOSE_GATHER = 640
@@ -257,8 +259,10 @@ function close(
   target: DOMRect | undefined,
 ): Field {
   const end: Point = target
-    ? [target.x + TIP_INSET, target.y + target.height / 2]
+    ? [target.x + target.width / 2, target.y + target.height / 2]
     : [width * 0.6, height * 0.6]
+  // The plait forms before the button's edge, and is whole there, then runs on behind it.
+  const edge = target?.x ?? end[0]
   const shape = {
     start: [-width * 0.08, height * 0.5],
     control: [end[0] * 0.55, end[1]],
@@ -269,8 +273,11 @@ function close(
     intensity: 0.6,
     labels: [],
   } satisfies Omit<Field, 'braid'>
-  const forms = crossing(shape, 0, end[0] - CLOSE_PLAIT)
-  return { ...shape, braid: [crossing(shape, 0, end[0] - CLOSE_PLAIT - CLOSE_GATHER), forms, 1] }
+  const forms = crossing(shape, 0, edge - CLOSE_PLAIT)
+  return {
+    ...shape,
+    braid: [crossing(shape, 0, edge - CLOSE_PLAIT - CLOSE_GATHER), forms, crossing(shape, 0, edge)],
+  }
 }
 </script>
 

@@ -185,7 +185,7 @@ export interface Cord {
  *   2  axis x, axis y, light, carries the lead (0 or 1)
  *   3  how far along the cord's route it is (px from the window, a peel carrying on from where it leaves), whether it is
  *      on a strand's own path (0 or 1: there the path is the strand's centre, not the cord's), how much its strands
- *      swing (1, settling to 0 at a strand's own end), -
+ *      swing (`swings`: 1, less where they arc, settling to 0 at a strand's own end), -
  */
 interface Sample {
   readonly x: number
@@ -196,6 +196,7 @@ interface Sample {
   readonly axis: Point
   readonly light: number
   readonly sways: number
+  readonly swings?: number
 }
 
 /**
@@ -262,10 +263,20 @@ const KNOT_LOOK = 80
  * How the cord ends in a demo: from its gap to where it enters, it comes apart as it does behind a section, as far as
  * `open` (its plait loosened and its strands parted as ropes, still fibrous, only starting to fray), its ropes `spread`
  * braid radii either side. Then each rope runs on, the same fibres, as its strand's own path to its end (see `strands`
- * in `Cord`), `inset` px under the end's edge, its swing settling over its last `settle` px so it runs in level. The
- * cord ends `turn` of its way across to its first end above that end.
+ * in `Cord`), on under it to the end's point (Weave.svelte sets it behind the element, never at its edge), its swing
+ * settling over its last `settle` px so it runs in level. The cord ends `turn` of its way across to its first end above
+ * that end.
  */
-const ENDING = { open: 0.6, spread: 7, inset: 16, turn: 0.5, settle: 80 } as const
+const ENDING = { open: 0.6, spread: 7, turn: 0.5, settle: 80 } as const
+
+/**
+ * How the cord comes apart behind the words above a held demo, a centred section's: its three ropes part symmetrically
+ * around its line and arc out around the words, `margin` px clear of their widest line, then sweep back together to
+ * braid again `under` px behind the demo's top edge. They part as far as `open` (ropes, hardly frayed, so each stays one
+ * fibrous rope) and swing `swings` as much as elsewhere, so they hold their curve. Each arc rises over the first `ramp`
+ * of the way and falls over the last.
+ */
+const ARC = { margin: 56, under: 170, open: 0.62, swings: 0.4, ramp: 0.5 } as const
 
 /**
  * A strand peeling off at a panel's edge: its fibres leave `fat` braid radii wide and its light comes up over its first
@@ -393,7 +404,8 @@ export function weave(
   /** Stretches the cord runs straight and still through, from top to bottom: held sections. */
   const still: Array<readonly [number, number]> = []
   /** The sections the cord comes apart behind, each between the gaps `from` and `to`. */
-  const spans: Array<{ box: Box; from: number; to: number; closes: boolean }> = []
+  /** `arc`: how far either side of the cord its ropes' centres arc out, behind a held demo's words. */
+  const spans: Array<{ box: Box; from: number; to: number; closes: boolean; arc?: number }> = []
   /** Strands peeling off, and whether each carries the lead on: the lead's strand, where the cord comes apart. */
   const strands: Array<{ line: Point[]; leads: boolean }> = []
   const gaps: Array<{ text: string; y: number }> = []
@@ -432,8 +444,19 @@ export function weave(
     anchors.push(line)
     if (!held) spans.push({ box: stop.box, from: stop.pinch[1], to, closes: !!next })
     else {
-      if (held.gather !== undefined)
-        spans.push({ box: stop.box, from: stop.pinch[1], to: held.gather, closes: true })
+      if (held.gather !== undefined) {
+        const x = stop.pinch[0]
+        const arc =
+          Math.max(0, ...stop.copy.map((line) => Math.max(x - line.left, line.right - x))) +
+          ARC.margin
+        spans.push({
+          box: stop.box,
+          from: stop.pinch[1],
+          to: held.gather + ARC.under,
+          closes: true,
+          arc,
+        })
+      }
       anchors.push([stop.pinch[0], held.foot])
       still.push([line[1], held.foot])
     }
@@ -476,6 +499,17 @@ export function weave(
     }
     if (!span) return { ...base, open: 0, width: 0, light: 1 }
     const t = Math.min(1, Math.max(0, (p.y - span.from) / (span.to - span.from)))
+    if (span.arc !== undefined) {
+      // Ropes on the outer thirds stand `home` (2/3) of the width out, so the width puts their centres `arc` out.
+      const rise = easeIn(0, ARC.ramp, t) * easeIn(0, ARC.ramp, 1 - t)
+      return {
+        ...base,
+        open: ARC.open * rise,
+        width: span.arc / (ARC.open * (2 / 3)),
+        light: 1,
+        swings: ARC.swings,
+      }
+    }
     const open = swell(t, span.closes)
     // The swell turns a strand at most 2π² × width / height² per px, so a short section spreads its strands less.
     const height = (span.to - span.from) * (span.closes ? 1 : 2)
@@ -501,7 +535,7 @@ export function weave(
           // Where its rope's centre is at the cord's end: `home` of the way out along the axis, as `place` sets it.
           const home = (((strand - 1) * 2) / 3) * last.width * last.open * stages(last.open).apart
           const from: Point = [last.x + last.axis[0] * home, last.y + last.axis[1] * home]
-          const to: Point = [ex + ENDING.inset, ey]
+          const to: Point = [ex, ey]
           // It leaves on the cord's heading and arrives level.
           const heading: Point = [-last.axis[1], last.axis[0]]
           const down = Math.abs(to[1] - from[1]) * 0.6
@@ -630,7 +664,7 @@ export function weave(
           route + p.s,
           owned ? 1 : 0,
           // On a strand's own path, its swing settles toward its end.
-          owned ? 1 - smoothstep(end - ENDING.settle, end, p.s) : 1,
+          owned ? 1 - smoothstep(end - ENDING.settle, end, p.s) : (p.swings ?? 1),
           0,
         ],
         (first + k) * TEXELS * 4,

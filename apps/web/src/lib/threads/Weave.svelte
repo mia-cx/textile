@@ -26,8 +26,8 @@ import { hex, type Palette } from './renderer'
  * or, with `data-weave="gutter"`, in the gutter between it and the section's words, and comes down there. With `data-weave-held`, it comes apart only behind the words above the demo, if any, gathers again
  * where it enters the demo, and runs through it braided, from panel to panel. Panels sit above the cord.
  *
- * A strand peels off into each `[data-weave-end]` in a section, to its left edge, or with `data-weave-end="window"`, to
- * the left edge of the Discord window around it: from the right edge of the section's `[data-weave-split]`, or, with no
+ * A strand peels off into each `[data-weave-end]` in a section, on behind its left edge (or, with
+ * `data-weave-end="window"`, the Discord window's around it) to BEHIND past it or its middle, so its end never shows: from the right edge of the section's `[data-weave-split]`, or, with no
  * split, from where the cord enters the `[data-weave]` element, where it comes apart into its strands and ends.
  *
  * The cord is drawn on the GPU, as the hero's threads are, on a canvas one screen tall (and a margin) that keeps to the
@@ -45,6 +45,11 @@ let { seam }: { seam?: Seam | undefined } = $props()
 
 /** Wide enough for the side-by-side layouts the cord runs between. */
 const WIDE = '(min-width: 64rem)'
+/**
+ * How far a strand runs on behind what it reaches, past its edge, in px: at most to its middle, so its end is always
+ * under it, never at its edge.
+ */
+const BEHIND = 24
 /** The widest gap between two stacked panels that the cord dims behind, in px, rather than show as clipped stubs. */
 const STACKED = 32
 /** How far around each line of words the cord dims fully, in px: past the glyphs, so their edges stay clear. */
@@ -340,8 +345,10 @@ onMount(() => {
             : undefined,
         enter: [x, panel.top],
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {
-          const wall = end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end
-          return [rect(wall).left, middle(rect(end))]
+          const wall = rect(
+            end.dataset.weaveEnd === 'window' ? (end.closest('figure') ?? end) : end,
+          )
+          return [wall.left + Math.min(BEHIND, (wall.right - wall.left) / 2), middle(rect(end))]
         }),
       })
       above = content.bottom

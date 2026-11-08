@@ -90,10 +90,13 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   whole where it meets the window. Each thread eases in with no corner, so the plait has no visible start. The braid
   narrows linearly to `cord` and keeps one helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing
   has room, twisting tighter as it goes. It meets the window at the page cord's own radius, with no taper, so one braid
-  runs in at the window's left and out of its bottom. The window drops its black shadow there, so the cord's end stays
+  runs in at the window's left and out of its bottom; it runs on 24px under the window's server rail, so its end never
+  shows. The window drops its black shadow there, so the cord's end stays
   bright, and a frame around it, which the window's clipping can't cut, takes the cord's light: a band on its rim about
   as tall as the braid, and faintly across its face, falling off as the inverse square of the distance from the cord's
-  end. The close's button takes the same contact: a subtle warm rim, its violet face kept, its label 4.5:1.
+  end. The close's button takes the same contact: the plait is whole at its edge and runs on behind the opaque pill to
+  its middle, with a subtle warm rim, its violet face kept, its label 4.5:1. Wherever the cord meets an element, it
+  ends hidden behind it, never at its edge.
 - Only violet and amber: every thread runs one long gradient from violet through magenta and pink to amber and back,
   on a plain sine, so it spends as long between the two as in them, flowing toward the target. A cycle spans about
   800px on a loose strand and 260px in the plait. The colours mix in OKLab with their chroma kept: a plain OKLab mix of
@@ -152,10 +155,13 @@ section it comes apart in three overlapping stages and gathers again the same wa
 and its pitch lengthens), its three strands drift apart as loose ropes still swinging around each other, and only then
 does each rope fray into its fibres. A loose rope's fibres run a little apart in the colour cycle, so each rope shows
 both colours. Where a section carries something from one panel into the next (`data-weave-held`: Slash commands,
-Webhook updates), the cord comes apart only behind any words above the demo, gathers where it enters the demo, and runs
-through it braided, showing between panels as the thing travelling. In Voice the cord ends: its plait loosens into
-three ropes, and each strand runs on along its own path, the same fibres, twist and colour, to a speaker, the right
-rope to the top speaker so none cross. Strands keep their colour and fibres throughout; behind each line of the
+Webhook updates), the cord runs through the demo braided, straight and still, showing between panels as the thing
+travelling. Above a centred demo (Slash commands) it first comes apart on its line: its three ropes part
+symmetrically, the outer two arcing out around the heading and copy, 56px clear of their widest line, still ropes with
+a little swing, then sweep back together behind the demo's top edge and braid again. Where loose strands pass behind
+panels stacked with a narrow gap, the gap dims like words, so no clipped stubs show. In Voice the cord ends: its plait
+loosens into three ropes, and each strand runs on along its own path, the same fibres, twist and colour, at full
+width, behind its speaker's avatar to its middle, the right rope to the top speaker so none cross. Strands keep their colour and fibres throughout; behind each line of the
 prose, tight to its words with 12px to spare, the strands dim to 1%, fading back over 120px, so the prose and its links
 hold 4.5:1 or more. The cord draws down in steps as the reader scrolls: as each section's heading crosses 60% of the
 screen, the cord is drawn through the whole section; between steps it holds, then eases on, its tip following on a
