@@ -286,7 +286,7 @@ function close(
       <h1 id="title">Discord bots for AI agents</h1>
       <p class="lede">Host your Discord bot and manage it over MCP, with no server to run.</p>
       <div class="actions">
-        <a class="button button-primary" href="/login" data-sveltekit-reload><DiscordLogo />Sign in with Discord</a>
+        <a class="button button-primary" href="/login" data-sveltekit-reload><DiscordLogo />Request access</a>
         <a class="button button-secondary" href="/docs/">Read the docs</a>
       </div>
     </div>
@@ -371,7 +371,7 @@ function close(
       </p>
       <div class="actions">
         <a bind:this={signIn} class="button button-primary cord-lit" href="/login" data-sveltekit-reload>
-          <DiscordLogo />Sign in with Discord
+          <DiscordLogo />Request access
         </a>
         <a class="button button-secondary" href="/docs/tools/">See every MCP tool</a>
       </div>

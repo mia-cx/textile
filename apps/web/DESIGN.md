@@ -10,7 +10,7 @@ part of the page is either a thread or the product.
 People building AI agents arrive from a link or a search, decide whether Textile does what their agent needs, then sign
 in with Discord or read the docs. The landing page answers in the order they ask, each part beside the product doing it:
 
-1. **Hero.** What it is, and the two ways forward: Sign in with Discord, Read the docs.
+1. **Hero.** What it is, and the two ways forward: Request access (which signs in with Discord), Read the docs.
 2. **Publish.** One real workflow, `standup.ts`, beside the `discord_workflow_publish` and `discord_workflow_enable`
    calls and what Textile answers. It runs on Textile: published in workerd, it reports exactly the events, schedules,
    route, and grants shown.

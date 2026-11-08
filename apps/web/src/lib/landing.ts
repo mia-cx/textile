@@ -152,7 +152,7 @@ Textile is a Discord MCP server with bot hosting. You supply a bot token and sig
 Your agent can call Discord APIs and publish discord.js workflows that run while the agent is offline.
 Your agent can also run one-off scripts or connect its own speech model to a voice channel.
 
-[Sign in with Discord](${origin}/login) · [Read the docs](${origin}/docs.md)
+[Request access](${origin}/login) · [Read the docs](${origin}/docs.md)
 
 ## Bot hosting
 
