@@ -45,6 +45,8 @@ let { seam }: { seam?: Seam | undefined } = $props()
 const WIDE = '(min-width: 64rem)'
 /** The cord's braid radius: a little thinner than the hero's where it meets the window, as it carries on down the page. */
 const CORD = 10
+/** How far around each line of words the cord dims fully, in px: past the glyphs, so their edges stay clear. */
+const WORD_ROOM = 12
 /** How far left of a panel the cord gathers when it enters from the side. */
 const LANE = 110
 /** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */
@@ -253,17 +255,20 @@ onMount(() => {
       }
     }
     const middle = (r: Box) => (r.top + r.bottom) / 2
-    /** The words in `element`, line by line, as boxes tight to their text: the strands dim behind these alone. */
+    /**
+     * The words in `element`, line by line, as boxes around their text, WORD_ROOM wider all round: the strands dim fully
+     * behind these alone, so even body-size text and links clear 4.5:1 over the brightest of them.
+     */
     const words = (element: Element): Box[] => {
       const range = document.createRange()
       range.selectNodeContents(element)
       return [...range.getClientRects()]
         .filter((r) => r.width > 0 && r.height > 0)
         .map((r) => ({
-          left: r.left - origin.left,
-          top: r.top - origin.top,
-          right: r.right - origin.left,
-          bottom: r.bottom - origin.top,
+          left: r.left - origin.left - WORD_ROOM,
+          top: r.top - origin.top - WORD_ROOM,
+          right: r.right - origin.left + WORD_ROOM,
+          bottom: r.bottom - origin.top + WORD_ROOM,
         }))
     }
     const start = root.querySelector('[data-weave-start]')

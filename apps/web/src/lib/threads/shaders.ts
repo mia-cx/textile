@@ -1000,7 +1000,7 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     // How far along its route the cord fades out above its tip, in px: see FADE in cord.ts.
     declare('FADE', float(FADE)),
     // How much of the strands' light shows behind a section's prose.
-    declare('COPY_LIGHT', float(0.04)),
+    declare('COPY_LIGHT', float(0.01)),
     declare('COPY_FADE', float(COPY_REACH)),
     declare('LOOSE_HUE', float(LOOSE_HUE)),
     declare('ROPE_HUE', float(ROPE_HUE)),
