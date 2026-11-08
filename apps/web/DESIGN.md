@@ -200,4 +200,7 @@ that works without any effect.
 
 The landing page's Markdown twin is written, not converted: `landingMarkdown` in `src/lib/landing.ts` tells the same story
 in prose, with the same workflow and calls. The social card, `static/og.png`, is drawn from the same geometry by
-`pnpm og`; the favicon is three braided strands.
+`pnpm og`. The mark is a trefoil: the cord's own fibres, drawn by its shaders as one loose band tied in the knot,
+violet over the top-left lobe turning amber at the lower left. It lives at `/dev/trefoil` in development, and
+`pnpm logo` renders it into `static/icons/` for the favicons, the touch and manifest icons, and the header. It is dark
+only: it is light on the site's ink, so the header shows it in dark mode alone.

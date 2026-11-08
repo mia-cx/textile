@@ -1,0 +1,151 @@
+// Renders Textile's mark, the trefoil, into static/icons/<size>.png: the favicons, the touch and manifest icons, and
+// the header's mark. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
+// pixel density, so every pixel of glow is the browser's own, then downsizes it the way Ditherette's
+// lanczos3-scale-aware does: a Lanczos-3 kernel stretched by the scale factor, in linear light, so thin bright fibres
+// average as light does instead of darkening. Sizes of 64 and below start from a capture with a thicker band, and
+// smaller sizes get a little more light, for what fine glow loses averaged into few pixels.
+//
+// Needs the dev server running (`pnpm dev`; `LOGO_URL` overrides its address) and Chromium on PATH (`CHROMIUM`
+// overrides it). Run with `pnpm logo` after changing the mark or the cord's shaders, and commit the images.
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PNG } from 'pngjs'
+
+const URL_BASE = process.env.LOGO_URL ?? 'http://localhost:5173'
+const OUT = new URL('../static/icons/', import.meta.url)
+/** The sizes static/ serves: favicons, the header's mark at 2×, the touch icon, and the manifest's. */
+const SIZES = [16, 32, 48, 64, 128, 180, 192, 512]
+/** Below this size, the mark starts from the thicker capture. */
+const SMALL = 64
+/** The thicker capture's band half-width and intensity, on the 1024 page. */
+const THICK = '&band=112&intensity=0.8'
+/** The site's ink (src/lib/tokens.css): only light above it is brightened, so the ground stays the ink. */
+const INK = '#07060c'
+
+const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+const toSrgb = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)
+const ink = [1, 3, 5].map((i) => toLinear(Number.parseInt(INK.slice(i, i + 2), 16) / 255))
+/** Extra light for a size: none at 512 and up, half again at 16. */
+const gain = (size: number) => 1 + 0.1 * Math.max(0, Math.log2(512 / size))
+
+interface Image {
+  readonly size: number
+  readonly data: Float32Array
+}
+
+/** The study page, still, as a linear RGB image 2048 px square. */
+function capture(query: string): Image {
+  const file = join(mkdtempSync(join(tmpdir(), 'textile-logo-')), 'mark.png')
+  execFileSync(process.env.CHROMIUM ?? 'chromium', [
+    '--headless=new',
+    '--no-sandbox',
+    '--hide-scrollbars',
+    // Software WebGL, so it renders the same on a machine without a GPU.
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+    '--force-device-scale-factor=2',
+    '--window-size=1024,1024',
+    '--virtual-time-budget=8000',
+    `--screenshot=${file}`,
+    `${URL_BASE}/dev/trefoil?size=1024&still${query}`,
+  ])
+  const png = PNG.sync.read(readFileSync(file))
+  const data = new Float32Array(png.width * png.height * 3)
+  for (let i = 0; i < png.width * png.height; i++)
+    for (let c = 0; c < 3; c++) data[i * 3 + c] = toLinear((png.data[i * 4 + c] ?? 0) / 255)
+  return { size: png.width, data }
+}
+
+const lanczos = (x: number) => {
+  if (x === 0) return 1
+  if (Math.abs(x) >= 3) return 0
+  const px = Math.PI * x
+  return (3 * Math.sin(px) * Math.sin(px / 3)) / (px * px)
+}
+
+/**
+ * One pass of the scale-aware kernel along each of `lines` rows `from` samples long, to `to` samples, written
+ * transposed, so the same pass run again resizes the other axis and turns the image back upright.
+ */
+function pass(src: Float32Array, from: number, to: number, lines: number) {
+  const scale = from / to
+  const out = new Float32Array(to * lines * 3)
+  for (let o = 0; o < to; o++) {
+    const centre = (o + 0.5) * scale - 0.5
+    const reach = 3 * Math.max(1, scale)
+    const lo = Math.max(0, Math.ceil(centre - reach))
+    const hi = Math.min(from - 1, Math.floor(centre + reach))
+    const weights = Array.from({ length: hi - lo + 1 }, (_, k) =>
+      lanczos((lo + k - centre) / Math.max(1, scale)),
+    )
+    const sum = weights.reduce((a, b) => a + b, 0)
+    for (let line = 0; line < lines; line++)
+      for (let c = 0; c < 3; c++) {
+        let acc = 0
+        for (const [k, w] of weights.entries())
+          acc += (src[(line * from + lo + k) * 3 + c] ?? 0) * w
+        out[(o * lines + line) * 3 + c] = acc / sum
+      }
+  }
+  return out
+}
+
+function icon(image: Image, size: number) {
+  const data = pass(pass(image.data, image.size, size, image.size), image.size, size, size)
+  const png = new PNG({ width: size, height: size })
+  const extra = gain(size)
+  for (let i = 0; i < size * size; i++) {
+    for (let c = 0; c < 3; c++) {
+      const base = ink[c] ?? 0
+      const lit = base + Math.max(0, (data[i * 3 + c] ?? 0) - base) * extra
+      png.data[i * 4 + c] = Math.round(toSrgb(Math.min(1, lit)) * 255)
+    }
+    png.data[i * 4 + 3] = 255
+  }
+  return PNG.sync.write(png)
+}
+
+/**
+ * The mark as light alone, for laying over other light, as the header lays it over the hero's threads: the light
+ * above the ink, less the bloom's veil (the brightest it is along the square's edge, so the square vanishes), as a
+ * transparent PNG that is as opaque as its brightest channel, the way the page's canvases lay their light.
+ */
+function light(image: Image, size: number) {
+  const data = pass(pass(image.data, image.size, size, image.size), image.size, size, size)
+  const extra = gain(size)
+  const above = (i: number, c: number) =>
+    Math.max(0, (data[i * 3 + c] ?? 0) - (ink[c] ?? 0)) * extra
+  const last = size - 1
+  const border = Array.from({ length: size }, (_, at) => [
+    at,
+    last * size + at,
+    at * size,
+    at * size + last,
+  ]).flat()
+  /** The brightest a pixel's light is, in any channel. */
+  const peak = (i: number) => Math.max(above(i, 0), above(i, 1), above(i, 2))
+  const veil = Math.max(...border.map(peak))
+  const png = new PNG({ width: size, height: size })
+  for (let i = 0; i < size * size; i++) {
+    // Fading out over the veil's own level: gone at the square's edge, whole by twice that, so the shaded strands
+    // under the crossings keep their shape. All three channels alike, so the light keeps its hue.
+    const t = Math.min(1, Math.max(0, (peak(i) - veil * 0.6) / veil))
+    const keep = t * t * (3 - 2 * t)
+    const shown = [0, 1, 2].map((c) => toSrgb(Math.min(1, above(i, c) * keep)))
+    const alpha = Math.max(...shown)
+    for (let c = 0; c < 3; c++)
+      png.data[i * 4 + c] = Math.round((alpha > 0 ? (shown[c] ?? 0) / alpha : 0) * 255)
+    png.data[i * 4 + 3] = Math.round(alpha * 255)
+  }
+  return PNG.sync.write(png)
+}
+
+const mark = capture('')
+const thick = capture(THICK)
+mkdirSync(OUT, { recursive: true })
+for (const size of SIZES)
+  writeFileSync(new URL(`${size}.png`, OUT), icon(size <= SMALL ? thick : mark, size))
+/** The header's mark, as light, at 2× its 32px. */
+writeFileSync(new URL('light-64.png', OUT), light(thick, 64))

@@ -24,7 +24,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
 <a href="#content" class="skip">Skip to content</a>
 
 <header class="site-header">
-  <a href="/" class="wordmark" aria-label="Textile home">textile</a>
+  <a href="/" class="wordmark" aria-label="Textile home"><img class="mark" src="/icons/light-64.png" alt="" width="32" height="32" />textile</a>
   <nav aria-label="Site" class="flex items-center gap-x-1 sm:gap-x-3">
     <a class="nav-link" href="/docs/">Docs</a>
     <a class="nav-link" href={GITHUB_URL}>GitHub</a>
@@ -41,7 +41,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
 </main>
 
 <footer class="site-footer">
-  <a href="/" class="wordmark" aria-label="Textile home">textile</a>
+  <a href="/" class="wordmark" aria-label="Textile home"><img class="mark" src="/icons/light-64.png" alt="" width="32" height="32" />textile</a>
   <nav aria-label="Footer" class="flex flex-wrap gap-x-6">
     <a class="footer-link" href="/docs/">Docs</a>
     <a class="footer-link" href={GITHUB_URL}>GitHub</a>
@@ -99,6 +99,23 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     font-weight: 600;
     letter-spacing: -0.045em;
     text-decoration: none;
+  }
+  /* The trefoil beside the name, in dark mode only: it is light, and drawn as light alone (`pnpm logo`'s light-64), so
+     over the hero's threads only its glow shows. */
+  .mark {
+    display: none;
+    width: 1.1em;
+    height: 1.1em;
+    margin-right: 0.3em;
+  }
+  :global(:root.dark) .mark,
+  :global(:root:has([data-scheme='dark'])) .mark {
+    display: block;
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not(.light)) .mark {
+      display: block;
+    }
   }
   .nav-link {
     display: inline-flex;
