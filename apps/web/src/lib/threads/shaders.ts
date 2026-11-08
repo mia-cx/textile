@@ -1,4 +1,5 @@
 import {
+  COPY_REACH,
   CORD_THREADS,
   DRIFT_SPAN,
   FADE,
@@ -6,6 +7,7 @@ import {
   MAX_COPY,
   PEEL_LEAD,
   PEEL_THREADS,
+  ROPE_HUE,
   ROW,
   SWAY,
   TEXELS,
@@ -983,9 +985,9 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   5–7  peels: first sample and count, two to a vec4
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
- *   11–18  prose boxes on the page: left, top, right, bottom
+ *   11–22  lines of words near the screen: left, top, right, bottom
  */
-export const CORD_VEC4S = 19
+export const CORD_VEC4S = 23
 
 /** The cord's own constants, in either language's syntax. */
 const cordConstants = (declare: (name: string, value: string) => string) =>
@@ -999,8 +1001,9 @@ const cordConstants = (declare: (name: string, value: string) => string) =>
     declare('FADE', float(FADE)),
     // How much of the strands' light shows behind a section's prose.
     declare('COPY_LIGHT', float(0.04)),
-    declare('COPY_FADE', float(120)),
+    declare('COPY_FADE', float(COPY_REACH)),
     declare('LOOSE_HUE', float(LOOSE_HUE)),
+    declare('ROPE_HUE', float(ROPE_HUE)),
     // How many of a peeling strand's fibres, along its outer edge, carry the lead on when it peels from the cord.
     declare('PEEL_LEAD', float(PEEL_LEAD)),
     // How the cord comes apart and sways: see UNBRAID, stages, SWAY, and swayAt in cord.ts.
@@ -1132,7 +1135,8 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let t = U[0].w;
   let run = here.s / DRIFT_SPAN;
   let breathing = breath(th.strand, run + U[2].w, t);
-  let hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
+  // Loose, a rope's fibres run a little apart in the cycle across it, so it shows both colours side by side.
+  let hue = hueOf(0.0, 0.0, th.strand / 3.0 + (LOOSE_HUE * (pick - 0.5) + ROPE_HUE * th.fibre.x) * here.loose, t, breathing) + here.hue + U[2].y;
   let colour = blend(cool(warmth(hue), here.depth, knit));
   // The lead burns brighter all the way down, on the cord and on the strand that carries it on where the cord ends:
   // TRACED times the brightest of the rest.
@@ -1259,7 +1263,7 @@ void main() {
   float t = U[0].w;
   float run = here.s / DRIFT_SPAN;
   float breathing = breath(th.strand, run + U[2].w, t);
-  float hue = hueOf(0.0, 0.0, th.strand / 3.0 + LOOSE_HUE * (pick - 0.5) * here.loose, t, breathing) + here.hue + U[2].y;
+  float hue = hueOf(0.0, 0.0, th.strand / 3.0 + (LOOSE_HUE * (pick - 0.5) + ROPE_HUE * th.fibre.x) * here.loose, t, breathing) + here.hue + U[2].y;
   vec3 colour = blend(cool(warmth(hue), here.depth, knit));
   float leads = th.lead * here.leads;
   float own = mix(DIM + (1.0 - DIM) * pow(hash(i + 2.2), SKEW), 1.0, leads);

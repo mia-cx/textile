@@ -41,8 +41,8 @@ export interface Stop {
   readonly pinch: Point
   /** The section's content: its strands spread across it, behind the panels. */
   readonly box: Box
-  /** The section's prose, which strands passing behind dim under. */
-  readonly copy: Box
+  /** The section's words, line by line, tight to their text: strands passing behind dim under them, and only there. */
+  readonly copy: ReadonlyArray<Box>
   /** Where strands peel off into the demo: a panel's right edge. Without one, the cord itself comes apart at `enter`. */
   readonly split: Point | undefined
   /** Where it enters the demo, to come apart there. */
@@ -79,8 +79,8 @@ export const ROW = 512
 export const CORD_THREADS = 180
 export const PEEL_THREADS = 10
 export const MAX_PEELS = 6
-/** The most sections whose prose dims the strands behind it. */
-export const MAX_COPY = 8
+/** The most lines of words near the screen that dim the strands behind them: a section's prose and a little more. */
+export const MAX_COPY = 12
 /**
  * Pixels of path per unit along a fibre, for its drift, its gradient, and its breath: about the hero's length, so the
  * cord's fibres drift and turn colour as its do.
@@ -88,11 +88,15 @@ export const MAX_COPY = 8
 export const DRIFT_SPAN = 1300
 /** How many of a peeling strand's fibres, along its outer edge, carry the lead on where the cord comes apart. */
 export const PEEL_LEAD = 3
-/**
- * How far apart, in gradient cycles, a loose strand's ribbons run: a little, so each strand stays one colour run as it
- * parts and its fibres vary within it.
- */
+/** How far apart, in gradient cycles, a loose strand's ribbons run: a little, so its fibres vary within it. */
 export const LOOSE_HUE = 0.15
+/**
+ * How many violet-to-amber cycles a loose strand of the cord runs per DRIFT_SPAN px: about one every 290px, so a rope
+ * shows both colours along any stretch of it. And how far apart in its cycle, at most, the fibres across one rope run:
+ * enough that a rope shows both colours side by side as well.
+ */
+export const ROPE_GRADIENT = 4.5
+export const ROPE_HUE = 0.35
 /** The strand the lead runs in: its lane's, as the hero gathers it. */
 const LEAD_STRAND = strandOf(SHAPE.traceLane)
 
@@ -128,6 +132,7 @@ export interface Cord {
   readonly gaps: ReadonlyArray<number>
   /** How far the whole route runs, to the end of the last strand peeling off it. */
   readonly length: number
+  /** Every section's words, line by line, tight to their text, rising: see `nearCopy`. */
   readonly copy: ReadonlyArray<Box>
   /**
    * Where each section's name sits: on the knot where the cord crosses its gap, on the side it doesn't come in from, at
@@ -488,7 +493,7 @@ export function weave(
       if (previous)
         hue +=
           ((p.s - previous.s) / DRIFT_SPAN) *
-          (SHAPE.gradient + (SHAPE.braidGradient - SHAPE.gradient) * (1 - p.open))
+          (ROPE_GRADIENT + (SHAPE.braidGradient - ROPE_GRADIENT) * (1 - p.open))
       return hue
     })
   }
@@ -559,7 +564,7 @@ export function weave(
     routes: Float32Array.from(cord, (p) => p.s),
     gaps: gaps.map(({ y }) => cord[at(y)]?.s ?? 0),
     length: Math.max(...all.map(({ path, route }) => route + (path.at(-1)?.s ?? 0))),
-    copy: stops.slice(0, MAX_COPY).map((stop) => stop.copy),
+    copy: stops.flatMap((stop) => stop.copy).sort((a, b) => a.top - b.top),
     knots,
     radius,
     reach,
@@ -627,6 +632,24 @@ export function visible(cord: Cord, top: number, bottom: number): Span {
   const last = Math.min(cord.heights.length, below(bottom + cord.reach) + 1)
   return { first, count: Math.max(0, last - first) }
 }
+
+/**
+ * The words the strands between `top` and `bottom` (and a fade beyond) might pass behind: at most MAX_COPY of them,
+ * the nearest the middle first, for the shaders to dim the strands under.
+ */
+export function nearCopy(cord: Cord, top: number, bottom: number) {
+  const reach = cord.reach + COPY_REACH
+  const middle = (top + bottom) / 2
+  return cord.copy
+    .filter((box) => box.bottom > top - reach && box.top < bottom + reach)
+    .sort(
+      (a, b) =>
+        Math.abs((a.top + a.bottom) / 2 - middle) - Math.abs((b.top + b.bottom) / 2 - middle),
+    )
+    .slice(0, MAX_COPY)
+}
+/** How far past its words a strand still dims, in px: COPY_FADE in the shaders. */
+export const COPY_REACH = 120
 
 const TAU = Math.PI * 2
 
@@ -714,7 +737,7 @@ export function cordWarmth(cord: Cord, i: number, k: number, t: number, th = cor
   const leads = (cord.data[o + 11] ?? 0) > 0
   const pick = th.lead || hash(i + 9.7) < SHAPE.coherence ? ribbonPick(th.ribbon) : hash(i + 4.4)
   const breathing = breath(th.strand, s / DRIFT_SPAN + cord.seam.drift, t)
-  const own = th.strand / 3 + LOOSE_HUE * (pick - 0.5) * loose
+  const own = th.strand / 3 + (LOOSE_HUE * (pick - 0.5) + ROPE_HUE * th.jitter) * loose
   return {
     warmth: warmthAt(hueOf(0, 0, own, t, breathing) + hue + cord.seam.hue),
     leads: th.lead && leads,

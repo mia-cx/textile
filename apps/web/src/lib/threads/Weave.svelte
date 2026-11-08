@@ -253,6 +253,19 @@ onMount(() => {
       }
     }
     const middle = (r: Box) => (r.top + r.bottom) / 2
+    /** The words in `element`, line by line, as boxes tight to their text: the strands dim behind these alone. */
+    const words = (element: Element): Box[] => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      return [...range.getClientRects()]
+        .filter((r) => r.width > 0 && r.height > 0)
+        .map((r) => ({
+          left: r.left - origin.left,
+          top: r.top - origin.top,
+          right: r.right - origin.left,
+          bottom: r.bottom - origin.top,
+        }))
+    }
     const start = root.querySelector('[data-weave-start]')
     if (!start) return
     const from = rect(start)
@@ -285,7 +298,7 @@ onMount(() => {
         label: section.dataset.weaveLabel ?? '',
         pinch: [x, (above + content.top) / 2],
         box: content,
-        copy: rect(copy),
+        copy: words(copy),
         split: split ? [rect(split).right, middle(rect(split))] : undefined,
         enter: side ? [panel.left, middle(level ? rect(level) : panel)] : [x, panel.top],
         ends: [...section.querySelectorAll<HTMLElement>('[data-weave-end]')].map((end) => {

@@ -4,8 +4,8 @@ import {
   cordThread,
   cordWarmth,
   FADE,
-  MAX_COPY,
   MAX_PEELS,
+  nearCopy,
   PEEL_THREADS,
   place,
   ROW,
@@ -66,19 +66,17 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       const height = canvas.height / dpr
       const shown = visible(cord, view.top, Math.min(view.top + height, tipY(cord, view.tip)))
       const peels = cord.paths.slice(1, 1 + MAX_PEELS)
+      const copy = nearCopy(cord, view.top, view.top + height)
       uniforms.fill(0)
       uniforms.set([width, height, dpr, time], 0)
       uniforms.set([view.left, view.top, view.tip, INTENSITY], 4)
-      uniforms.set(
-        [cord.seam.twist, cord.seam.hue, Math.min(cord.copy.length, MAX_COPY), cord.seam.drift],
-        8,
-      )
+      uniforms.set([cord.seam.twist, cord.seam.hue, copy.length, cord.seam.drift], 8)
       uniforms.set([cord.radius, CORD_THREADS, 0, shown.first], 12)
       uniforms.set([shown.count, peels.length], 16)
       for (const [p, peel] of peels.entries()) uniforms.set([peel.first, peel.count], 20 + p * 2)
       for (const [i, rgb] of palette.threads.entries()) uniforms.set(rgb, 32 + i * 4)
       uniforms.set([...palette.background, EXPOSURE], 40)
-      for (const [r, box] of cord.copy.slice(0, MAX_COPY).entries())
+      for (const [r, box] of copy.entries())
         uniforms.set([box.left, box.top, box.right, box.bottom], 44 + r * 4)
       const longest = Math.max(shown.count, ...peels.map((peel) => peel.count))
       painter.paint(uniforms, longest * 2, CORD_THREADS + peels.length * PEEL_THREADS)
