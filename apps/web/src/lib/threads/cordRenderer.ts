@@ -4,7 +4,6 @@ import {
   cordThread,
   cordWarmth,
   FADE,
-  MAX_PEELS,
   nearCopy,
   PEEL_THREADS,
   place,
@@ -65,20 +64,26 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       const width = canvas.width / dpr
       const height = canvas.height / dpr
       const shown = visible(cord, view.top, Math.min(view.top + height, tipY(cord, view.tip)))
-      const peels = cord.paths.slice(1, 1 + MAX_PEELS)
+      // The peels, then the strands' own paths, if the cord's strands run on past its end.
+      const owned = cord.paths.slice(cord.strands ? -3 : cord.paths.length)
+      const peels = cord.paths.slice(1, cord.paths.length - owned.length)
       const copy = nearCopy(cord, view.top, view.top + height)
       uniforms.fill(0)
       uniforms.set([width, height, dpr, time], 0)
       uniforms.set([view.left, view.top, view.tip, INTENSITY], 4)
       uniforms.set([cord.seam.twist, cord.seam.hue, copy.length, cord.seam.drift], 8)
       uniforms.set([cord.radius, CORD_THREADS, 0, shown.first], 12)
-      uniforms.set([shown.count, peels.length], 16)
-      for (const [p, peel] of peels.entries()) uniforms.set([peel.first, peel.count], 20 + p * 2)
+      uniforms.set([shown.count, peels.length, cord.strands ? 1 : 0, cord.paths[0]?.count ?? 0], 16)
+      for (const [p, span] of [...peels, ...owned].entries())
+        uniforms.set([span.first, span.count], 20 + p * 2)
       for (const [i, rgb] of palette.threads.entries()) uniforms.set(rgb, 32 + i * 4)
       uniforms.set([...palette.background, EXPOSURE], 40)
       for (const [r, box] of copy.entries())
         uniforms.set([box.left, box.top, box.right, box.bottom], 44 + r * 4)
-      const longest = Math.max(shown.count, ...peels.map((peel) => peel.count))
+      const longest = Math.max(
+        shown.count + Math.max(0, ...owned.map((span) => span.count)),
+        ...peels.map((peel) => peel.count),
+      )
       painter.paint(uniforms, longest * 2, CORD_THREADS + peels.length * PEEL_THREADS)
     },
     // No threads: every pass runs on empty light, and the tone pass leaves the canvas transparent.
@@ -130,23 +135,31 @@ export function cordStill(canvas: HTMLCanvasElement): CordRenderer | undefined {
   const layOut = (laid: Cord, palette: Palette, time: number) => {
     const [violet, amber] = palette.threads
     const mixed = (w: number) => blend(violet, amber, w)
-    const peels = Math.min(laid.paths.length - 1, MAX_PEELS)
+    const owned = laid.strands ? 3 : 0
+    const peels = laid.paths.length - 1 - owned
     const threads = [
       ...Array.from({ length: Math.ceil(CORD_THREADS / STILL_EVERY) }, (_, n) => n * STILL_EVERY),
       ...Array.from({ length: peels * PEEL_THREADS }, (_, n) => CORD_THREADS + n),
     ]
     return threads.flatMap((i) => {
       const th = cordThread(i)
-      const span = laid.paths[th.path]
-      if (!span || span.count < 2) return []
+      // A cord thread runs on past the cord's end along its strand's own path, as on the GPU.
+      const spans = [
+        laid.paths[th.path],
+        th.path === 0 && owned ? laid.paths[1 + peels + th.strand] : undefined,
+      ].flatMap((span) => (span ? [span] : []))
+      const samples = spans.flatMap(({ first, count }) =>
+        Array.from({ length: count }, (_, k) => first + k),
+      )
+      if (samples.length < 2) return []
       const own = 0.5 * SHAPE.glow * (SHAPE.dim + (1 - SHAPE.dim) * hash(i + 2.2) ** SHAPE.skew)
-      const points = Array.from({ length: span.count }, (_, k) => {
-        const { warmth, leads } = cordWarmth(laid, i, span.first + k, time, th)
-        const o = (span.first + k) * TEXELS * 4
-        // How bright the path is here, as the GPU's strands read it: fading where a rope hands over to a peel.
+      const points = samples.map((k) => {
+        const { warmth, leads } = cordWarmth(laid, i, k, time, th)
+        const o = k * TEXELS * 4
+        // How bright the path is here, as the GPU's strands read it: coming up where a strand peels off a panel's edge.
         const light = laid.data[o + 10] ?? 1
         return {
-          at: place(laid, i, span.first + k, time, th).point,
+          at: place(laid, i, k, time, th).point,
           route: laid.data[o + 12] ?? 0,
           // The lead is TRACED times the brightest of the rest.
           colour: css(mixed(warmth), Math.min(1, (leads ? 0.5 * SHAPE.traced : own) * light)),

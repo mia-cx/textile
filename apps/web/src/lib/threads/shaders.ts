@@ -977,8 +977,8 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   1  the canvas's top-left on the page (px), how far along its route the cord's tip is, intensity
  *   2  the seam: strand 0's twist and hue where the cord leaves the window, how many prose boxes, the seam's drift
  *   3  braid radius, cord threads, -, the cord's first sample on screen
- *   4  how many of its samples are on screen, peels, -, -
- *   5–7  peels: first sample and count, two to a vec4
+ *   4  how many of its samples are on screen, peels, whether its strands run on past its end (0 or 1), its samples
+ *   5–7  peels, then the strands' own paths: first sample and count, two to a vec4
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
  *   11–22  lines of words near the screen: left, top, right, bottom
@@ -1022,7 +1022,8 @@ ${cordConstants((name, value) => `const ${name} = ${value};`)}
 ${fragmentWgsl}
 @group(0) @binding(1) var paths: texture_2d<f32>;
 
-// What makes one cord thread itself: its path (0 the cord, then the peels), its lane, its strand, its sway's phase, its
+// What makes one cord thread itself: its path (0 the cord, then the peels; a cord thread runs on along its strand's own
+// path, see walkOf), its lane, its strand, its sway's phase, its
 // ribbon, its fibre, and whether it is one of the lead's fibres, where its path carries the lead. Mirrors cordThread in
 // cord.ts.
 struct Thread { path: f32, lane: f32, strand: f32, phase: f32, ribbon: f32, fibre: vec3f, lead: f32 };
@@ -1056,6 +1057,20 @@ fn span(path: f32) -> vec2f {
   return select(pair.xy, pair.zw, (p & 1u) == 1u);
 }
 
+// The samples thread th walks through: its path's on screen (x first, y how many) and, where the cord's strands run on
+// past its end and that end is on screen, a cord thread's strand's own path after it (z, w; else none).
+fn walkOf(th: Thread) -> vec4f {
+  let range = span(th.path);
+  if (th.path > 0.5 || U[4].z < 0.5 || range.x + range.y < U[4].w - 0.5) { return vec4f(range, 0.0, 0.0); }
+  return vec4f(range, span(1.0 + U[4].y + th.strand));
+}
+
+// The sample n steps along walk, held at its ends.
+fn sampleOf(walk: vec4f, n: f32) -> f32 {
+  let m = clamp(n, 0.0, max(walk.y + walk.w - 1.0, 0.0));
+  return select(walk.x + m, walk.z + m - walk.y, m >= walk.y);
+}
+
 // The cord's slow sway across the page at height y and time t, in px, before its weight. Mirrors swayAt in cord.ts.
 fn swayAt(y: f32, t: f32) -> f32 {
   return SWAY_REACH * (sin(TAU * t / SWAY_PERIOD_A + y * SWAY_WAVE_A) * 0.6 + sin(TAU * t / SWAY_PERIOD_B + y * SWAY_WAVE_B + 2.0) * 0.4);
@@ -1083,14 +1098,17 @@ fn place(th: Thread, k: f32) -> Placed {
   // close together until they fray out to their own lanes within that third. The ropes part as far as loose spreads
   // them, which the weave keeps to a gentle turn, so no rope leaves the plait at a corner.
   let home = (th.strand - 1.0) * 2.0 / 3.0;
+  let d = texel(k, 3.0);
+  // On a strand's own path, the path is the rope's centre.
+  let centre = select(home, 0.0, d.y > 0.5);
   var sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  let rope = (b.z * mix(home, th.lane, fray) + sway * fray) * loose
+  let rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   let drift = swayAt(a.y, t) * a.w;
-  return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, texel(k, 3.0).x);
+  return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x);
 }
 
 // How much light shows at p: less behind a section's prose, fading back in over COPY_FADE px around it, so neither
@@ -1109,14 +1127,14 @@ fn behindCopy(p: vec2f) -> f32 {
 fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let i = f32(ii);
   let th = threadOf(i);
-  let range = span(th.path);
-  // Past the path's end, vertices repeat its last pair, so their triangles have no area.
-  let s = min(f32(vi / 2u), max(range.y - 1.0, 0.0));
-  let k = range.x + s;
+  let walk = walkOf(th);
+  let count = walk.y + walk.w;
+  // Past the run's end, vertices repeat its last pair, so their triangles have no area.
+  let s = min(f32(vi / 2u), max(count - 1.0, 0.0));
   let side = select(-1.0, 1.0, (vi & 1u) == 1u);
-  let here = place(th, k);
-  let last = s >= range.y - 1.0;
-  let other = place(th, select(k + 1.0, k - 1.0, last)).at;
+  let here = place(th, sampleOf(walk, s));
+  let last = s >= count - 1.0;
+  let other = place(th, sampleOf(walk, select(s + 1.0, s - 1.0, last))).at;
   let dir = select(other - here.at, here.at - other, last);
   let tangent = dir / max(length(dir), 1e-4);
   let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
@@ -1202,6 +1220,17 @@ vec2 span(float path) {
   return (p % 2) == 1 ? pair.zw : pair.xy;
 }
 
+vec4 walkOf(Thread th) {
+  vec2 range = span(th.path);
+  if (th.path > 0.5 || U[4].z < 0.5 || range.x + range.y < U[4].w - 0.5) return vec4(range, 0.0, 0.0);
+  return vec4(range, span(1.0 + U[4].y + th.strand));
+}
+
+float sampleOf(vec4 walk, float n) {
+  float m = clamp(n, 0.0, max(walk.y + walk.w - 1.0, 0.0));
+  return m >= walk.y ? walk.z + m - walk.y : walk.x + m;
+}
+
 float swayAt(float y, float t) {
   return SWAY_REACH * (sin(TAU * t / SWAY_PERIOD_A + y * SWAY_WAVE_A) * 0.6 + sin(TAU * t / SWAY_PERIOD_B + y * SWAY_WAVE_B + 2.0) * 0.4);
 }
@@ -1219,14 +1248,16 @@ Placed place(Thread th, float k) {
   float wide = radius * (1.0 + UNBRAID_WIDEN * loosen);
   float plait = wide * band(twist, th.strand, th.fibre, b.x / DRIFT_SPAN + U[2].w, vec3(1.0));
   float home = (th.strand - 1.0) * 2.0 / 3.0;
+  vec4 d = texel(k, 3.0);
+  float centre = d.y > 0.5 ? 0.0 : home;
   float sway = 0.0;
   if (th.path < 0.5) {
     sway = b.z * WAVE * (sin(b.x * 0.004 + t * 0.35 + th.phase) * 0.6 + sin(b.x * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4);
   }
-  float rope = (b.z * mix(home, th.lane, fray) + sway * fray) * loose
+  float rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   float drift = swayAt(a.y, t) * a.w;
-  return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, texel(k, 3.0).x);
+  return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x);
 }
 
 float behindCopy(vec2 p) {
@@ -1243,13 +1274,13 @@ float behindCopy(vec2 p) {
 void main() {
   float i = float(gl_InstanceID);
   Thread th = threadOf(i);
-  vec2 range = span(th.path);
-  float s = min(float(gl_VertexID / 2), max(range.y - 1.0, 0.0));
-  float k = range.x + s;
+  vec4 walk = walkOf(th);
+  float count = walk.y + walk.w;
+  float s = min(float(gl_VertexID / 2), max(count - 1.0, 0.0));
   float side = (gl_VertexID % 2) == 1 ? 1.0 : -1.0;
-  Placed here = place(th, k);
-  bool last = s >= range.y - 1.0;
-  vec2 other = place(th, last ? k - 1.0 : k + 1.0).at;
+  Placed here = place(th, sampleOf(walk, s));
+  bool last = s >= count - 1.0;
+  vec2 other = place(th, sampleOf(walk, last ? s - 1.0 : s + 1.0)).at;
   vec2 dir = last ? here.at - other : other - here.at;
   vec2 tangent = dir / max(length(dir), 1e-4);
   vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;

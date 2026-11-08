@@ -102,8 +102,6 @@ export const LOOSE_HUE = 0.15
  */
 export const ROPE_GRADIENT = 4.5
 export const ROPE_HUE = 0.35
-/** The strand the lead runs in: its lane's, as the hero gathers it. */
-const LEAD_STRAND = strandOf(SHAPE.traceLane)
 
 /** Where the cord's strands stand where it leaves the window: as the hero's do where it ends, or from scratch. */
 export const NO_SEAM: Seam = { twist: 0, hue: 0, drift: 0 }
@@ -118,7 +116,10 @@ export const carry = (seam: Seam, hidden: number, radius: number): Seam => ({
   drift: seam.drift + hidden / DRIFT_SPAN,
 })
 
-/** A path's samples in the texture: the first, and how many. Path 0 is the cord; the rest are strands peeling off. */
+/**
+ * A path's samples in the texture: the first, and how many. Path 0 is the cord, then the strands peeling off it, then,
+ * where the cord ends in a demo, its strands' own paths (see `Cord.strands`).
+ */
 export interface Span {
   readonly first: number
   readonly count: number
@@ -129,6 +130,11 @@ export interface Cord {
   readonly data: Float32Array
   readonly rows: number
   readonly paths: ReadonlyArray<Span>
+  /**
+   * Whether the cord's strands run on past its end, each along its own path, the last three in `paths` in strand order:
+   * where the cord ends in a demo, its three strands come apart and each carries on to its own end, the same fibres.
+   */
+  readonly strands: boolean
   /** The cord's samples' heights, rising: the part on screen is a binary search away. */
   readonly heights: Float32Array
   /** How far along the cord's route each of its samples is, rising: where its tip is, in height, is too. */
@@ -168,7 +174,8 @@ export interface Cord {
  *   0  x, y, twist (radians, strand 0 at time 0), sways
  *   1  s, open, width, hue (gradient cycles)
  *   2  axis x, axis y, light, carries the lead (0 or 1)
- *   3  how far along the cord's route it is (px from the window, a peel carrying on from where it leaves), -, -, -
+ *   3  how far along the cord's route it is (px from the window, a peel carrying on from where it leaves), whether it is
+ *      on a strand's own path (0 or 1: there the path is the strand's centre, not the cord's), -, -
  */
 interface Sample {
   readonly x: number
@@ -244,10 +251,16 @@ const KNOT_LOOK = 80
 /**
  * How the cord ends in a demo: from its gap to where it enters, it comes apart as it does behind a section, as far as
  * `open` (its plait loosened and its strands parted as ropes, still fibrous, only starting to fray), its ropes `spread`
- * braid radii either side, each `fat` braid radii wide. Over the last `handoff` px each rope's light hands over to the
- * strand that carries it on to its end.
+ * braid radii either side. Then each rope runs on, the same fibres, as its strand's own path to its end (see `strands`
+ * in `Cord`), `inset` px under the end's edge. The cord ends `turn` of its way across to its first end above that end.
  */
-const ENDING = { open: 0.6, spread: 7, fat: 1.3, handoff: 60 } as const
+const ENDING = { open: 0.6, spread: 7, inset: 3, turn: 0.5 } as const
+
+/**
+ * A strand peeling off at a panel's edge: its fibres leave `fat` braid radii wide and its light comes up over its first
+ * `rise` px.
+ */
+const PEEL = { fat: 1.3, rise: 60 } as const
 
 /**
  * The cord's course across the page, x as a function of y: a smooth curve through `anchors` (rising in y), each crossed
@@ -376,9 +389,13 @@ export function weave(
       for (const end of beside) strands.push({ line: strandLine(split, end, [1, 0]), leads: false })
     } else if (stop.ends.length > 0) {
       // The cord runs on into the demo, straight to where it enters over all the height it has, so it never sweeps
-      // across flat, coming apart on the way into the strands that reach each end (see `ENDING`).
-      anchors.push(stop.enter)
-      ending = { from: stop.pinch[1], enter: stop.enter, ends: stop.ends }
+      // across flat, coming apart on the way into the strands that reach each end (see `ENDING`). It ends high enough
+      // above the first end for the strand to it to turn there gently.
+      const [x, y] = stop.enter
+      const [ex, ey] = stop.ends.reduce((top, end) => (end[1] < top[1] ? end : top))
+      const end: Point = [x, Math.max(stop.pinch[1] + STEP, Math.min(y, ey - Math.abs(ex - x) * ENDING.turn))]
+      anchors.push(end)
+      ending = { from: stop.pinch[1], enter: end, ends: stop.ends }
       break
     }
     const next = stops[k + 1]
@@ -414,14 +431,12 @@ export function weave(
     const span = spans.find(({ from, to }) => p.y >= from && p.y < to)
     const base = { ...p, sways: path.sways(p.y) }
     if (ending && p.y >= ending.from) {
-      // On its way into the demo the cord comes apart as far as ENDING.open, its ropes `ropes` either side, and hands
-      // its light over to the peeling strands over the last ENDING.handoff px.
-      const to = ending.enter[1]
+      // On its way into the demo the cord comes apart as far as ENDING.open, its ropes `ropes` either side.
       return {
         ...base,
-        open: ENDING.open * easeIn(ending.from, to, p.y),
+        open: ENDING.open * easeIn(ending.from, ending.enter[1], p.y),
         width: ropes,
-        light: 1 - smoothstep(to - ENDING.handoff, to, p.y),
+        light: 1,
       }
     }
     if (!span) return { ...base, open: 0, width: 0, light: 1 }
@@ -440,22 +455,42 @@ export function weave(
       light: span.closes ? 1 : 1 - open,
     }
   })
-  if (ending) {
-    // Each rope carries on as the strand that peels off to its end: from where the rope runs ENDING.handoff px above
-    // where the cord enters, on down and over to its end. The rope on the right reaches the topmost end, so no two
-    // strands cross. A peel's strand is its place among all the peels, a third of a turn apart (see `cordThread`).
-    const { enter, ends } = ending
-    const from = enter[1] - ENDING.handoff
-    const across = ropes * ENDING.open * easeIn(ending.from, enter[1], from)
-    for (const end of [...ends].sort((a, b) => b[1] - a[1])) {
-      const home = (((strands.length % 3) - 1) * 2) / 3
-      strands.push({
-        line: strandLine([path.x(from) + home * across, from], end, [0, 1]),
-        leads: strands.length % 3 === LEAD_STRAND,
-      })
-    }
-  }
-  const peeling = strands.slice(0, MAX_PEELS)
+  // Where the cord ends in a demo, each of its strands runs on as its own path to its end: from its rope's centre where
+  // the cord ends, on down and over to the end. The rope on the right reaches the topmost end, so no two cross.
+  const last = cord.at(-1)
+  const own: Sample[][] =
+    ending && last
+      ? [0, 1, 2].map((strand) => {
+          const ends = [...ending.ends].sort((a, b) => a[1] - b[1])
+          const [ex, ey] = ends[Math.min(2 - strand, ends.length - 1)] ?? [last.x, last.y]
+          // Where its rope's centre is at the cord's end: `home` of the way out along the axis, as `place` sets it.
+          const home = (((strand - 1) * 2) / 3) * last.width * last.open * stages(last.open).apart
+          const from: Point = [last.x + last.axis[0] * home, last.y + last.axis[1] * home]
+          const to: Point = [ex + ENDING.inset, ey]
+          // It leaves on the cord's heading and arrives level.
+          const heading: Point = [-last.axis[1], last.axis[0]]
+          const down = Math.abs(to[1] - from[1]) * 0.6
+          const across = Math.abs(to[0] - from[0]) * 0.6
+          const line = cubic(
+            from,
+            [from[0] + heading[0] * down, from[1] + heading[1] * down],
+            [to[0] - across, to[1]],
+            to,
+          )
+          // The first point is where the cord ends: the strand carries on from the next.
+          return frame(line)
+            .slice(1)
+            .map((p) => ({
+              ...p,
+              s: last.s + p.s,
+              open: last.open,
+              width: last.width,
+              light: 1,
+              sways: 0,
+            }))
+        })
+      : []
+  const peeling = strands.slice(0, MAX_PEELS - own.length)
   const peels: Sample[][] = peeling.map(({ line }) => {
     const points = frame(line)
     const total = points.at(-1)?.s ?? 1
@@ -465,8 +500,8 @@ export function weave(
         ...p,
         open: 1,
         // Fibres leave as wide as the rope they carry on, splay apart mid-way, and gather again at the end.
-        width: radius * (ENDING.fat * (1 - k) ** 2 + 0.6 * (0.4 + Math.sin(k * Math.PI))),
-        light: smoothstep(0, ENDING.handoff, p.s),
+        width: radius * (PEEL.fat * (1 - k) ** 2 + 0.6 * (0.4 + Math.sin(k * Math.PI))),
+        light: smoothstep(0, PEEL.rise, p.s),
         // Peels start where the cord holds still: at a panel's edge, or near the cord's end.
         sways: 0,
       }
@@ -509,8 +544,12 @@ export function weave(
       0,
       cord.findIndex((p) => p.y >= y),
     )
+  const cordTwists = twists(cord, 0)
+  /** A strand's own path's twists or hues, added up on from the cord's last sample. */
+  const onFrom = (path: Sample[], add: typeof hues, values: number[]) =>
+    last ? add([last, ...path], values.at(-1) ?? 0).slice(1) : []
   const all = [
-    { path: cord, hue: cordHues, twist: twists(cord, 0), route: 0, leads: true },
+    { path: cord, hue: cordHues, twist: cordTwists, route: 0, leads: true, own: false },
     ...peels.map((path, n) => {
       const from = at(path[0]?.y ?? 0)
       return {
@@ -519,15 +558,25 @@ export function weave(
         twist: twists(path, 0),
         route: cord[from]?.s ?? 0,
         leads: peeling[n]?.leads ?? false,
+        own: false,
       }
     }),
+    // Each strand's own path carries the cord's twist, colour, and route on from where the cord ends.
+    ...own.map((path) => ({
+      path,
+      hue: onFrom(path, hues, cordHues),
+      twist: onFrom(path, twists, cordTwists),
+      route: 0,
+      leads: true,
+      own: true,
+    })),
   ]
   const total = all.reduce((sum, { path }) => sum + path.length, 0)
   const rows = Math.max(1, Math.ceil(total / ROW))
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   const paths: Span[] = []
   let first = 0
-  for (const { path, hue, twist, route, leads } of all) {
+  for (const { path, hue, twist, route, leads, own: owned } of all) {
     for (const [k, p] of path.entries()) {
       data.set(
         [
@@ -543,7 +592,7 @@ export function weave(
           p.light,
           leads ? 1 : 0,
           route + p.s,
-          0,
+          owned ? 1 : 0,
           0,
           0,
         ],
@@ -565,6 +614,7 @@ export function weave(
     data,
     rows,
     paths,
+    strands: own.length > 0,
     heights: Float32Array.from(cord, (p) => p.y),
     routes: Float32Array.from(cord, (p) => p.s),
     gaps: gaps.map(({ y }) => cord[at(y)]?.s ?? 0),
@@ -712,6 +762,8 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
   // close together until they fray out to their own lanes within that third. The ropes part as far as `loose` spreads
   // them, which the weave keeps to a gentle turn (see MIN_TURN), so no rope leaves the plait at a corner.
   const home = ((th.strand - 1) * 2) / 3
+  // On a strand's own path, the path is the rope's centre.
+  const centre = (d[o + 13] ?? 0) > 0.5 ? 0 : home
   const sway =
     th.path === 0
       ? width *
@@ -720,7 +772,7 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
           Math.sin(s * 0.008 - t * 0.23 + th.phase * 1.7) * 0.4)
       : 0
   const rope =
-    (width * (home + (th.lane - home) * fray) + sway * fray) * loose +
+    (width * (centre + (th.lane - home) * fray) + sway * fray) * loose +
     UNBRAID.rope * wide * Math.sin(twist) * (1 - fray) +
     th.jitter * SHAPE.fray * wide * UNBRAID.fat * (1 - fray)
   const offset = plait + (rope - plait) * apart
