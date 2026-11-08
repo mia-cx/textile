@@ -89,11 +89,11 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   and the window, at every width, never behind the window, whose glass would show it through the messages; and it is
   whole where it meets the window. Each thread eases in with no corner, so the plait has no visible start. The braid
   narrows linearly to `cord` and keeps one helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing
-  has room, twisting tighter as it goes to meet the target at its thinnest. The hero's cord stops just short of the
-  window; the window
-  drops its black shadow there, so the cord's end stays bright, and a frame around it, which the window's clipping
-  can't cut, takes the cord's light: on its rim, which faces the cord, and faintly across its face, falling off as the
-  inverse square of the distance from the cord's end.
+  has room, twisting tighter as it goes. It meets the window at the page cord's own radius, with no taper, so one braid
+  runs in at the window's left and out of its bottom. The window drops its black shadow there, so the cord's end stays
+  bright, and a frame around it, which the window's clipping can't cut, takes the cord's light: a band on its rim about
+  as tall as the braid, and faintly across its face, falling off as the inverse square of the distance from the cord's
+  end. The close's button takes the same contact: a subtle warm rim, its violet face kept, its label 4.5:1.
 - Only violet and amber: every thread runs one long gradient from violet through magenta and pink to amber and back,
   on a plain sine, so it spends as long between the two as in them, flowing toward the target. A cycle spans about
   800px on a loose strand and 260px in the plait. The colours mix in OKLab with their chroma kept: a plain OKLab mix of
@@ -117,8 +117,8 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   and ride its band's edge through the plait. The page's cord carries the hero's strands on as themselves: its thread
   `i` is the hero's thread `i`, in the same strand, with the same fibre, and it picks up the hero's twist, colour, and
   drift where the hero's cord meets the window, carried on behind the window to its bottom, on the same clock. So the
-  lead runs down the whole cord, on its strand's rope as the strands part behind each section, and on into the strand
-  that leaves the cord where it comes apart in voice.
+  lead runs down the whole cord, on its strand's rope as the strands part behind each section, and on along its
+  strand's own path to a speaker in voice.
 - 6% of the light scatters into glare, as in a lens or the air: a chain of seven bloom targets from a quarter of the
   CSS size down, each halving the last with a 13-tap filter, then added back up through a tent, an equal share per
   octave. That sums to a glare falling off as `1 / (1 + (r / 4.7px)²)` out to about 500px: a tight core, a long faint
@@ -138,18 +138,29 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
 - It renders only while on screen (IntersectionObserver) and the tab is visible. With reduced motion it draws one still
   frame. Off screen or hidden, a resize marks the frame stale and it is drawn when the field shows.
 - The hero carries 560 threads above 1600px, 440 below, and 280 on phones, where they come down into the top of the
-  window. The close carries 520 and shows only side by side, where it has room beside its copy.
+  window. The close carries 420 above 1600px and 340 below, and shows only side by side, where it has room beside its
+  copy.
 
 Between, the cord (`Weave`) leaves the hero window's bottom and carries the braid down the page on the GPU, as the hero
 draws it. Its course is a smooth curve, like a hanging rope: it crosses each section's gap, with the section's event
-on its knot, still on its way to the section's centre, which it reaches 30% of the way to the next gap; it wanders off
-course in two slow waves of up to 40px, and sways with time, up to 22px over 11 and 17 seconds, easing in after the
-window and out before it ends, so the seam and the voice demo hold still. Behind each section it comes apart in three
-overlapping stages and gathers again the same way: the plait loosens (its swing widens and its pitch lengthens), its
-three strands drift apart as loose ropes still swinging around each other, and only then does each rope fray into
-its fibres. Strands keep their colour and fibres throughout; under the prose the strands dim to 4%, fading back over
-120px, so the prose holds 6.9:1 or more. It draws down ahead of the reader on a scroll timeline; without scroll
-timelines, or with reduced motion, it is simply drawn, and with reduced motion it holds still.
+on its knot, still on its way to the section's resting line, which it reaches 30% of the way to the next gap. Each
+section sets that line by its layout, so the cord never drifts to the page's edge: down the middle of a centred
+section, in the gutter between a demo and its words (`data-weave="gutter"`), or over a demo's top
+(`data-weave-at`). It wanders off course in two slow waves of up to 40px, and sways with time, up to 22px over 11 and
+17 seconds, easing in after the window and out before it ends, so the seam and the voice demo hold still. Behind each
+section it comes apart in three overlapping stages and gathers again the same way: the plait loosens (its swing widens
+and its pitch lengthens), its three strands drift apart as loose ropes still swinging around each other, and only then
+does each rope fray into its fibres. A loose rope's fibres run a little apart in the colour cycle, so each rope shows
+both colours. Where a section carries something from one panel into the next (`data-weave-held`: Slash commands,
+Webhook updates), the cord comes apart only behind any words above the demo, gathers where it enters the demo, and runs
+through it braided, showing between panels as the thing travelling. In Voice the cord ends: its plait loosens into
+three ropes, and each strand runs on along its own path, the same fibres, twist and colour, to a speaker, the right
+rope to the top speaker so none cross. Strands keep their colour and fibres throughout; behind each line of the
+prose, tight to its words with 12px to spare, the strands dim to 1%, fading back over 120px, so the prose and its links
+hold 4.5:1 or more. The cord draws down in steps as the reader scrolls: as each section's heading crosses 60% of the
+screen, the cord is drawn through the whole section; between steps it holds, then eases on, its tip following on a
+critically damped spring that settles in about a second, fading out along its route. With reduced motion it is simply
+drawn, and holds still.
 
 Measured in Chromium 156 on an RTX 3070 (Vulkan), hero on screen at 2000×1100:
 
@@ -165,7 +176,9 @@ nodes.
 ## Motion
 
 Small state changes use the transitions-dev tokens in `tokens.css`: 150ms ease-out for hovers, 250ms smooth-out for tabs.
-The voice streams flow on a CSS loop; reduced motion stops them. Every control is a native element
+Each voice stream is a procedural speech waveform: a dense voice under syllables of uneven loudness, with gaps between
+words and flat pauses between phrases, each speaker with their own pitch and pace, flowing toward the socket while on
+screen. Reduced motion holds one moment, all three speaking. Every control is a native element
 that works without any effect.
 
 ## Components
