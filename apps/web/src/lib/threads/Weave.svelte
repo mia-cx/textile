@@ -58,6 +58,8 @@ const MAX_DPR = 2
  * fade the cord in the span above its tip.
  */
 const NO_TIP = 1e7
+/** The share of the tip's fade over which a knot comes in on the GPU, where the tone map shows the braid bright early. */
+const GPU_KNOT = 0.15
 /** How many lost GPU devices the cord replaces before it stops asking for WebGPU. */
 const MAX_GPU_RECOVERIES = 1
 
@@ -147,16 +149,18 @@ onMount(() => {
     if (animates()) frame = requestAnimationFrame(tick)
   }
   /**
-   * Shows each knot as lit as the cord is under it, by the shaders' fade above the tip at the knot's gap: hidden while
-   * the cord is unrevealed there, whether or not the cord draws.
+   * Shows each knot as the cord under it looks: hidden while the cord is unrevealed there, whether or not the cord
+   * draws, and in as the tip's fade reaches the knot's gap. In 2D the cord looks as lit as its fade; on the GPU the tone
+   * map shows the braid bright at a small share of its light, so the knot comes in over the first GPU_KNOT of the fade.
    */
   const reach = () => {
     if (!cord) return
     const { tip } = view()
+    const span = FADE * (renderer?.kind === '2d' ? 1 : GPU_KNOT)
     for (const [i, gap] of cord.gaps.entries()) {
       const mark = marks[i]
       if (!mark) continue
-      const t = Math.min(1, Math.max(0, (tip - gap) / FADE))
+      const t = Math.min(1, Math.max(0, (tip - gap) / span))
       mark.style.opacity = String(t * t * (3 - 2 * t))
     }
   }
