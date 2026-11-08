@@ -209,6 +209,8 @@ const constants = (declare: (name: string, value: string) => string) =>
     // How dark a fibre is behind the braid, against in front of it, and how much hotter it burns on a crossing's crest.
     declare('BACK', float(0.2)),
     declare('CREST', float(4)),
+    declare('POINT', float(SHAPE.point)),
+    declare('POINT_WIDTH', float(SHAPE.pointWidth)),
     declare('COOL', float(SHAPE.cool)),
     // The share of all light that scatters into glare, and the bloom levels it spreads over.
     declare('GLARE', float(0.06)),
@@ -461,7 +463,9 @@ fn place(th: Thread, u: f32) -> Placed {
   let tangent = 2.0 * a * (p1 - p0) + 2.0 * u * (p2 - p1);
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
-  let radius = cord * (1.0 + SWELL * a);
+  let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
+  // The braid draws in to a hot point over the last POINT px, where it meets what it lights.
+  let radius = cord * (1.0 + SWELL * a) * mix(1.0, POINT_WIDTH, ease(1.0 - POINT / spine, 1.0, u));
   let form = forming(u);
   let width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   var held = 1.0;
@@ -470,7 +474,6 @@ fn place(th: Thread, u: f32) -> Placed {
   let bend = th.wander.z * sin(u * th.wander.x + t * 0.12 + th.wander.y);
   let current = width * (th.lane + WAVE * held * sway + bend);
 
-  let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   let turns = spine / (PITCH * cord * SWELL);
   let twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
   let inBand = radius * band(twist, th.strand, th.fibre, u, vec3f(form.x, 1.0 + ROPE_LOOSE * (1.0 - form.y), form.z));
@@ -796,7 +799,9 @@ Placed place(Thread th, float u) {
   vec2 tangent = 2.0 * a * (p1 - p0) + 2.0 * u * (p2 - p1);
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
-  float radius = cord * (1.0 + SWELL * a);
+  float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
+  // The braid draws in to a hot point over the last POINT px, where it meets what it lights.
+  float radius = cord * (1.0 + SWELL * a) * mix(1.0, POINT_WIDTH, ease(1.0 - POINT / spine, 1.0, u));
   vec3 form = forming(u);
   float width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
   float held = 1.0;
@@ -805,7 +810,6 @@ Placed place(Thread th, float u) {
   float bend = th.wander.z * sin(u * th.wander.x + t * 0.12 + th.wander.y);
   float current = width * (th.lane + WAVE * held * sway + bend);
 
-  float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   float turns = spine / (PITCH * cord * SWELL);
   float twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
   float inBand = radius * band(twist, th.strand, th.fibre, u, vec3(form.x, 1.0 + ROPE_LOOSE * (1.0 - form.y), form.z));

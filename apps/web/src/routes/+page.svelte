@@ -240,11 +240,13 @@ function hero(
 }
 
 /**
- * The close: threads braiding into the sign-in button, as the hero's braid into its window. They gather into loose ropes
- * from a tenth of the way along, curl and take the band's look from 40%, and the plait is whole only at the button,
- * thinnest there: it ends just short of the button's edge, a hot point, and lights the button (`.cord-lit`). Only side
- * by side; stacked, the close shows no field.
+ * The close: threads braiding into the sign-in button, as the hero's braid into its window, at the hero's weight and
+ * light. They gather into loose ropes from well back, curl as they near the button, and form a short plait, CLOSE_PLAIT
+ * pixels, about a twist and a half at the hero's pitch, which keeps its thickness to the button and ends just short of
+ * its edge, a hot point that lights the button (`.cord-lit`). Only side by side; stacked, the close shows no field.
  */
+const CLOSE_PLAIT = 220
+const CLOSE_GATHER = 640
 function close(
   { width, height }: { width: number; height: number },
   target: DOMRect | undefined,
@@ -252,17 +254,18 @@ function close(
   const end: Point = target
     ? [target.x - TIP_GAP, target.y + target.height / 2]
     : [width * 0.6, height * 0.6]
-  return {
+  const shape = {
     start: [-width * 0.08, height * 0.5],
     control: [end[0] * 0.55, end[1]],
     end,
     spread: height * 0.5,
-    cord: 3,
-    braid: [0.1, 0.4, 1],
-    count: 520,
-    intensity: 0.85,
+    cord: clamp(width * 0.0045, 7, 10),
+    count: width > 1600 ? 420 : 340,
+    intensity: 0.6,
     labels: [],
-  }
+  } satisfies Omit<Field, 'braid'>
+  const forms = crossing(shape, 0, end[0] - CLOSE_PLAIT)
+  return { ...shape, braid: [crossing(shape, 0, end[0] - CLOSE_PLAIT - CLOSE_GATHER), forms, 1] }
 }
 </script>
 
@@ -574,11 +577,15 @@ function close(
   }
   /* The close's cord ends at its sign-in button's left edge and lights it, as the hero's lights its window: a smaller
      reach, as the cord arrives thinner. Only side by side, where the close draws its threads. */
+  /* The button is small and already bright, so its face takes more of the light than the window's does, to read. */
   .close .cord-lit {
     position: relative;
     --tip: 0 50%;
-    --reach: 2.5rem;
+    --reach: 3rem;
     --lit-radius: var(--radius-pill);
+  }
+  .close .cord-lit::before {
+    opacity: 0.45;
   }
   @media (max-width: 59.99rem) {
     .close .cord-lit::before,
