@@ -15,7 +15,7 @@ const NINE = 9 / 24
 
 <!-- The page's cord comes down between the week and the words about it. -->
 <div class="schedule" data-weave="gutter">
-  <figure class="week">
+  <figure class="week" data-weave-panel>
     <figcaption><code>{CRON}</code> fires at 9:00 UTC, Monday to Friday</figcaption>
     <div class="plot" style:--nine={NINE} aria-hidden="true">
       <span class="hour">09:00</span>
