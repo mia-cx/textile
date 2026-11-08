@@ -108,16 +108,20 @@ let {
     [data-layout='span'] .demo {
       grid-column: 1 / -1;
     }
+    /* Room above the heading and below the words, so the page's cord can arc out around them and back in on gentle
+       turns (see ARC in threads/cord.ts). */
     [data-layout='centred'] .prose {
       grid-column: 3 / span 8;
       justify-self: center;
       max-width: 40rem;
+      padding-top: 6rem;
       text-align: center;
     }
     [data-layout='centred'] .demo {
       grid-column: 3 / span 8;
       justify-self: center;
       width: min(100%, 46rem);
+      margin-top: 5rem;
     }
     /* Two columns in, for the cord to come down beside the demo and the event's name to sit under its turn. */
     [data-layout='prose-right'] .demo {
