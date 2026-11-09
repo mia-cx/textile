@@ -12,6 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PNG } from 'pngjs'
+import { SMALL_MARK } from '../src/lib/threads/trefoil.ts'
 
 const URL_BASE = process.env.LOGO_URL ?? 'http://localhost:5173'
 const OUT = new URL('../static/icons/', import.meta.url)
@@ -25,8 +26,8 @@ const FAVICONS = [16, 32, 48]
 const TILE_RADIUS = 0.22
 /** Below this size, the mark starts from the thicker capture. */
 const SMALL = 64
-/** The thicker capture's band half-width and intensity, on the 1024 page. */
-const THICK = '&band=112&intensity=0.8'
+/** The thicker capture: the small mark's band and intensity (SMALL_MARK in src/lib/threads/trefoil.ts). */
+const THICK = `&band=${SMALL_MARK.band}&intensity=${SMALL_MARK.intensity}`
 /** The site's ink (src/lib/tokens.css): only light above it is brightened, so the ground stays the ink. */
 const INK = '#07060c'
 
@@ -41,8 +42,22 @@ interface Image {
   readonly data: Float32Array
 }
 
+/** How many times a capture is tried: headless Chromium now and then shoots before the mark's first frame. */
+const ATTEMPTS = 4
+
 /** The study page, still, as a linear RGB image 2048 px square. */
 function capture(query: string): Image {
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const image = shoot(query)
+    // Drawn, the mark lights pixels far above the ink; a frame shot too early is ink all over.
+    if (image.data.some((v) => v > 0.2)) return image
+  }
+  throw new Error(
+    `The study page drew nothing in ${ATTEMPTS} tries. Is the dev server running at ${URL_BASE}?`,
+  )
+}
+
+function shoot(query: string): Image {
   const file = join(mkdtempSync(join(tmpdir(), 'textile-logo-')), 'mark.png')
   execFileSync(process.env.CHROMIUM ?? 'chromium', [
     '--headless=new',

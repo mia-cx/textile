@@ -3,8 +3,15 @@ import '../app.css'
 import { page } from '$app/state'
 import PageMarkdown from '$lib/components/PageMarkdown.svelte'
 import { GITHUB_URL } from '$lib/site'
+import Trefoil from '$lib/threads/Trefoil.svelte'
+import { SMALL_MARK } from '$lib/threads/trefoil'
 
 let { data, children } = $props()
+
+/** The header's live mark, in CSS px: about the wordmark's cap height and a half. */
+const MARK_SIZE = 34
+/** Brighter than the icons' small mark: it sits over the hero's threads, whose light it has to stand out from. */
+const HEADER_MARK = { ...SMALL_MARK, intensity: SMALL_MARK.intensity * 2 }
 
 /** Pages that are dark in every colour mode (they mark themselves `data-scheme="dark"`), so the browser's chrome is too. */
 const ALWAYS_DARK = new Set(['/', '/access'])
@@ -24,7 +31,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
 <a href="#content" class="skip">Skip to content</a>
 
 <header class="site-header">
-  <a href="/" class="wordmark" aria-label="Textile home"><img class="mark" src="/icons/light-64.png" alt="" width="32" height="32" />textile</a>
+  <a href="/" class="wordmark" aria-label="Textile home"><span class="mark"><Trefoil size={MARK_SIZE} mark={HEADER_MARK} /></span>textile</a>
   <nav aria-label="Site" class="flex items-center gap-x-1 sm:gap-x-3">
     <a class="nav-link" href="/docs/">Docs</a>
     <a class="nav-link" href={GITHUB_URL}>GitHub</a>
@@ -100,13 +107,22 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     letter-spacing: -0.045em;
     text-decoration: none;
   }
-  /* The trefoil beside the name, in dark mode only: it is light, and drawn as light alone (`pnpm logo`'s light-64), so
-     over the hero's threads only its glow shows. */
+  /* The trefoil beside the name, in dark mode only, as it is light: in the header drawn live by the cord's shaders,
+     as light over the hero's threads; in the footer, `pnpm logo`'s still light-64. Hidden, the live one never starts
+     its GPU work. */
   .mark {
     display: none;
+    margin-right: 0.3em;
+  }
+  /* The footer's still mark, a rendered icon, at the footer wordmark's smaller size. */
+  img.mark {
     width: 1.1em;
     height: 1.1em;
-    margin-right: 0.3em;
+  }
+  /* The live mark's bloom veils its whole square; faded out past the knot, it leaves no square edge on the threads. */
+  .mark :global(canvas) {
+    display: block;
+    mask-image: radial-gradient(closest-side, #000 92%, transparent);
   }
   :global(:root.dark) .mark,
   :global(:root:has([data-scheme='dark'])) .mark {
