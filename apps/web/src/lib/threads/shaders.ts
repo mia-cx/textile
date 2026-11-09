@@ -247,6 +247,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PLUCK_DECAY_SOFT', float(PLUCK.decay[0])),
     declare('PLUCK_DECAY_HARD', float(PLUCK.decay[1])),
     declare('PLUCK_EDGE', float(PLUCK.edge)),
+    declare('PLUCK_PULL', float(PLUCK.pull)),
     declare('PLUCK_MOST', float(PLUCK.most)),
     declare('PLUCK_LIGHT', float(PLUCK.light)),
     declare('PLUCK_GLOW', float(PLUCK.glow)),
@@ -1207,8 +1208,9 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   10 background rgb, exposure
  *   11–22  lines of words near the screen: left, top, right, bottom
  *   23–26  the cord's loose stretches, two to each: from, to along the route (see `strings` in cord.ts)
- *   27…    plucks, four to each of the ring's, as `pluckCord` in cord.ts writes them: its pull, start, span, and
- *          strength, then for each strand where the pointer's path ran against the path it walks (k0, o0, k1, o1)
+ *   27…    plucks, four to each of the ring's, as `pluckCord` in cord.ts writes them: how long its path is (px), its
+ *          start, span, and strength, then for each strand where the pointer's path ran against the path it walks (k0,
+ *          o0, k1, o1), whose offsets give that strand's pull
  */
 export const CORD_STRINGS = 23
 export const CORD_PLUCKS = CORD_STRINGS + MAX_STRINGS / 2
@@ -1384,7 +1386,8 @@ fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
     let hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     let grip = hit.y * mix(h0.apart, h1.apart, hit.x);
     let ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.y - hit.x * a.z, a.w, th.fibre.z / TAU);
-    sum += vec2f(ring.x * a.x, ring.y) * grip;
+    let pull = PLUCK_PULL * a.w * clamp((ends.w - ends.y) / a.x, -1.0, 1.0);
+    sum += vec2f(ring.x * pull, ring.y) * grip;
   }
   return vec2f(bounded(sum.x), sum.y) * here.apart;
 }
@@ -1574,7 +1577,8 @@ vec2 rung(Thread th, Placed here, float t) {
     vec2 hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     float grip = hit.y * mix(h0.apart, h1.apart, hit.x);
     vec2 ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.y - hit.x * a.z, a.w, th.fibre.z / TAU);
-    sum += vec2(ring.x * a.x, ring.y) * grip;
+    float pull = PLUCK_PULL * a.w * clamp((ends.w - ends.y) / a.x, -1.0, 1.0);
+    sum += vec2(ring.x * pull, ring.y) * grip;
   }
   return vec2(bounded(sum.x), sum.y) * here.apart;
 }

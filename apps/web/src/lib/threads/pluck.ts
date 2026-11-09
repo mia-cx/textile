@@ -163,14 +163,19 @@ const cut = (now: number) => {
 }
 
 /**
- * Cuts the path so far and ends it, as when the pointer leaves the threads; and, once the pointer has gone a segment
- * without moving, cuts the path so far but keeps its place, so the last of a movement plucks too while slower pointer
- * events, further apart than a segment, still carry one path on.
+ * Cuts the path so far and ends it, keeping where the pointer rests, as a rest does (`settle`); or forgetting it too, as
+ * when the pointer leaves the threads, for a panel or touch, so nothing is joined across where it went (`leave`). And,
+ * once the pointer has gone a segment without moving, cuts the path so far but keeps its place (`stop`), so the last of
+ * a movement plucks too while slower pointer events, further apart than a segment, still carry one path on.
  */
 let stopped: ReturnType<typeof setTimeout> | undefined
 const settle = (now: number) => {
   cut(now)
   drop()
+}
+const leave = (now: number) => {
+  settle(now)
+  path.t1 = Number.NaN
 }
 const stop = () => cut(performance.now())
 
@@ -183,7 +188,7 @@ const move = (event: PointerEvent) => {
     (event.pointerType === 'mouse' || event.pointerType === 'pen') &&
     motion?.matches === true &&
     !(event.target instanceof Element && event.target.closest(GLASS))
-  if (!plucking) return settle(at)
+  if (!plucking) return leave(at)
   const gap = at - path.t1
   if (Number.isNaN(path.t0) || !(gap <= Math.max(PLUCK.still * 1000, 2 * path.interval))) {
     // From rest, or from nothing: what came before plucks, and this move counts from where the pointer rested, over one

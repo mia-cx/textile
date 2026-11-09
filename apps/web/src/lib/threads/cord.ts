@@ -875,13 +875,14 @@ function stringAt(strings: Cord['strings'], s: number) {
 }
 
 /**
- * Turns the pointer's `ring` (see pluck.ts) into the cord's, `CORD_SLOT` floats a pluck, for the shaders: its pull
- * across the strands, signed along the cord's axis and less as the path runs along them, then its start, span, and
- * strength as the ring has them; then, for each of the three strands, where the ends of its path lie for that strand's
- * threads (k0, o0, k1, o1: the sample whose axis each lies on, on the cord or the strand's own path, and how far along
- * it), or k0 = -1 where they lie beside no path that strand walks. The shaders find the stretch it rings from the
- * samples (see `Sample`). `origin` is the weave's top-left on the page. An empty slot, or one beside none of the
- * strands, gets no pull. Only slots written since `done` says (their `stamps`) are turned, and `done` is brought up to
+ * Turns the pointer's `ring` (see pluck.ts) into the cord's, `CORD_SLOT` floats a pluck, for the shaders: how long its
+ * path is, in px, then its start, span, and strength as the ring has them; then, for each of the three strands, where
+ * the ends of its path lie for that strand's threads (k0, o0, k1, o1: the sample whose axis each lies on, on the cord or
+ * the strand's own path, and how far along it), or k0 = -1 where they lie beside no path that strand walks. Each
+ * strand's pull is its strength's pull times how far the path ran across that strand's own axis, (o1 - o0) / length,
+ * so where the strands fan out each is pulled the way the pointer crossed it. The shaders find the stretch it rings
+ * from the samples (see `Sample`). `origin` is the weave's top-left on the page. An empty slot, or one beside none of
+ * the strands, is 0 long. Only slots written since `done` says (their `stamps`) are turned, and `done` is brought up to
  * date; clear it when the cord changes. Allocates nothing.
  */
 export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Uint32Array) {
@@ -900,8 +901,7 @@ export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Ui
     const start = ring[r + 5] ?? 0
     const paths = feetAt(cord, x0, y0, start, as)
     feetAt(cord, x1, y1, start, bs)
-    // The pull across the strands, along the axis where the path first crosses one.
-    let across = Number.NaN
+    let beside = false
     for (let strand = 0; strand < 3; strand++) {
       const pair = pairOf(paths, strand)
       const a = as[Math.floor(pair / paths)]
@@ -913,10 +913,10 @@ export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Ui
       out[p + 1] = a.offset
       out[p + 2] = b.k
       out[p + 3] = b.offset
-      if (Number.isNaN(across)) across = ((x1 - x0) * (a.ax + b.ax) + (y1 - y0) * (a.ay + b.ay)) / 2
+      beside = true
     }
-    if (Number.isNaN(across)) continue
-    out[o] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
+    if (!beside) continue
+    out[o] = Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
     out[o + 1] = start
     out[o + 2] = ring[r + 6] ?? 0
     out[o + 3] = ring[r + 7] ?? 0
