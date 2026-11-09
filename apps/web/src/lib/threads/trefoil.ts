@@ -105,7 +105,11 @@ const knot = (t: number) =>
     -Math.sin(3 * t),
   ] as const
 
-/** The trefoil as samples `step` px apart, fitted to a square `size` px across, centred in one `canvas` px across. */
+/**
+ * The trefoil as samples `step` px apart, fitted to a square `size` px across, in one `canvas` px across. Centred on the
+ * knot's own centre, which its three lobes turn about, not on its box: its lobes' tips then lie on one circle about the
+ * canvas's centre, so a round crop (an avatar, a server icon) clears all three alike.
+ */
 function trefoil(size: number, fill: number, step: number, canvas: number) {
   const dense = Array.from({ length: 6000 }, (_, k): Sample => {
     const t = (k / 6000) * TAU
@@ -115,11 +119,9 @@ function trefoil(size: number, fill: number, step: number, canvas: number) {
   const ys = dense.map(([, y]) => y)
   const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
   const scale = (size * fill) / span
-  const cx = (Math.max(...xs) + Math.min(...xs)) / 2
-  const cy = (Math.max(...ys) + Math.min(...ys)) / 2
   const toSquare = ([x, y, z, t]: Sample): Sample => [
-    canvas / 2 + (x - cx) * scale,
-    canvas / 2 + (y - cy) * scale,
+    canvas / 2 + x * scale,
+    canvas / 2 + y * scale,
     z,
     t,
   ]
