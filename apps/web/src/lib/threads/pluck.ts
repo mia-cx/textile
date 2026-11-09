@@ -16,9 +16,12 @@ export const PLUCK = {
   /** Gusts the ring holds: a pointer moving all the time cuts this many in a `life`, each `segment` long. */
   ring: 48,
   /** Seconds a thread drifts after the pointer passes, back at rest by the end. */
-  life: 3.5,
-  /** Seconds a thread takes to be blown aside, easing out at the start and in at its furthest. */
-  catch: 0.45,
+  life: 2.4,
+  /**
+   * Seconds a thread takes to be blown to its furthest: it starts moving the moment the pointer passes, at its fastest
+   * then, and slows to a stop there, so it answers at once but never moves quickly.
+   */
+  catch: 0.6,
   /** How far from the pointer's path the air reaches, in px: a thread this far off moves 37% as far as one it crossed. */
   reach: 70,
   /**
@@ -42,16 +45,19 @@ export const PLUCK = {
    * so it never climbs steeply off the anchor.
    */
   edge: 0.25,
-  /** How much more or less than its neighbours each fibre moves, either way, so a bundle stirs, not slides. */
-  detune: 0.25,
+  /**
+   * The share of fibres the air moves at all, each as far as its seed says, from barely to fully; the rest hold still
+   * behind them, so the field shows depth.
+   */
+  free: 0.4,
   /** How much brighter a blown thread burns at its furthest. */
   light: 0.35,
   /**
    * How long, in seconds, the pointer's path runs before it is cut into a gust: often enough that a thread starts to move
-   * soon after the pointer passes, and seldom enough that the ring holds a whole sweep for `life`. A path is also cut
-   * when the pointer stops for this long.
+   * soon after the pointer passes, and seldom enough that the ring holds a whole sweep for `life` (`ring` × `segment` ≥
+   * `life`). A path is also cut when the pointer stops for this long.
    */
-  segment: 0.075,
+  segment: 0.05,
   /**
    * How long without moving the pointer rests, in seconds, at least, and longer than two of its recent moves: a move
    * after a rest counts from where it rested, as long as one of its recent moves took, so a flick from beside a string
@@ -232,7 +238,10 @@ export function listen() {
  *
  * Air, not a pluck: the stretch around where the pointer passed, at most `stretch` long between the anchors, bows
  * aside, from rest at its ends to its furthest where the pointer passed, flat at both so it bends with no corner. It
- * eases out to its furthest over `catch`, then drifts back to rest, slowly and without overshooting, by `life`.
+ * starts moving at once and slows to its furthest over `catch`, then drifts back to rest, slowly and without
+ * overshooting, by `life`. Only the
+ * `free` share of fibres moves, each as far as its seed says, from barely to fully, so some threads stir in front of
+ * others that hold still, and the field shows depth.
  *
  * It returns the same object every call, so labels can ride their threads every frame without allocating: read it
  * before calling again.
@@ -256,10 +265,11 @@ export function ringing(
   const shape = x < p ? smoothstep(0, p, x) : 1 - smoothstep(p, 1, x)
   const blown =
     age < PLUCK.catch
-      ? smoothstep(0, PLUCK.catch, age)
+      ? Math.sin(((Math.PI / 2) * age) / PLUCK.catch)
       : 1 - smoothstep(PLUCK.catch, PLUCK.life, age)
-  rung.shift = shape * blown * (1 + PLUCK.detune * (2 * seed - 1))
-  rung.light = strength * shape * blown
+  const free = smoothstep(1 - PLUCK.free, 1, seed)
+  rung.shift = shape * blown * free
+  rung.light = strength * shape * blown * free
   return rung
 }
 const rung = { shift: 0, light: 0 }

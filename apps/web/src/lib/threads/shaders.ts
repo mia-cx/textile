@@ -237,7 +237,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PLUCK_MISS', float(MISS)),
     declare('PLUCK_STRETCH', float(PLUCK.stretch)),
     declare('PLUCK_EDGE', float(PLUCK.edge)),
-    declare('PLUCK_DETUNE', float(PLUCK.detune)),
+    declare('PLUCK_FREE', float(PLUCK.free)),
     declare('PLUCK_PULL', float(PLUCK.pull)),
     declare('PLUCK_SPEED', float(PLUCK.speed)),
     declare('PLUCK_MOST', float(PLUCK.most)),
@@ -276,7 +276,8 @@ ${fn(
 // How a thread drifts along px along it, where the pointer passed it at px along it, between anchors anchorA and anchorB,
 // age seconds after, blown at strength, for a fibre as free as seed (0 to 1) says: x how far it is displaced for a pull
 // of 1 px, y the light it adds. The stretch around where the pointer passed, at most PLUCK_STRETCH long, bows aside,
-// flat at its ends and at its peak; it eases out over PLUCK_CATCH and drifts back without overshooting by PLUCK_LIFE.
+// flat at its ends and at its peak; it starts moving at once, slows to its furthest by PLUCK_CATCH, and drifts back
+// without overshooting by PLUCK_LIFE.
 // Mirrors ringing in pluck.ts.
 ${fn(
   'ringing',
@@ -291,9 +292,10 @@ ${fn(
   ${mutable} shape = 0.0;
   if (x < p) { shape = smoothstep(0.0, p, x); } else { shape = 1.0 - smoothstep(p, 1.0, x); }
   ${mutable} blown = 0.0;
-  if (age < PLUCK_CATCH) { blown = smoothstep(0.0, PLUCK_CATCH, age); }
+  if (age < PLUCK_CATCH) { blown = sin(TAU * 0.25 * age / PLUCK_CATCH); }
   else { blown = 1.0 - smoothstep(PLUCK_CATCH, PLUCK_LIFE, age); }
-  return ${vec2}(shape * blown * (1.0 + PLUCK_DETUNE * (2.0 * seed - 1.0)), strength * shape * blown);`,
+  ${local} free = smoothstep(1.0 - PLUCK_FREE, 1.0, seed);
+  return ${vec2}(shape * blown * free, strength * shape * blown * free);`,
 )}
 // Every pluck's displacement of one point, summed, bounded smoothly to PLUCK_MOST: one pluck passes nearly whole, and
 // a thread swept again and again never bends further. Mirrors bounded in pluck.ts.

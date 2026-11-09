@@ -266,10 +266,11 @@ const KNOT_LOOK = 80
  * `open` (its plait loosened and its strands parted as ropes, still fibrous, only starting to fray), its ropes `spread`
  * braid radii either side. Then each rope runs on, the same fibres, as its strand's own path to its end (see `strands`
  * in `Cord`), on under it to the end's point (Weave.svelte sets it behind the element, never at its edge), its swing
- * settling over its last `settle` px so it runs in level. The cord ends `turn` of its way across to its first end above
+ * settling over its last `settle` px so it runs in level, and pinching to a point over its last `pinch` px, so it slips
+ * behind a round avatar narrower than the circle. The cord ends `turn` of its way across to its first end above
  * that end.
  */
-const ENDING = { open: 0.6, spread: 7, turn: 0.5, settle: 80 } as const
+const ENDING = { open: 0.6, spread: 7, turn: 0.5, settle: 80, pinch: 160 } as const
 
 /**
  * A strand peeling off at a panel's edge: its fibres leave `fat` braid radii wide and its light comes up over its first
@@ -389,17 +390,18 @@ function strandPaths(last: Sample, ends: ReadonlyArray<Point>): Sample[][] {
       [to[0] - across, to[1]],
       to,
     )
-    // The first point is where the cord ends: the strand carries on from the next.
-    return frame(line)
-      .slice(1)
-      .map((p) => ({
-        ...p,
-        s: last.s + p.s,
-        open: last.open,
-        width: last.width,
-        light: 1,
-        sways: 0,
-      }))
+    // The first point is where the cord ends: the strand carries on from the next. It pinches to a point over its last
+    // `pinch` px, so it reaches its end, behind a round avatar's middle, narrower than the circle all the way in.
+    const points = frame(line)
+    const end = points.at(-1)?.s ?? 0
+    return points.slice(1).map((p) => ({
+      ...p,
+      s: last.s + p.s,
+      open: last.open,
+      width: last.width * (1 - smoothstep(end - ENDING.pinch, end, p.s)),
+      light: 1,
+      sways: 0,
+    }))
   })
 }
 
