@@ -13,8 +13,8 @@ import { clockAt } from './clock'
  */
 
 export const PLUCK = {
-  /** Plucks the ring holds: enough for a long sweep, as each fades out in `life`. */
-  ring: 16,
+  /** Plucks the ring holds: a pointer moving all the time cuts this many in a `life`, each `segment` long. */
+  ring: 24,
   /** Seconds a thread rings after the pointer reaches it, its ring fading to nothing by the end. */
   life: 1.5,
   /** Seconds the pointer holds a thread, pulling it aside, before it slips free and rings. */
@@ -61,9 +61,11 @@ export const PLUCK = {
   glow: 0.35,
   glintWave: 140,
   glintSpeed: 700,
-  /** How far, in px, or how long, in seconds, the pointer's path runs before it is cut into a pluck. */
-  segment: 40,
-  segmentTime: 0.04,
+  /**
+   * How long, in seconds, the pointer's path runs before it is cut into a pluck: often enough that each thread is caught
+   * soon after the pointer crosses it, and seldom enough that the ring holds a whole sweep, however fast, for `life`.
+   */
+  segment: 0.06,
 } as const
 
 /** Floats per slot of the ring: where the path ran (x0, y0, x1, y1, page px), its pull, start, span, and strength. */
@@ -108,10 +110,9 @@ const move = (event: PointerEvent) => {
   if (event.target instanceof Element && event.target.closest(GLASS)) return restart()
   const { pageX: x, pageY: y, timeStamp: at } = event
   if (Number.isNaN(from.at)) return restart(x, y, at)
-  const length = Math.hypot(x - from.x, y - from.y)
   const span = (at - from.at) / 1000
-  if (length < PLUCK.segment && span < PLUCK.segmentTime) return
-  const speed = length / Math.max(span, 1e-3)
+  if (span < PLUCK.segment) return
+  const speed = Math.hypot(x - from.x, y - from.y) / span
   if (speed < PLUCK.rest) return restart(x, y, at)
   const time = clockAt(at)
   const k = free(time)

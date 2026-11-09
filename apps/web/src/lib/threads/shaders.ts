@@ -64,8 +64,8 @@ const OKLAB_RGB = columns(OKLAB.rgb)
  *   10 background rgb, exposure
  *   11 where the plait is whole, where the bundles start to gather, how many text boxes, -
  *   12–19  text boxes over the field: left, top, right, bottom
- *   20–51  plucks, two to each, as `pluckField` in geometry.ts writes them: where the pointer's path ran against the
- *          spine (u0, o0, u1, o1); its pull, start, span, and strength
+ *   20…    plucks, two to each of the ring's, as `pluckField` in geometry.ts writes them: where the pointer's path ran
+ *          against the spine (u0, o0, u1, o1); its pull, start, span, and strength
  */
 export const FIELD_PLUCKS = 20
 export const UNIFORM_VEC4S = FIELD_PLUCKS + PLUCK.ring * 2
@@ -1190,9 +1190,9 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
  *   11–22  lines of words near the screen: left, top, right, bottom
- *   23–70  plucks, three to each, as `pluckCord` in cord.ts writes them: where the pointer's path ran against the cord
- *          (k0, o0, k1, o1); its pull, start, span, and strength; the loose stretch it rings (from, to along the
- *          route), and how far along the route each end of the path lies
+ *   23…    plucks, three to each of the ring's, as `pluckCord` in cord.ts writes them: where the pointer's path ran
+ *          against the cord (k0, o0, k1, o1); its pull, start, span, and strength; the loose stretch it rings (from,
+ *          to along the route), and how far along the route each end of the path lies
  */
 export const CORD_PLUCKS = 23
 export const CORD_VEC4S = CORD_PLUCKS + PLUCK.ring * 3
