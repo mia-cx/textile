@@ -69,16 +69,20 @@ export const PLUCK = {
   glintWave: 140,
   glintSpeed: 700,
   /**
-   * How long, in seconds, the pointer's path runs before it is cut into a pluck, and so how late a thread is caught
-   * after the pointer crosses it, at most: soon enough to read as the pointer catching it, and seldom enough that the
-   * ring holds a whole sweep, however fast, for `life`. A path is also cut when the pointer stops for this long.
+   * How long, in seconds, the pointer's path runs before it is cut into a pluck: often enough that a thread is caught
+   * soon after the pointer crosses it (each is caught a segment's span after, so 30 to 50ms at 60 Hz), and seldom
+   * enough that the ring holds a whole sweep, however fast, for `life`. A path is also cut when the pointer stops for
+   * this long.
    */
   segment: 0.03,
   /**
-   * The longest gap between two moves, in seconds, that one path spans: longer, the pointer paused or left the window,
-   * and its path starts afresh rather than replaying the gap.
+   * How long without moving the pointer rests, in seconds, at least, and longer than two of its recent moves: a move
+   * after a rest counts from where it rested, as long as one of its recent moves took, so a flick from beside a string
+   * catches it as firmly as the rest. From further than `leap` px away (it left the window, or crossed a panel), the
+   * path starts where it is.
    */
-  pause: 0.15,
+  still: 0.05,
+  leap: 64,
 } as const
 
 /** Floats per slot of the ring: where the path ran (x0, y0, x1, y1, page px), its pull, start, span, and strength. */
@@ -101,9 +105,10 @@ let writes = 0
 
 /**
  * The pointer's path since the last pluck was cut: where it started (`x0`, `y0`, at `t0`, ms on the events' clock),
- * and the latest move along it (`x1`, `y1`, at `t1`). No path while `t0` is NaN.
+ * and the latest move along it (`x1`, `y1`, at `t1`), which it keeps while there is no path (`t0` NaN), as where the
+ * pointer rests. And how long its recent moves took, ms.
  */
-const path = { x0: 0, y0: 0, t0: Number.NaN, x1: 0, y1: 0, t1: Number.NaN }
+const path = { x0: 0, y0: 0, t0: Number.NaN, x1: 0, y1: 0, t1: Number.NaN, interval: 16 }
 const begin = (x: number, y: number, at: number) => {
   path.x0 = path.x1 = x
   path.y0 = path.y1 = y
@@ -179,17 +184,21 @@ const move = (event: PointerEvent) => {
     motion?.matches === true &&
     !(event.target instanceof Element && event.target.closest(GLASS))
   if (!plucking) return settle(at)
-  if (Number.isNaN(path.t0)) begin(x, y, at)
-  // A gap: the pointer paused or left the window. What came before it plucks; the path starts afresh after it.
-  else if (at - path.t1 > PLUCK.pause * 1000) {
+  const gap = at - path.t1
+  if (Number.isNaN(path.t0) || !(gap <= Math.max(PLUCK.still * 1000, 2 * path.interval))) {
+    // From rest, or from nothing: what came before plucks, and this move counts from where the pointer rested, over one
+    // recent move's time; from far off, or with nowhere it rested, the path starts here.
     settle(at)
-    begin(x, y, at)
-  } else {
-    path.x1 = x
-    path.y1 = y
-    path.t1 = at
-    if (at - path.t0 >= PLUCK.segment * 1000) cut(at)
-  }
+    if (gap > 0 && Math.hypot(x - path.x1, y - path.y1) <= PLUCK.leap) {
+      path.x0 = path.x1
+      path.y0 = path.y1
+      path.t0 = at - Math.min(gap, path.interval)
+    } else begin(x, y, at)
+  } else path.interval = Math.min(Math.max(gap, 4), PLUCK.still * 1000)
+  path.x1 = x
+  path.y1 = y
+  path.t1 = at
+  if (at - path.t0 >= PLUCK.segment * 1000) cut(at)
   stopped = setTimeout(stop, PLUCK.segment * 1000)
 }
 

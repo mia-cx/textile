@@ -5,6 +5,7 @@ import {
   cordThread,
   cordWarmth,
   FADE,
+  MAX_STRINGS,
   nearCopy,
   PEEL_THREADS,
   place,
@@ -16,7 +17,7 @@ import {
 import { blend, hash, SHAPE } from './geometry'
 import { type Painter, type Scene, webgl2Painter, webgpuPainter } from './gpu'
 import { EXPOSURE, type Palette, type RGB } from './renderer'
-import { CORD_PLUCKS, CORD_VEC4S, cordVertexGlsl, cordWgsl } from './shaders'
+import { CORD_PLUCKS, CORD_STRINGS, CORD_VEC4S, cordVertexGlsl, cordWgsl } from './shaders'
 
 /** The part of the page a cord canvas shows: its top-left, in the weave's pixels, and how far along its route the cord's tip is. */
 export interface View {
@@ -84,6 +85,11 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       uniforms.set([...palette.background, EXPOSURE], 40)
       for (const [r, box] of copy.entries())
         uniforms.set([box.left, box.top, box.right, box.bottom], 44 + r * 4)
+      // The loose stretches each sample names, for the plucks.
+      for (let n = 0; n < Math.min(cord.strings.length, MAX_STRINGS); n++) {
+        uniforms[CORD_STRINGS * 4 + n * 2] = cord.strings[n]?.[0] ?? 0
+        uniforms[CORD_STRINGS * 4 + n * 2 + 1] = cord.strings[n]?.[1] ?? 0
+      }
       if (plucks) uniforms.set(plucks, CORD_PLUCKS * 4)
       const longest = Math.max(
         shown.count + Math.max(0, ...owned.map((span) => span.count)),

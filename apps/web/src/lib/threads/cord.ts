@@ -169,7 +169,8 @@ export interface Cord {
   readonly extent: { readonly top: number; readonly bottom: number }
   /**
    * The cord's loose stretches, the strings a pluck rings (see `pluckCord`): from one gap, where it is braided, to the
-   * next, along its route; where it ends in a demo, on to the end of its strands' own paths.
+   * next, along its route; where it ends in a demo, on to the end of its strands' own paths. The first MAX_STRINGS reach
+   * the shaders, and each sample names the one it lies in.
    */
   readonly strings: ReadonlyArray<readonly [from: number, to: number]>
 }
@@ -185,7 +186,8 @@ export interface Cord {
  *   2  axis x, axis y, light, carries the lead (0 or 1)
  *   3  how far along the cord's route it is (px from the window, a peel carrying on from where it leaves), whether it is
  *      on a strand's own path (0 or 1: there the path is the strand's centre, not the cord's), how much its strands
- *      swing (`swings`: 1, settling to 0 at a strand's own end), -
+ *      swing (`swings`: 1, settling to 0 at a strand's own end), and the loose stretch it lies in, a pluck's string
+ *      (its index in `Cord.strings`, -1 where the cord is braided or on a peel)
  */
 interface Sample {
   readonly x: number
@@ -601,8 +603,17 @@ export function weave(
   /** A strand's own path's twists or hues, added up on from the cord's last sample. */
   const onFrom = (path: Sample[], add: typeof hues, values: number[]) =>
     last ? add([last, ...path], values.at(-1) ?? 0).slice(1) : []
+  // The cord and its strands' own paths are strung for plucking; the strands peeling off it hold still.
   const all = [
-    { path: cord, hue: cordHues, twist: cordTwists, route: 0, leads: true, own: false },
+    {
+      path: cord,
+      hue: cordHues,
+      twist: cordTwists,
+      route: 0,
+      leads: true,
+      own: false,
+      strung: true,
+    },
     ...peels.map((path, n) => {
       const from = at(path[0]?.y ?? 0)
       return {
@@ -612,6 +623,7 @@ export function weave(
         route: cord[from]?.s ?? 0,
         leads: peeling[n]?.leads ?? false,
         own: false,
+        strung: false,
       }
     }),
     // Each strand's own path carries the cord's twist, colour, and route on from where the cord ends.
@@ -622,14 +634,16 @@ export function weave(
       route: 0,
       leads: true,
       own: true,
+      strung: true,
     })),
   ]
+  const strings = stringsOf(cord, own)
   const total = all.reduce((sum, { path }) => sum + path.length, 0)
   const rows = Math.max(1, Math.ceil(total / ROW))
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   const paths: Span[] = []
   let first = 0
-  for (const { path, hue, twist, route, leads, own: owned } of all) {
+  for (const { path, hue, twist, route, leads, own: owned, strung } of all) {
     const end = path.at(-1)?.s ?? 0
     for (const [k, p] of path.entries()) {
       data.set(
@@ -649,7 +663,7 @@ export function weave(
           owned ? 1 : 0,
           // On a strand's own path, its swing settles toward its end.
           owned ? 1 - smoothstep(end - ENDING.settle, end, p.s) : (p.swings ?? 1),
-          0,
+          strung ? stringAt(strings, p.s) : -1,
         ],
         (first + k) * TEXELS * 4,
       )
@@ -683,7 +697,7 @@ export function weave(
       top: Math.min(...all.map(({ path }) => Math.min(...path.map((p) => p.y)))) - reach,
       bottom: Math.max(...all.map(({ path }) => Math.max(...path.map((p) => p.y)))) + reach,
     },
-    strings: stringsOf(cord, own),
+    strings,
   }
 }
 
@@ -709,7 +723,9 @@ function stringsOf(cord: ReadonlyArray<Sample>, own: ReadonlyArray<ReadonlyArray
 }
 
 /** Floats per pluck in the cord's ring, as the shaders read it: see `pluckCord`. */
-export const CORD_SLOT = 12
+export const CORD_SLOT = 16
+/** The most loose stretches the shaders know: a page's sections, and the stretch it ends on. */
+export const MAX_STRINGS = 8
 
 /**
  * Where a point lies against one of the cord's paths, as `footOn` writes it: whether it lies `beside` the path at all,
@@ -825,19 +841,21 @@ function feetAt(cord: Cord, x: number, y: number, t: number, into: ReadonlyArray
 }
 
 /**
- * Which paths the ends of the pointer's path lie on, of `paths` in `feet`: one path, or the cord and a strand's own
- * path, which that strand's threads walk in turn; of those, the pair nearest the strands, as `p * paths + q` for the
- * start on path `p` and the end on `q`. -1 where no such pair has both ends beside it.
+ * Which paths, of the `paths` in `feet`, the ends of the pointer's path lie on for strand `strand`'s threads: both on the
+ * cord, both on the strand's own path, or one on each, which its threads walk in turn; of those, the pair nearest the
+ * strands, as `p * paths + q` for the start on path `p` and the end on `q`. -1 where no such pair has both ends beside
+ * it. Each strand gets its own pair, so a sweep across the strands fanning out into a demo crosses each on its own path.
  */
-function pairOf(paths: number) {
+function pairOf(paths: number, strand: number) {
   const [as, bs] = feet
+  const own = 1 + strand
   let best = -1
   let nearest = Number.POSITIVE_INFINITY
   for (let p = 0; p < paths; p++) {
     for (let q = 0; q < paths; q++) {
       const a = as[p]
       const b = bs[q]
-      if (!a?.beside || !b?.beside || (p !== q && p !== 0 && q !== 0)) continue
+      if (!a?.beside || !b?.beside || (p !== 0 && p !== own) || (q !== 0 && q !== own)) continue
       const near = Math.abs(a.offset) + Math.abs(b.offset)
       if (near >= nearest) continue
       nearest = near
@@ -847,25 +865,24 @@ function pairOf(paths: number) {
   return best
 }
 
-/** The index of the loose stretch in `cord.strings` that `s` along the route lies in, or -1 where it is braided. */
-function stringAt(cord: Cord, s: number) {
-  for (let n = 0; n < cord.strings.length; n++) {
-    const [from, to] = cord.strings[n] ?? [0, 0]
+/** The index of the loose stretch in `strings` that `s` along the route lies in, or -1 where the cord is braided. */
+function stringAt(strings: Cord['strings'], s: number) {
+  for (let n = 0; n < strings.length; n++) {
+    const [from, to] = strings[n] ?? [0, 0]
     if (s > from && s < to) return n
   }
   return -1
 }
 
 /**
- * Turns the pointer's `ring` (see pluck.ts) into the cord's, `CORD_SLOT` floats a pluck, for the shaders: its path's
- * ends against the cord or a strand's own path (k0, o0, k1, o1: the sample whose axis each lies on, and how far along
- * it; the shaders ring only threads whose walk passes both); its pull across the
- * strands, signed along the axis and less as the path runs along them; its start, span, and strength as the ring has
- * them; the loose stretch it rings, from and to along the route; and how far along the route each end of the path lies.
- * `origin` is the weave's top-left on the page. Both ends lie on one path, or on the cord and a strand's own path, which
- * that strand's threads walk in turn: of those, the pair nearest the strands. An empty slot, a pluck where the cord is
- * braided, or one beside no strand of it, gets no pull. Only slots written since `done` says (their `stamps`) are
- * turned, and `done` is brought up to date; clear it when the cord changes. Allocates nothing.
+ * Turns the pointer's `ring` (see pluck.ts) into the cord's, `CORD_SLOT` floats a pluck, for the shaders: its pull
+ * across the strands, signed along the cord's axis and less as the path runs along them, then its start, span, and
+ * strength as the ring has them; then, for each of the three strands, where the ends of its path lie for that strand's
+ * threads (k0, o0, k1, o1: the sample whose axis each lies on, on the cord or the strand's own path, and how far along
+ * it), or k0 = -1 where they lie beside no path that strand walks. The shaders find the stretch it rings from the
+ * samples (see `Sample`). `origin` is the weave's top-left on the page. An empty slot, or one beside none of the
+ * strands, gets no pull. Only slots written since `done` says (their `stamps`) are turned, and `done` is brought up to
+ * date; clear it when the cord changes. Allocates nothing.
  */
 export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Uint32Array) {
   const [as, bs] = feet
@@ -874,7 +891,7 @@ export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Ui
     done[k] = stamps[k] ?? 0
     const o = k * CORD_SLOT
     const r = k * SLOT
-    out[o + 4] = 0
+    out[o] = 0
     if ((ring[r + 4] ?? 0) === 0) continue
     const x0 = (ring[r] ?? 0) - origin[0]
     const y0 = (ring[r + 1] ?? 0) - origin[1]
@@ -883,29 +900,26 @@ export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Ui
     const start = ring[r + 5] ?? 0
     const paths = feetAt(cord, x0, y0, start, as)
     feetAt(cord, x1, y1, start, bs)
-    const pair = pairOf(paths)
-    const a = as[Math.floor(pair / paths)]
-    const b = bs[pair % paths]
-    if (pair < 0 || !a || !b) continue
-    // The stretch it crossed: the one under its middle, or, where that is braided, under either end.
-    let n = stringAt(cord, (a.s + b.s) / 2)
-    if (n < 0) n = stringAt(cord, a.s)
-    if (n < 0) n = stringAt(cord, b.s)
-    const string = cord.strings[n]
-    if (!string) continue
-    const across = ((x1 - x0) * (a.ax + b.ax) + (y1 - y0) * (a.ay + b.ay)) / 2
-    out[o] = a.k
-    out[o + 1] = a.offset
-    out[o + 2] = b.k
-    out[o + 3] = b.offset
-    out[o + 4] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
-    out[o + 5] = start
-    out[o + 6] = ring[r + 6] ?? 0
-    out[o + 7] = ring[r + 7] ?? 0
-    out[o + 8] = string[0]
-    out[o + 9] = string[1]
-    out[o + 10] = a.s
-    out[o + 11] = b.s
+    // The pull across the strands, along the axis where the path first crosses one.
+    let across = Number.NaN
+    for (let strand = 0; strand < 3; strand++) {
+      const pair = pairOf(paths, strand)
+      const a = as[Math.floor(pair / paths)]
+      const b = bs[pair % paths]
+      const p = o + 4 + strand * 4
+      out[p] = -1
+      if (pair < 0 || !a || !b) continue
+      out[p] = a.k
+      out[p + 1] = a.offset
+      out[p + 2] = b.k
+      out[p + 3] = b.offset
+      if (Number.isNaN(across)) across = ((x1 - x0) * (a.ax + b.ax) + (y1 - y0) * (a.ay + b.ay)) / 2
+    }
+    if (Number.isNaN(across)) continue
+    out[o] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
+    out[o + 1] = start
+    out[o + 2] = ring[r + 6] ?? 0
+    out[o + 3] = ring[r + 7] ?? 0
   }
 }
 

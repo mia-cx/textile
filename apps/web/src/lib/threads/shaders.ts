@@ -6,6 +6,7 @@ import {
   FADE,
   LOOSE_HUE,
   MAX_COPY,
+  MAX_STRINGS,
   PEEL_LEAD,
   PEEL_THREADS,
   ROPE_HUE,
@@ -1205,12 +1206,13 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
  *   11–22  lines of words near the screen: left, top, right, bottom
- *   23…    plucks, three to each of the ring's, as `pluckCord` in cord.ts writes them: where the pointer's path ran
- *          against the cord (k0, o0, k1, o1); its pull, start, span, and strength; the loose stretch it rings (from,
- *          to along the route), and how far along the route each end of the path lies
+ *   23–26  the cord's loose stretches, two to each: from, to along the route (see `strings` in cord.ts)
+ *   27…    plucks, four to each of the ring's, as `pluckCord` in cord.ts writes them: its pull, start, span, and
+ *          strength, then for each strand where the pointer's path ran against the path it walks (k0, o0, k1, o1)
  */
-export const CORD_PLUCKS = 23
-export const CORD_VEC4S = CORD_PLUCKS + PLUCK.ring * 3
+export const CORD_STRINGS = 23
+export const CORD_PLUCKS = CORD_STRINGS + MAX_STRINGS / 2
+export const CORD_VEC4S = CORD_PLUCKS + PLUCK.ring * 4
 
 /** The cord's own constants, in either language's syntax. */
 const cordConstants = (declare: (name: string, value: string) => string) =>
@@ -1347,36 +1349,42 @@ fn place(th: Thread, k: f32, t: f32) -> Placed {
 }
 
 // Whether sample k is on a cord thread's walk: among the cord's first cord samples, or on its own path.
-fn walks(k: f32, cord: f32, own: vec2f) -> bool { return k < cord || (k >= own.x && k < own.x + own.y); }
+// The loose stretch, from and to along the route, that the samples k0 and k1 lie in: the first's, or where it is
+// braided, the second's; (0, 0) where both are braided. Each sample names its stretch (see Sample in cord.ts).
+fn stretchOf(k0: f32, k1: f32) -> vec2f {
+  var n = texel(k0, 3.0).w;
+  if (n < 0.0) { n = texel(k1, 3.0).w; }
+  if (n < 0.0 || n >= ${MAX_STRINGS}.0) { return vec2f(0.0); }
+  let pair = U[${CORD_STRINGS}u + u32(n) / 2u];
+  return select(pair.xy, pair.zw, (u32(n) & 1u) == 1u);
+}
 
 // How a cord thread rings where it is placed (here) at time t, from the plucks at CORD_PLUCKS: x how far it is
 // displaced along the cord's axis, y the light it adds. A section's loose stretch, from gap to gap, is anchored where
 // the strands meet in the plait either side; a pluck rings the stretch around where a thread crossed the pointer's path,
 // where it was when plucked, as far as its strands had drifted apart there, and the thread rings only as far as its own
-// strands have drifted apart, so the plait never rings. A pluck rings only the threads whose walk passes both ends of
-// the pointer's path: the cord, and a strand's own path for its own strand. A point too far along from the path rings
-// nothing and places nothing. Only the cord's own threads ring; the strands peeling off it hold still.
+// strands have drifted apart, so the plait never rings. Each pluck holds where the pointer's path ran for each strand's
+// threads, on the cord or that strand's own path, so a sweep across the strands fanning out into a demo crosses each on
+// its own. A point too far along from the path rings nothing and places nothing. Only the cord's own threads ring; the
+// strands peeling off it hold still.
 fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
   if (th.path > 0.5 || here.apart <= 0.0) { return vec2f(0.0); }
-  // The cord's samples, all of them, and this thread's strand's own path, if the cord's strands run on.
-  let cord = U[4].w;
-  var own = vec2f(-1.0, 0.0);
-  if (U[4].z > 0.5) { own = span(1.0 + U[4].y + th.strand); }
   var sum = vec2f(0.0);
   for (var k = 0u; k < ${PLUCK.ring}u; k++) {
-    let a = U[${CORD_PLUCKS}u + 3u * k];
-    let b = U[${CORD_PLUCKS}u + 3u * k + 1u];
-    let c = U[${CORD_PLUCKS}u + 3u * k + 2u];
-    if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) { continue; }
-    if (!walks(a.x, cord, own) || !walks(a.z, cord, own)) { continue; }
-    if (here.s <= c.x || here.s >= c.y) { continue; }
-    if (abs(here.s - clamp(here.s, min(c.z, c.w), max(c.z, c.w))) >= PLUCK_STRETCH / 2.0) { continue; }
-    let h0 = place(th, a.x, b.y);
-    let h1 = place(th, a.z, b.y);
-    let hit = caught(h0.beside - a.y, h1.beside - a.w);
+    let a = U[${CORD_PLUCKS}u + 4u * k];
+    let ends = U[${CORD_PLUCKS}u + 4u * k + 1u + u32(th.strand)];
+    if (a.x == 0.0 || t < a.y || t > a.y + a.z + PLUCK_LIFE || ends.x < 0.0) { continue; }
+    let stretch = stretchOf(ends.x, ends.z);
+    if (here.s <= stretch.x || here.s >= stretch.y) { continue; }
+    let s0 = texel(ends.x, 1.0).x;
+    let s1 = texel(ends.z, 1.0).x;
+    if (abs(here.s - clamp(here.s, min(s0, s1), max(s0, s1))) >= PLUCK_STRETCH / 2.0) { continue; }
+    let h0 = place(th, ends.x, a.y);
+    let h1 = place(th, ends.z, a.y);
+    let hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     let grip = hit.y * mix(h0.apart, h1.apart, hit.x);
-    let ring = ringing(here.s, c.x, c.y, mix(c.z, c.w, hit.x), t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
-    sum += vec2f(ring.x * b.x, ring.y) * grip;
+    let ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.y - hit.x * a.z, a.w, th.fibre.z / TAU);
+    sum += vec2f(ring.x * a.x, ring.y) * grip;
   }
   return vec2f(bounded(sum.x), sum.y) * here.apart;
 }
@@ -1540,27 +1548,33 @@ Placed place(Thread th, float k, float t) {
   );
 }
 
-bool walks(float k, float cord, vec2 own) { return k < cord || (k >= own.x && k < own.x + own.y); }
+vec2 stretchOf(float k0, float k1) {
+  float n = texel(k0, 3.0).w;
+  if (n < 0.0) n = texel(k1, 3.0).w;
+  if (n < 0.0 || n >= ${MAX_STRINGS}.0) return vec2(0.0);
+  int m = int(n);
+  vec4 pair = U[${CORD_STRINGS} + m / 2];
+  return (m % 2) == 1 ? pair.zw : pair.xy;
+}
 
 vec2 rung(Thread th, Placed here, float t) {
   if (th.path > 0.5 || here.apart <= 0.0) return vec2(0.0);
-  float cord = U[4].w;
-  vec2 own = U[4].z > 0.5 ? span(1.0 + U[4].y + th.strand) : vec2(-1.0, 0.0);
   vec2 sum = vec2(0.0);
   for (int k = 0; k < ${PLUCK.ring}; k++) {
-    vec4 a = U[${CORD_PLUCKS} + 3 * k];
-    vec4 b = U[${CORD_PLUCKS} + 3 * k + 1];
-    vec4 c = U[${CORD_PLUCKS} + 3 * k + 2];
-    if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) continue;
-    if (!walks(a.x, cord, own) || !walks(a.z, cord, own)) continue;
-    if (here.s <= c.x || here.s >= c.y) continue;
-    if (abs(here.s - clamp(here.s, min(c.z, c.w), max(c.z, c.w))) >= PLUCK_STRETCH / 2.0) continue;
-    Placed h0 = place(th, a.x, b.y);
-    Placed h1 = place(th, a.z, b.y);
-    vec2 hit = caught(h0.beside - a.y, h1.beside - a.w);
+    vec4 a = U[${CORD_PLUCKS} + 4 * k];
+    vec4 ends = U[${CORD_PLUCKS} + 4 * k + 1 + int(th.strand)];
+    if (a.x == 0.0 || t < a.y || t > a.y + a.z + PLUCK_LIFE || ends.x < 0.0) continue;
+    vec2 stretch = stretchOf(ends.x, ends.z);
+    if (here.s <= stretch.x || here.s >= stretch.y) continue;
+    float s0 = texel(ends.x, 1.0).x;
+    float s1 = texel(ends.z, 1.0).x;
+    if (abs(here.s - clamp(here.s, min(s0, s1), max(s0, s1))) >= PLUCK_STRETCH / 2.0) continue;
+    Placed h0 = place(th, ends.x, a.y);
+    Placed h1 = place(th, ends.z, a.y);
+    vec2 hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     float grip = hit.y * mix(h0.apart, h1.apart, hit.x);
-    vec2 ring = ringing(here.s, c.x, c.y, mix(c.z, c.w, hit.x), t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
-    sum += vec2(ring.x * b.x, ring.y) * grip;
+    vec2 ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.y - hit.x * a.z, a.w, th.fibre.z / TAU);
+    sum += vec2(ring.x * a.x, ring.y) * grip;
   }
   return vec2(bounded(sum.x), sum.y) * here.apart;
 }
