@@ -14,7 +14,7 @@ import {
   strandOf,
   warmthAt,
 } from './geometry'
-import { PLUCK, SLOT } from './pluck'
+import { PLUCK, ring, SLOT, stamps } from './pluck'
 
 /**
  * The cord that leaves the hero's window and carries the reader down the page: a braid that gathers in the gap above
@@ -712,55 +712,99 @@ function stringsOf(cord: ReadonlyArray<Sample>, own: ReadonlyArray<ReadonlyArray
 export const CORD_SLOT = 12
 
 /**
- * The sample on `path` whose axis passes through `x`, `y` (the weave's pixels) at time `t`, where a strand there lies:
- * the foot of the perpendicular from it to the path's course as it sways then, found by stepping along the path from
- * sample `guess`. And how far along that axis the point lies from the sample at rest, as the shaders measure a strand's
- * (`beside`). Undefined where the point lies past either end of the path, beside no strand of it.
+ * Where a point lies against one of the cord's paths, as `footOn` writes it: whether it lies `beside` the path at all,
+ * the sample whose axis it lies on (`k`), how far along that axis from the sample at rest (`offset`), how far along the
+ * route the sample is (`s`), and the axis.
  */
-function footOn(cord: Cord, path: Span, guess: number, x: number, y: number, t: number) {
-  const d = cord.data
-  const last = path.first + path.count - 1
-  const s = (n: number) => d[n * TEXELS * 4 + 4] ?? 0
-  // How far the point lies along the course from sample `n` as it has swayed, along its tangent, (-axis.y, axis.x); and
-  // how far apart the samples are there.
-  const from = (n: number) => {
-    const o = n * TEXELS * 4
-    const sy = d[o + 1] ?? 0
-    const swayed = (d[o] ?? 0) + swayAt(sy, t) * (d[o + 3] ?? 0)
-    const before = Math.max(n - 1, path.first)
-    const after = Math.min(n + 1, last)
-    return {
-      along: -(x - swayed) * (d[o + 9] ?? 0) + (y - sy) * (d[o + 8] ?? 0),
-      spacing: Math.max((s(after) - s(before)) / Math.max(after - before, 1), 1e-3),
-    }
-  }
-  let k = Math.min(Math.max(guess, path.first), last)
-  for (let step = 0; step < 4; step++) {
-    const { along, spacing } = from(k)
-    const move = Math.round(along / spacing)
-    if (move === 0) break
-    k = Math.min(last, Math.max(path.first, k + move))
-  }
-  const { along, spacing } = from(k)
-  if (Math.abs(along) > spacing) return undefined
-  const o = k * TEXELS * 4
-  return {
-    k,
-    beside: (x - (d[o] ?? 0)) * (d[o + 8] ?? 0) + (y - (d[o + 1] ?? 0)) * (d[o + 9] ?? 0),
-    s: d[o + 4] ?? 0,
-    ax: d[o + 8] ?? 0,
-    ay: d[o + 9] ?? 0,
-  }
+interface CordFoot {
+  beside: boolean
+  k: number
+  offset: number
+  s: number
+  ax: number
+  ay: number
+}
+const blank = (): CordFoot => ({ beside: false, k: 0, offset: 0, s: 0, ax: 0, ay: 0 })
+/** Scratch for `pluckCord`: each end of the pointer's path against the cord and each strand's own path. */
+const feet = [
+  [blank(), blank(), blank(), blank()],
+  [blank(), blank(), blank(), blank()],
+] as const
+
+/**
+ * How far `x`, `y` lies along the course of the cord's data from sample `n` as it has swayed at time `t`: along its
+ * tangent, (-axis.y, axis.x).
+ */
+const alongFrom = (d: Float32Array, n: number, x: number, y: number, t: number) => {
+  const o = n * TEXELS * 4
+  const sy = d[o + 1] ?? 0
+  const swayed = (d[o] ?? 0) + swayAt(sy, t) * (d[o + 3] ?? 0)
+  return -(x - swayed) * (d[o + 9] ?? 0) + (y - sy) * (d[o + 8] ?? 0)
+}
+/** How far apart, along the route, the samples of the run from `first` to `last` are around sample `n`. */
+const spacingAt = (d: Float32Array, first: number, last: number, n: number) => {
+  const before = Math.max(n - 1, first)
+  const after = Math.min(n + 1, last)
+  const s = (m: number) => d[m * TEXELS * 4 + 4] ?? 0
+  return Math.max((s(after) - s(before)) / Math.max(after - before, 1), 1e-3)
 }
 
 /**
- * Where `x`, `y` lies against the cord at time `t`, as `footOn` finds it: on the cord, or, where it ends in a demo, on
- * the strand's own path it lies beside, the nearest of them. Undefined beside none of them.
+ * The sample on `path` whose axis passes through `x`, `y` (the weave's pixels) at time `t`, where a strand there lies,
+ * written into `foot`: the foot of the perpendicular from it to the path's course as it sways then, found by stepping
+ * along the path from sample `guess`, and how far along that axis the point lies from the sample at rest, as the
+ * shaders measure a strand's (their `beside`). Not beside it where the point lies past either end of the path.
  */
-function footAt(cord: Cord, x: number, y: number, t: number) {
-  const [cordPath] = cord.paths
-  if (!cordPath) return undefined
+function footOn(
+  cord: Cord,
+  path: Span,
+  guess: number,
+  x: number,
+  y: number,
+  t: number,
+  foot: CordFoot,
+) {
   const d = cord.data
+  const last = path.first + path.count - 1
+  let k = Math.min(Math.max(guess, path.first), last)
+  for (let step = 0; step < 4; step++) {
+    const move = Math.round(alongFrom(d, k, x, y, t) / spacingAt(d, path.first, last, k))
+    if (move === 0) break
+    k = Math.min(last, Math.max(path.first, k + move))
+  }
+  const o = k * TEXELS * 4
+  foot.beside =
+    path.count > 0 && Math.abs(alongFrom(d, k, x, y, t)) <= spacingAt(d, path.first, last, k)
+  foot.k = k
+  foot.ax = d[o + 8] ?? 0
+  foot.ay = d[o + 9] ?? 0
+  foot.offset = (x - (d[o] ?? 0)) * foot.ax + (y - (d[o + 1] ?? 0)) * foot.ay
+  foot.s = d[o + 4] ?? 0
+}
+
+/** The sample of `path` nearest `x`, `y`. */
+function nearestOn(cord: Cord, { first, count }: Span, x: number, y: number) {
+  const d = cord.data
+  let best = first
+  let distance = Number.POSITIVE_INFINITY
+  for (let n = first; n < first + count; n++) {
+    const o = n * TEXELS * 4
+    const here = ((d[o] ?? 0) - x) ** 2 + ((d[o + 1] ?? 0) - y) ** 2
+    if (here < distance) {
+      best = n
+      distance = here
+    }
+  }
+  return best
+}
+
+/**
+ * Where `x`, `y` lies at time `t` against the cord (into `into[0]`) and, where it ends in a demo, against each strand's
+ * own path (into `into[1]` on), as `footOn` finds it. Returns how many paths there are.
+ */
+function feetAt(cord: Cord, x: number, y: number, t: number, into: ReadonlyArray<CordFoot>) {
+  const cordPath = cord.paths[0]
+  if (!cordPath) return 0
   // The cord's sample at the point's height; on a strand's own path, its nearest sample.
   let below = 0
   let above = cord.heights.length - 1
@@ -769,25 +813,47 @@ function footAt(cord: Cord, x: number, y: number, t: number) {
     if ((cord.heights[mid] ?? 0) < y) below = mid + 1
     else above = mid
   }
-  const nearest = ({ first, count }: Span) => {
-    let best = first
-    let distance = Number.POSITIVE_INFINITY
-    for (let n = first; n < first + count; n++) {
-      const o = n * TEXELS * 4
-      const here = ((d[o] ?? 0) - x) ** 2 + ((d[o + 1] ?? 0) - y) ** 2
-      if (here < distance) [best, distance] = [n, here]
-    }
-    return best
+  const cordFoot = into[0]
+  if (cordFoot) footOn(cord, cordPath, below, x, y, t, cordFoot)
+  const owned = cord.strands ? 3 : 0
+  for (let j = 0; j < owned; j++) {
+    const path = cord.paths[cord.paths.length - owned + j]
+    const foot = into[1 + j]
+    if (path && foot) footOn(cord, path, nearestOn(cord, path, x, y), x, y, t, foot)
   }
-  const owned = cord.strands ? cord.paths.slice(-3) : []
-  return [
-    footOn(cord, cordPath, below, x, y, t),
-    ...owned.map((path) => footOn(cord, path, nearest(path), x, y, t)),
-  ].reduce<ReturnType<typeof footOn>>(
-    (best, foot) =>
-      foot && (!best || Math.abs(foot.beside) < Math.abs(best.beside)) ? foot : best,
-    undefined,
-  )
+  return 1 + owned
+}
+
+/**
+ * Which paths the ends of the pointer's path lie on, of `paths` in `feet`: one path, or the cord and a strand's own
+ * path, which that strand's threads walk in turn; of those, the pair nearest the strands, as `p * paths + q` for the
+ * start on path `p` and the end on `q`. -1 where no such pair has both ends beside it.
+ */
+function pairOf(paths: number) {
+  const [as, bs] = feet
+  let best = -1
+  let nearest = Number.POSITIVE_INFINITY
+  for (let p = 0; p < paths; p++) {
+    for (let q = 0; q < paths; q++) {
+      const a = as[p]
+      const b = bs[q]
+      if (!a?.beside || !b?.beside || (p !== q && p !== 0 && q !== 0)) continue
+      const near = Math.abs(a.offset) + Math.abs(b.offset)
+      if (near >= nearest) continue
+      nearest = near
+      best = p * paths + q
+    }
+  }
+  return best
+}
+
+/** The index of the loose stretch in `cord.strings` that `s` along the route lies in, or -1 where it is braided. */
+function stringAt(cord: Cord, s: number) {
+  for (let n = 0; n < cord.strings.length; n++) {
+    const [from, to] = cord.strings[n] ?? [0, 0]
+    if (s > from && s < to) return n
+  }
+  return -1
 }
 
 /**
@@ -796,11 +862,16 @@ function footAt(cord: Cord, x: number, y: number, t: number) {
  * it; the shaders ring only threads whose walk passes both); its pull across the
  * strands, signed along the axis and less as the path runs along them; its start, span, and strength as the ring has
  * them; the loose stretch it rings, from and to along the route; and how far along the route each end of the path lies.
- * `origin` is the weave's top-left on the page. An empty slot, a pluck where the cord is braided, or one with an end
- * beside no strand of it, gets no pull.
+ * `origin` is the weave's top-left on the page. Both ends lie on one path, or on the cord and a strand's own path, which
+ * that strand's threads walk in turn: of those, the pair nearest the strands. An empty slot, a pluck where the cord is
+ * braided, or one beside no strand of it, gets no pull. Only slots written since `done` says (their `stamps`) are
+ * turned, and `done` is brought up to date; clear it when the cord changes. Allocates nothing.
  */
-export function pluckCord(cord: Cord, ring: Float32Array, origin: Point, out: Float32Array) {
+export function pluckCord(cord: Cord, origin: Point, out: Float32Array, done: Uint32Array) {
+  const [as, bs] = feet
   for (let k = 0; k < PLUCK.ring; k++) {
+    if (done[k] === stamps[k]) continue
+    done[k] = stamps[k] ?? 0
     const o = k * CORD_SLOT
     const r = k * SLOT
     out[o + 4] = 0
@@ -810,19 +881,23 @@ export function pluckCord(cord: Cord, ring: Float32Array, origin: Point, out: Fl
     const x1 = (ring[r + 2] ?? 0) - origin[0]
     const y1 = (ring[r + 3] ?? 0) - origin[1]
     const start = ring[r + 5] ?? 0
-    const a = footAt(cord, x0, y0, start)
-    const b = footAt(cord, x1, y1, start)
-    if (!a || !b) continue
+    const paths = feetAt(cord, x0, y0, start, as)
+    feetAt(cord, x1, y1, start, bs)
+    const pair = pairOf(paths)
+    const a = as[Math.floor(pair / paths)]
+    const b = bs[pair % paths]
+    if (pair < 0 || !a || !b) continue
     // The stretch it crossed: the one under its middle, or, where that is braided, under either end.
-    const string = [(a.s + b.s) / 2, a.s, b.s]
-      .map((s) => cord.strings.find(([from, to]) => s > from && s < to))
-      .find((found) => found !== undefined)
+    let n = stringAt(cord, (a.s + b.s) / 2)
+    if (n < 0) n = stringAt(cord, a.s)
+    if (n < 0) n = stringAt(cord, b.s)
+    const string = cord.strings[n]
     if (!string) continue
     const across = ((x1 - x0) * (a.ax + b.ax) + (y1 - y0) * (a.ay + b.ay)) / 2
     out[o] = a.k
-    out[o + 1] = a.beside
+    out[o + 1] = a.offset
     out[o + 2] = b.k
-    out[o + 3] = b.beside
+    out[o + 3] = b.offset
     out[o + 4] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
     out[o + 5] = start
     out[o + 6] = ring[r + 6] ?? 0

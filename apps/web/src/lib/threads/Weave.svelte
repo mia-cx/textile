@@ -17,8 +17,8 @@ import {
   weave,
 } from './cord'
 import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
-import type { Seam } from './geometry'
-import { listen, PLUCK, ring, written } from './pluck'
+import type { Point, Seam } from './geometry'
+import { listen, PLUCK } from './pluck'
 import { hex, type Palette } from './renderer'
 
 /**
@@ -102,12 +102,16 @@ onMount(() => {
   let renderer: CordRenderer | undefined
   let cord: Cord | undefined
   let palette: Palette | undefined
-  /** The weave's top on the page, so scrolling needs no layout to find what shows; and its left, for the plucks. */
+  /** The weave's top on the page, so scrolling needs no layout to find what shows. */
   let offset = 0
-  let left = 0
-  /** The plucks in the cord's own terms (see `pluckCord`), turned from the ring when it or the cord changes. */
+  /** The weave's top-left on the page, where the pointer's plucks are. */
+  let corner: Point = [0, 0]
+  /**
+   * The plucks in the cord's own terms (see `pluckCord`), each slot turned from the ring when it is written, and all of
+   * them again when the cord is laid out anew.
+   */
   const plucks = new Float32Array(PLUCK.ring * CORD_SLOT)
-  let turnedWrites = -1
+  const turned = new Uint32Array(PLUCK.ring)
   let turnedCord: Cord | undefined
   const stopListening = listen()
   /** Where the cord's tip rests for each section, and at what scroll: see `reveal`. */
@@ -160,11 +164,9 @@ onMount(() => {
   /** The cord's plucks for this frame, while it animates; still, nothing rings. */
   const strum = (laid: Cord) => {
     if (!animates()) return undefined
-    if (turnedWrites !== written() || turnedCord !== laid) {
-      pluckCord(laid, ring, [left, offset], plucks)
-      turnedWrites = written()
-      turnedCord = laid
-    }
+    if (turnedCord !== laid) turned.fill(0)
+    turnedCord = laid
+    pluckCord(laid, corner, plucks, turned)
     return plucks
   }
   const draw = () => {
@@ -254,7 +256,7 @@ onMount(() => {
     }
     const origin = box.getBoundingClientRect()
     offset = origin.top + scrollY
-    left = origin.left + scrollX
+    corner = [origin.left + scrollX, offset]
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
     const height = Math.ceil(innerHeight * (1 + 2 * MARGIN))
     canvas.style.height = `${height}px`

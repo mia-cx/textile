@@ -92,9 +92,12 @@ export const SLOT = 8
  */
 export const ring = new Float32Array(PLUCK.ring * SLOT)
 
-/** How many plucks have been written to the ring: a field turns the ring into its own only when this changes. */
+/**
+ * When each slot of the ring was last written, as a count of plucks: a field turns a slot into its own terms only when
+ * its stamp changes, so a sweep costs it one slot a pluck, not the whole ring.
+ */
+export const stamps = new Uint32Array(PLUCK.ring)
 let writes = 0
-export const written = () => writes
 
 /**
  * The pointer's path since the last pluck was cut: where it started (`x0`, `y0`, at `t0`, ms on the events' clock),
@@ -138,7 +141,8 @@ const cut = (now: number) => {
   const speed = Math.hypot(path.x1 - path.x0, path.y1 - path.y0) / span
   if (speed >= PLUCK.rest && ticking(now)) {
     const strength = 1 - Math.exp(-speed / PLUCK.speed)
-    const o = soonest() * SLOT
+    const slot = soonest()
+    const o = slot * SLOT
     ring[o] = path.x0
     ring[o + 1] = path.y0
     ring[o + 2] = path.x1
@@ -148,17 +152,22 @@ const cut = (now: number) => {
     ring[o + 6] = span
     ring[o + 7] = strength
     writes += 1
+    stamps[slot] = writes
   }
   begin(path.x1, path.y1, path.t1)
 }
 
-/** Cuts the path once the pointer has stopped for a segment, so the last of a movement plucks too. */
+/**
+ * Cuts the path so far and ends it, as when the pointer leaves the threads; and, once the pointer has gone a segment
+ * without moving, cuts the path so far but keeps its place, so the last of a movement plucks too while slower pointer
+ * events, further apart than a segment, still carry one path on.
+ */
 let stopped: ReturnType<typeof setTimeout> | undefined
 const settle = (now: number) => {
   cut(now)
   drop()
 }
-const stop = () => settle(performance.now())
+const stop = () => cut(performance.now())
 
 const move = (event: PointerEvent) => {
   clearTimeout(stopped)

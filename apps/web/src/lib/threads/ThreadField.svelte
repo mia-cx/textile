@@ -2,7 +2,7 @@
 import { onMount } from 'svelte'
 import { advance, STILL_TIME } from './clock'
 import { FIELD_SLOT, type Field, type Point, pluckField, position } from './geometry'
-import { listen, PLUCK, ring, written } from './pluck'
+import { listen, PLUCK } from './pluck'
 import { hex, type Palette, type Renderer, type RGB, still, webgl2, webgpu } from './renderer'
 
 /**
@@ -57,20 +57,21 @@ onMount(() => {
   const motion = matchMedia('(prefers-reduced-motion: no-preference)')
   /** The field's top-left on the page, where the pointer's plucks are. */
   let origin: Point = [0, 0]
-  /** The plucks in the field's own terms (see `pluckField`), turned from the ring when it or the field changes. */
+  /**
+   * The plucks in the field's own terms (see `pluckField`), each slot turned from the ring when it is written, and all
+   * of them again when the field changes.
+   */
   const plucks = new Float32Array(PLUCK.ring * FIELD_SLOT)
-  let turnedWrites = -1
+  const turned = new Uint32Array(PLUCK.ring)
   let turnedField: Field | undefined
   const stopListening = listen()
 
   /** The field's plucks for this frame, while it animates; still, nothing rings. */
   const strum = () => {
     if (!field || !animates()) return undefined
-    if (turnedWrites !== written() || turnedField !== field) {
-      pluckField(field, ring, origin, plucks)
-      turnedWrites = written()
-      turnedField = field
-    }
+    if (turnedField !== field) turned.fill(0)
+    turnedField = field
+    pluckField(field, origin, plucks, turned)
     return plucks
   }
   /** Moves each mark to where its thread passes its label now, by the same math the shaders run. */

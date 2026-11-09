@@ -8,7 +8,7 @@
  * that narrows to a cord of radius `cord` and twists tighter as it goes, so it ends at `end` at its thinnest.
  */
 
-import { bounded, caught, MISS, PLUCK, ringing, SLOT } from './pluck'
+import { bounded, caught, MISS, PLUCK, ring, ringing, SLOT, stamps } from './pluck'
 
 export type Point = readonly [x: number, y: number]
 
@@ -517,43 +517,74 @@ function beside(field: Field, th: ReturnType<typeof thread>, u: number, t: numbe
 /** Floats per pluck in a field's ring, as the shaders read it: see `pluckField`. */
 export const FIELD_SLOT = 8
 
+/** Where a point lies against a field's spine, as `spineFoot` writes it. */
+interface Foot {
+  u: number
+  o: number
+  nx: number
+  ny: number
+}
+
 /**
- * Where page point `x`, `y` (in the field's pixels) lies against `field`'s spine: `u` along it, at the foot of the
- * perpendicular, and `o` px beside it along its normal, as threads lie (see `place` in the shaders).
+ * Where page point `x`, `y` (in the field's pixels) lies against `field`'s spine, written into `foot`: `u` along it, at
+ * the foot of the perpendicular, `o` px beside it along its normal, as threads lie (see `place` in the shaders), and
+ * that normal. Allocates nothing.
  */
-export function spineFoot(field: Field, x: number, y: number) {
+export function spineFoot(field: Field, x: number, y: number, foot: Foot) {
   const { start: p0, control: p1, end: p2 } = field
-  const near = (u: number) => {
-    const { x: sx, y: sy } = spineAt(field, u)
-    return (sx - x) ** 2 + (sy - y) ** 2
-  }
   // The nearest of a few points, then Newton's method on the quadratic: (B(u) - P) · B'(u) = 0.
   let u = 0
-  for (let k = 1; k <= 16; k++) if (near(k / 16) < near(u)) u = k / 16
+  let nearest = Number.POSITIVE_INFINITY
+  for (let k = 0; k <= 16; k++) {
+    const v = k / 16
+    const a = 1 - v
+    const dx = a * a * p0[0] + 2 * a * v * p1[0] + v * v * p2[0] - x
+    const dy = a * a * p0[1] + 2 * a * v * p1[1] + v * v * p2[1] - y
+    if (dx * dx + dy * dy < nearest) {
+      nearest = dx * dx + dy * dy
+      u = v
+    }
+  }
   const ddx = 2 * (p0[0] - 2 * p1[0] + p2[0])
   const ddy = 2 * (p0[1] - 2 * p1[1] + p2[1])
-  for (let step = 0; step < 4; step++) {
+  let bx = 0
+  let by = 0
+  let tx = 1
+  let ty = 0
+  for (let step = 0; step <= 4; step++) {
     const a = 1 - u
-    const bx = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0] - x
-    const by = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1] - y
-    const tx = 2 * a * (p1[0] - p0[0]) + 2 * u * (p2[0] - p1[0])
-    const ty = 2 * a * (p1[1] - p0[1]) + 2 * u * (p2[1] - p1[1])
+    bx = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0] - x
+    by = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1] - y
+    tx = 2 * a * (p1[0] - p0[0]) + 2 * u * (p2[0] - p1[0])
+    ty = 2 * a * (p1[1] - p0[1]) + 2 * u * (p2[1] - p1[1])
     const slope = tx * tx + ty * ty + bx * ddx + by * ddy
-    if (slope <= 0) break
+    if (step === 4 || slope <= 0) break
     u = Math.min(1, Math.max(0, u - (bx * tx + by * ty) / slope))
   }
-  const foot = spineAt(field, u)
-  return { u, o: (x - foot.x) * foot.nx + (y - foot.y) * foot.ny, nx: foot.nx, ny: foot.ny }
+  // The normal as the shaders take it, and the point's offset along it from the spine.
+  const length = Math.max(Math.hypot(tx, ty), 1)
+  foot.u = u
+  foot.nx = -ty / length
+  foot.ny = tx / length
+  foot.o = -bx * foot.nx - by * foot.ny
+  return foot
 }
+const ends: readonly [Foot, Foot] = [
+  { u: 0, o: 0, nx: 0, ny: 0 },
+  { u: 0, o: 0, nx: 0, ny: 0 },
+]
 
 /**
  * Turns the pointer's `ring` (see pluck.ts) into `field`'s, `FIELD_SLOT` floats a pluck, for the shaders and
  * `plucked`: its path's ends against the spine (u0, o0, u1, o1, see `spineFoot`), its pull across the threads, signed
  * along the spine's normal and less as the path runs along them, then its start, span, and strength as the ring has
- * them. `origin` is the field's top-left on the page. An empty slot gets no pull.
+ * them. `origin` is the field's top-left on the page. An empty slot gets no pull. Only slots written since `done` says
+ * (their `stamps`) are turned, and `done` is brought up to date; clear it when the field or its origin changes.
  */
-export function pluckField(field: Field, ring: Float32Array, origin: Point, out: Float32Array) {
+export function pluckField(field: Field, origin: Point, out: Float32Array, done: Uint32Array) {
   for (let k = 0; k < PLUCK.ring; k++) {
+    if (done[k] === stamps[k]) continue
+    done[k] = stamps[k] ?? 0
     const o = k * FIELD_SLOT
     const r = k * SLOT
     out[o + 4] = 0
@@ -562,8 +593,8 @@ export function pluckField(field: Field, ring: Float32Array, origin: Point, out:
     const y0 = (ring[r + 1] ?? 0) - origin[1]
     const x1 = (ring[r + 2] ?? 0) - origin[0]
     const y1 = (ring[r + 3] ?? 0) - origin[1]
-    const a = spineFoot(field, x0, y0)
-    const b = spineFoot(field, x1, y1)
+    const a = spineFoot(field, x0, y0, ends[0])
+    const b = spineFoot(field, x1, y1, ends[1])
     const across = ((x1 - x0) * (a.nx + b.nx) + (y1 - y0) * (a.ny + b.ny)) / 2
     out[o] = a.u
     out[o + 1] = a.o
