@@ -14,7 +14,7 @@ import { clockAt, ticking } from './clock'
 
 export const PLUCK = {
   /** Plucks the ring holds: a pointer moving all the time cuts this many in a `life`, each `segment` long. */
-  ring: 24,
+  ring: 48,
   /** Seconds a thread rings after the pointer reaches it, its ring fading to nothing by the end. */
   life: 1.5,
   /** Seconds the pointer holds a thread, pulling it aside, before it slips free and rings. */
@@ -39,16 +39,19 @@ export const PLUCK = {
   /**
    * The longest stretch a pluck rings, in px, centred where it was plucked: a fibre is held by its neighbours further
    * out, so a pluck rings the stretch around it, shorter where an anchor (where the thread enters, or meets its
-   * strand's plait) is nearer.
+   * strand's plait) is nearer. Where the stretch ends short of an anchor, its ring tapers off over its outer `taper`,
+   * so the thread runs on from it with no corner.
    */
   stretch: 440,
+  taper: 0.15,
   /**
    * How fast a wave runs along a thread, in px/s, which sets its pitch: its fundamental rings at `wave / 2L` for a
-   * stretch L px long, between `pitch` Hz, low enough for every frame to show it. Each fibre is strung a little tighter
-   * or looser, up to `detune` of its pitch either way, so neighbours plucked together drift apart and shimmer.
+   * stretch L px long, about 2 Hz for the longest and higher as an anchor shortens it, up to `pitch[1]` Hz, low enough
+   * for every frame to show it. Each fibre is strung a little tighter or looser, up to `detune` of its pitch either way,
+   * so neighbours plucked together drift apart and shimmer.
    */
-  wave: 3200,
-  pitch: [1.6, 5] as const,
+  wave: 1800,
+  pitch: [2, 6] as const,
   detune: 0.15,
   /**
    * How long the fundamental takes to fall to 1/e, in seconds, for the softest pluck and the hardest; each overtone
@@ -66,13 +69,14 @@ export const PLUCK = {
   glintWave: 140,
   glintSpeed: 700,
   /**
-   * How long, in seconds, the pointer's path runs before it is cut into a pluck: often enough that each thread is caught
-   * soon after the pointer crosses it, and seldom enough that the ring holds a whole sweep, however fast, for `life`.
+   * How long, in seconds, the pointer's path runs before it is cut into a pluck, and so how late a thread is caught
+   * after the pointer crosses it, at most: soon enough to read as the pointer catching it, and seldom enough that the
+   * ring holds a whole sweep, however fast, for `life`. A path is also cut when the pointer stops for this long.
    */
-  segment: 0.06,
+  segment: 0.03,
   /**
-   * The longest a path runs before it is cut, in seconds: longer, the pointer paused or left the window, and its path
-   * starts afresh rather than replaying the gap.
+   * The longest gap between two moves, in seconds, that one path spans: longer, the pointer paused or left the window,
+   * and its path starts afresh rather than replaying the gap.
    */
   pause: 0.15,
 } as const
@@ -82,9 +86,9 @@ export const SLOT = 8
 
 /**
  * The ring of recent plucks, `SLOT` floats each: the pointer's path from (x0, y0) to (x1, y1) in page px; how far it
- * pulls a thread it crosses at right angles, in px; the clock time the pointer reaches its start's threads, and how
- * long it takes to reach its end's (each thread is caught as the path reaches it, replayed from when the segment is
- * cut, so no thread is caught late); and its strength, 0 to 1. A slot whose pull is 0 holds nothing.
+ * pulls a thread it crosses at right angles, in px; the clock time the path was cut, when its start's threads are
+ * caught, and how long the pointer took along it, so each thread after is caught that much later, in the order the
+ * pointer crossed them, each `span` after it did; and its strength, 0 to 1. A slot whose pull is 0 holds nothing.
  */
 export const ring = new Float32Array(PLUCK.ring * SLOT)
 
@@ -92,12 +96,18 @@ export const ring = new Float32Array(PLUCK.ring * SLOT)
 let writes = 0
 export const written = () => writes
 
-/** The pointer's path since the last pluck was cut: where it started, and when (ms, the events' clock). */
-let from = { x: 0, y: 0, at: Number.NaN }
-const restart = (x = 0, y = 0, at = Number.NaN) => {
-  from.x = x
-  from.y = y
-  from.at = at
+/**
+ * The pointer's path since the last pluck was cut: where it started (`x0`, `y0`, at `t0`, ms on the events' clock),
+ * and the latest move along it (`x1`, `y1`, at `t1`). No path while `t0` is NaN.
+ */
+const path = { x0: 0, y0: 0, t0: Number.NaN, x1: 0, y1: 0, t1: Number.NaN }
+const begin = (x: number, y: number, at: number) => {
+  path.x0 = path.x1 = x
+  path.y0 = path.y1 = y
+  path.t0 = path.t1 = at
+}
+const drop = () => {
+  path.t0 = Number.NaN
 }
 
 /**
@@ -116,33 +126,62 @@ const GLASS = '[data-weave-panel]'
 
 let motion: MediaQueryList | undefined
 
+/**
+ * Cuts the path so far into a pluck at `now` (ms, the events' clock), if the pointer moved along it fast enough to
+ * pluck, and carries the path on from its latest move. Its threads are caught from `now` on, never before, so none
+ * starts mid-catch. Plucks ring on the fields' clock, which runs only while one of them animates: with none on screen,
+ * nothing shows them, and their time could never run out, so then nothing is cut.
+ */
+const cut = (now: number) => {
+  if (Number.isNaN(path.t0) || path.t1 <= path.t0) return
+  const span = (path.t1 - path.t0) / 1000
+  const speed = Math.hypot(path.x1 - path.x0, path.y1 - path.y0) / span
+  if (speed >= PLUCK.rest && ticking(now)) {
+    const strength = 1 - Math.exp(-speed / PLUCK.speed)
+    const o = soonest() * SLOT
+    ring[o] = path.x0
+    ring[o + 1] = path.y0
+    ring[o + 2] = path.x1
+    ring[o + 3] = path.y1
+    ring[o + 4] = PLUCK.pull * strength
+    ring[o + 5] = clockAt(now)
+    ring[o + 6] = span
+    ring[o + 7] = strength
+    writes += 1
+  }
+  begin(path.x1, path.y1, path.t1)
+}
+
+/** Cuts the path once the pointer has stopped for a segment, so the last of a movement plucks too. */
+let stopped: ReturnType<typeof setTimeout> | undefined
+const settle = (now: number) => {
+  cut(now)
+  drop()
+}
+const stop = () => settle(performance.now())
+
 const move = (event: PointerEvent) => {
-  // Touch scrolls the page; only a hovering mouse or pen plucks.
-  if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return restart()
-  if (!motion?.matches) return restart()
-  if (event.target instanceof Element && event.target.closest(GLASS)) return restart()
+  clearTimeout(stopped)
   const { pageX: x, pageY: y, timeStamp: at } = event
-  // Plucks ring on the fields' clock, which runs only while one of them animates: with none on screen, nothing shows
-  // them, and their time could never run out.
-  if (!ticking(at)) return restart()
-  if (Number.isNaN(from.at) || at - from.at > PLUCK.pause * 1000) return restart(x, y, at)
-  const span = (at - from.at) / 1000
-  if (span < PLUCK.segment) return
-  const speed = Math.hypot(x - from.x, y - from.y) / span
-  if (speed < PLUCK.rest) return restart(x, y, at)
-  const strength = 1 - Math.exp(-speed / PLUCK.speed)
-  const o = soonest() * SLOT
-  const time = clockAt(at)
-  ring[o] = from.x
-  ring[o + 1] = from.y
-  ring[o + 2] = x
-  ring[o + 3] = y
-  ring[o + 4] = PLUCK.pull * strength
-  ring[o + 5] = time
-  ring[o + 6] = span
-  ring[o + 7] = strength
-  writes += 1
-  restart(x, y, at)
+  // Touch scrolls the page; only a hovering mouse or pen plucks. Over a panel, the pointer is on the glass: the path up
+  // to it plucks, and stops there.
+  const plucking =
+    (event.pointerType === 'mouse' || event.pointerType === 'pen') &&
+    motion?.matches === true &&
+    !(event.target instanceof Element && event.target.closest(GLASS))
+  if (!plucking) return settle(at)
+  if (Number.isNaN(path.t0)) begin(x, y, at)
+  // A gap: the pointer paused or left the window. What came before it plucks; the path starts afresh after it.
+  else if (at - path.t1 > PLUCK.pause * 1000) {
+    settle(at)
+    begin(x, y, at)
+  } else {
+    path.x1 = x
+    path.y1 = y
+    path.t1 = at
+    if (at - path.t0 >= PLUCK.segment * 1000) cut(at)
+  }
+  stopped = setTimeout(stop, PLUCK.segment * 1000)
 }
 
 let listeners = 0
@@ -154,11 +193,13 @@ let listeners = 0
 export function listen() {
   if (listeners++ === 0) {
     motion = matchMedia('(prefers-reduced-motion: no-preference)')
-    from = { x: 0, y: 0, at: Number.NaN }
+    drop()
     addEventListener('pointermove', move, { passive: true })
   }
   return () => {
-    if (--listeners === 0) removeEventListener('pointermove', move)
+    if (--listeners > 0) return
+    removeEventListener('pointermove', move)
+    clearTimeout(stopped)
   }
 }
 
@@ -202,7 +243,11 @@ export function ringing(
   const m2 = ((k * 2 * sp * cp) / 4) * 2 * sx * cx
   const m3 = ((k * sp * (3 - 4 * sp * sp)) / 9) * sx * (3 - 4 * sx * sx)
   const shape = m1 + m2 + m3
-  const fade = 1 - smoothstep(PLUCK.life * 0.6, PLUCK.life, age)
+  // Fading out by `life`, and tapering off at the stretch's ends so the thread runs on from them with no corner.
+  const fade =
+    (1 - smoothstep(PLUCK.life * 0.6, PLUCK.life, age)) *
+    smoothstep(0, PLUCK.taper, x) *
+    smoothstep(0, PLUCK.taper, 1 - x)
   let shift: number
   let energy: number
   if (age < PLUCK.catch) {

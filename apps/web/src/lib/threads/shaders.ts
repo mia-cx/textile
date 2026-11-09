@@ -238,6 +238,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PLUCK_SYMPATHETIC', float(PLUCK.sympatheticReach)),
     declare('PLUCK_MISS', float(MISS)),
     declare('PLUCK_STRETCH', float(PLUCK.stretch)),
+    declare('PLUCK_TAPER', float(PLUCK.taper)),
     declare('PLUCK_WAVE', float(PLUCK.wave)),
     declare('PLUCK_DETUNE', float(PLUCK.detune)),
     declare('PLUCK_PITCH_LOW', float(PLUCK.pitch[0])),
@@ -307,7 +308,7 @@ ${fn(
   ${local} m2 = k * 2.0 * sp * cp / 4.0 * 2.0 * sx * cx;
   ${local} m3 = k * sp * (3.0 - 4.0 * sp * sp) / 9.0 * sx * (3.0 - 4.0 * sx * sx);
   ${local} shape = m1 + m2 + m3;
-  ${local} fade = 1.0 - smoothstep(PLUCK_LIFE * 0.6, PLUCK_LIFE, age);
+  ${local} fade = (1.0 - smoothstep(PLUCK_LIFE * 0.6, PLUCK_LIFE, age)) * smoothstep(0.0, PLUCK_TAPER, x) * smoothstep(0.0, PLUCK_TAPER, 1.0 - x);
   ${mutable} shift = 0.0;
   ${mutable} energy = 0.0;
   if (age < PLUCK_CATCH) {
@@ -1345,20 +1346,29 @@ fn place(th: Thread, k: f32, t: f32) -> Placed {
   );
 }
 
+// Whether sample k is on a cord thread's walk: among the cord's first cord samples, or on its own path.
+fn walks(k: f32, cord: f32, own: vec2f) -> bool { return k < cord || (k >= own.x && k < own.x + own.y); }
+
 // How a cord thread rings where it is placed (here) at time t, from the plucks at CORD_PLUCKS: x how far it is
 // displaced along the cord's axis, y the light it adds. A section's loose stretch, from gap to gap, is anchored where
 // the strands meet in the plait either side; a pluck rings the stretch around where a thread crossed the pointer's path,
 // where it was when plucked, as far as its strands had drifted apart there, and the thread rings only as far as its own
-// strands have drifted apart, so the plait never rings. A point too far along from the path rings nothing and places
-// nothing. Only the cord's own threads ring; the strands peeling off it hold still.
+// strands have drifted apart, so the plait never rings. A pluck rings only the threads whose walk passes both ends of
+// the pointer's path: the cord, and a strand's own path for its own strand. A point too far along from the path rings
+// nothing and places nothing. Only the cord's own threads ring; the strands peeling off it hold still.
 fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
   if (th.path > 0.5 || here.apart <= 0.0) { return vec2f(0.0); }
+  // The cord's samples, all of them, and this thread's strand's own path, if the cord's strands run on.
+  let cord = U[4].w;
+  var own = vec2f(-1.0, 0.0);
+  if (U[4].z > 0.5) { own = span(1.0 + U[4].y + th.strand); }
   var sum = vec2f(0.0);
   for (var k = 0u; k < ${PLUCK.ring}u; k++) {
     let a = U[${CORD_PLUCKS}u + 3u * k];
     let b = U[${CORD_PLUCKS}u + 3u * k + 1u];
     let c = U[${CORD_PLUCKS}u + 3u * k + 2u];
     if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) { continue; }
+    if (!walks(a.x, cord, own) || !walks(a.z, cord, own)) { continue; }
     if (here.s <= c.x || here.s >= c.y) { continue; }
     if (abs(here.s - clamp(here.s, min(c.z, c.w), max(c.z, c.w))) >= PLUCK_STRETCH / 2.0) { continue; }
     let h0 = place(th, a.x, b.y);
@@ -1530,14 +1540,19 @@ Placed place(Thread th, float k, float t) {
   );
 }
 
+bool walks(float k, float cord, vec2 own) { return k < cord || (k >= own.x && k < own.x + own.y); }
+
 vec2 rung(Thread th, Placed here, float t) {
   if (th.path > 0.5 || here.apart <= 0.0) return vec2(0.0);
+  float cord = U[4].w;
+  vec2 own = U[4].z > 0.5 ? span(1.0 + U[4].y + th.strand) : vec2(-1.0, 0.0);
   vec2 sum = vec2(0.0);
   for (int k = 0; k < ${PLUCK.ring}; k++) {
     vec4 a = U[${CORD_PLUCKS} + 3 * k];
     vec4 b = U[${CORD_PLUCKS} + 3 * k + 1];
     vec4 c = U[${CORD_PLUCKS} + 3 * k + 2];
     if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) continue;
+    if (!walks(a.x, cord, own) || !walks(a.z, cord, own)) continue;
     if (here.s <= c.x || here.s >= c.y) continue;
     if (abs(here.s - clamp(here.s, min(c.z, c.w), max(c.z, c.w))) >= PLUCK_STRETCH / 2.0) continue;
     Placed h0 = place(th, a.x, b.y);
