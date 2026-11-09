@@ -165,6 +165,20 @@ screen, the cord is drawn through the whole section; between steps it holds, the
 critically damped spring that settles in about a second, fading out along its route. With reduced motion it is simply
 drawn, and holds still.
 
+Loose threads ring like plucked strings under a mouse or pen (`pluck.ts`): in the hero's incoming field and the
+close's, and behind each section where the cord is unbraided; the plait never rings. As the pointer crosses a thread it
+catches it, pulls it aside in the direction of travel for 70ms, and lets go. The thread then rings as a damped standing
+wave over the stretch around the pluck, up to 440px long and shorter near its anchors (where it enters and where it
+joins its strand, or, on the cord, where the strands meet in the plait). It rings in the first three modes of a plucked
+string, at a pitch set by that length, between 1.6 and 5 Hz, each fibre detuned a little so neighbours shimmer apart.
+It is gone within 1.5 seconds, and neighbours within 24px ring along faintly. A faster sweep pulls harder (up to 12px)
+and rings longer, and plucks on one thread add up to 16px at most. A ringing thread brightens, with glints running out
+from the pluck. The pointer's path is cut every 60ms into a ring of 24 plucks, uniforms both renderers' vertex shaders
+read; each thread is tested against a pluck where it was when plucked, and most threads are ruled out without being
+placed. The hero's labels ride their threads through the same math on the CPU, and the cord's knots sit where it is
+braided. Touch scrolls instead; over a panel the pointer is on glass; with reduced motion, in the 2D fallbacks, or with
+no field animating, nothing is plucked.
+
 Measured in Chromium 156 on an RTX 3070 (Vulkan), hero on screen at 2000×1100:
 
 | | GPU time per frame (timestamp queries) | Script per frame |
