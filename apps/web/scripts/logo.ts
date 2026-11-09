@@ -1,5 +1,5 @@
 // Renders Textile's mark, the trefoil, into static/icons/<size>.png: the favicons, the touch and manifest icons, and
-// the header's mark. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
+// the header's mark; and social.png, a padded avatar for social profiles and the Discord server. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
 // pixel density, so every pixel of glow is the browser's own, then downsizes it the way Ditherette's
 // lanczos3-scale-aware does: a Lanczos-3 kernel stretched by the scale factor, in linear light, so thin bright fibres
 // average as light does instead of darkening. Sizes of 64 and below start from a capture with a thicker band, and
@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PNG } from 'pngjs'
-import { SMALL_MARK } from '../src/lib/threads/trefoil.ts'
+import { MARK, SMALL_MARK } from '../src/lib/threads/trefoil.ts'
 
 const URL_BASE = process.env.LOGO_URL ?? 'http://localhost:5173'
 const OUT = new URL('../static/icons/', import.meta.url)
@@ -34,6 +34,13 @@ const THICK = `&band=${SMALL_MARK.band}&intensity=${SMALL_MARK.intensity}`
  */
 const TILE_FILL = 0.6
 const TILE = `&fill=${TILE_FILL}&band=${(SMALL_MARK.band * TILE_FILL) / SMALL_MARK.fill}&intensity=${SMALL_MARK.intensity}`
+/**
+ * The social avatar, social.png: the full mark drawn smaller still in its square, its band shrunk with it, so a round
+ * crop leaves a wide ring of ink around all three lobes.
+ */
+const SOCIAL_FILL = 0.55
+const SOCIAL_SIZE = 1024
+const SOCIAL = `&fill=${SOCIAL_FILL}&band=${(MARK.band * SOCIAL_FILL) / MARK.fill}`
 /** The site's ink (src/lib/tokens.css): only light above it is brightened, so the ground stays the ink. */
 const INK = '#07060c'
 
@@ -197,3 +204,4 @@ for (const size of SIZES) {
 }
 /** The header's mark, as light, at 2× its 32px. */
 writeFileSync(new URL('light-64.png', OUT), light(thick, 64))
+writeFileSync(new URL('social.png', OUT), icon(capture(SOCIAL), SOCIAL_SIZE, false))
