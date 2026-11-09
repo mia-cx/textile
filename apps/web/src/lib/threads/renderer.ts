@@ -13,7 +13,13 @@ import {
   warmth,
 } from './geometry'
 import { type Painter, type Scene, webgl2Painter, webgpuPainter } from './gpu'
-import { threadVertexGlsl, threadWgsl, UNIFORM_VEC4S, VERTICES_PER_THREAD } from './shaders'
+import {
+  FIELD_PLUCKS,
+  threadVertexGlsl,
+  threadWgsl,
+  UNIFORM_VEC4S,
+  VERTICES_PER_THREAD,
+} from './shaders'
 
 /** The colours a field draws with, read from the page's tokens: the two thread colours and the ink behind them. */
 export interface Palette {
@@ -28,10 +34,13 @@ export const hex = (value: string): RGB => {
   return [channel(1), channel(3), channel(5)]
 }
 
-/** A field drawn on one canvas. `draw` renders a frame at `time` seconds; the canvas is already sized in device pixels. */
+/**
+ * A field drawn on one canvas. `draw` renders a frame at `time` seconds, its loose threads ringing as `plucks` says
+ * (see `pluckField`); the canvas is already sized in device pixels.
+ */
 export interface Renderer {
   readonly kind: 'webgpu' | 'webgl2' | '2d'
-  draw(field: Field, palette: Palette, time: number): void
+  draw(field: Field, palette: Palette, time: number, plucks?: Float32Array): void
   destroy(): void
   /** Settles when the renderer can no longer draw, as when the browser resets the GPU; the field then starts over. */
   readonly lost?: Promise<unknown>
@@ -40,10 +49,17 @@ export interface Renderer {
 /** How much light the tone map lets through: higher is brighter, burning toward white sooner. */
 export const EXPOSURE = 1.15
 
-/** Sizes are CSS pixels: the canvas's own size divided by `dpr`. */
-const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: number) => {
+/** Packs a frame's uniforms into `u`. Sizes are CSS pixels: the canvas's own size divided by `dpr`. */
+const pack = (
+  u: Float32Array,
+  canvas: HTMLCanvasElement,
+  field: Field,
+  palette: Palette,
+  time: number,
+  plucks: Float32Array | undefined,
+) => {
   const dpr = canvas.width / Math.max(canvas.clientWidth, 1)
-  const u = new Float32Array(UNIFORM_VEC4S * 4)
+  u.fill(0)
   u.set([canvas.width / dpr, canvas.height / dpr, dpr, time], 0)
   u.set([...field.start, ...field.control], 4)
   u.set([...field.end, field.spread, field.cord], 8)
@@ -56,6 +72,7 @@ const pack = (canvas: HTMLCanvasElement, field: Field, palette: Palette, time: n
   const text = (field.text ?? []).slice(0, MAX_TEXT)
   u.set([whole, gathers, text.length], 44)
   for (const [i, box] of text.entries()) u.set(box, 48 + i * 4)
+  if (plucks) u.set(plucks, FIELD_PLUCKS * 4)
   return u
 }
 
@@ -69,13 +86,20 @@ const HERO: Scene = {
 }
 
 /** A field drawn by a GPU painter. */
-const fieldOn = (canvas: HTMLCanvasElement, painter: Painter): Renderer => ({
-  kind: painter.kind,
-  lost: painter.lost,
-  draw: (field, palette, time) =>
-    painter.paint(pack(canvas, field, palette, time), VERTICES_PER_THREAD, field.count),
-  destroy: () => painter.destroy(),
-})
+const fieldOn = (canvas: HTMLCanvasElement, painter: Painter): Renderer => {
+  const uniforms = new Float32Array(UNIFORM_VEC4S * 4)
+  return {
+    kind: painter.kind,
+    lost: painter.lost,
+    draw: (field, palette, time, plucks) =>
+      painter.paint(
+        pack(uniforms, canvas, field, palette, time, plucks),
+        VERTICES_PER_THREAD,
+        field.count,
+      ),
+    destroy: () => painter.destroy(),
+  }
+}
 
 export async function webgpu(canvas: HTMLCanvasElement): Promise<Renderer | undefined> {
   const painter = await webgpuPainter(canvas, HERO)

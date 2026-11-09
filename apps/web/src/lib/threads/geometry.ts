@@ -8,6 +8,8 @@
  * that narrows to a cord of radius `cord` and twists tighter as it goes, so it ends at `end` at its thinnest.
  */
 
+import { caught, MISS, PLUCK, ringing, SLOT } from './pluck'
+
 export type Point = readonly [x: number, y: number]
 
 /** A labelled thread: it passes exactly through its label at `at` along the curve, `lane` across the funnel (-1 to 1). */
@@ -460,20 +462,42 @@ export const knit = (field: Field, th: ReturnType<typeof thread>, u: number) => 
   ...forming(field, u),
 })
 
-/** A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds. Mirrors `place` in the shaders. */
-export function position(field: Field, i: number, u: number, t: number): Point {
-  const { start: p0, control: p1, end: p2, cord } = field
-  const th = thread(field, i)
-  const { lane, pin, strand, phase, wander, jitter, drift, edge } = th
+/** The spine's point `u` along `field` and its unit normal there, which threads lie along. Mirrors `place` in the shaders. */
+const spineAt = ({ start: p0, control: p1, end: p2 }: Field, u: number) => {
   const a = 1 - u
-  const x = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0]
-  const y = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1]
   const tx = 2 * a * (p1[0] - p0[0]) + 2 * u * (p2[0] - p1[0])
   const ty = 2 * a * (p1[1] - p0[1]) + 2 * u * (p2[1] - p1[1])
-  const length = Math.hypot(tx, ty) || 1
-  const nx = -ty / length
-  const ny = tx / length
+  const length = Math.max(Math.hypot(tx, ty), 1)
+  return {
+    x: a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0],
+    y: a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1],
+    nx: -ty / length,
+    ny: tx / length,
+  }
+}
 
+/**
+ * A thread's position at `u` (0 at the start, 1 at the end) and time `t` in seconds, ringing as the pointer plucked it
+ * if given the field's `plucks` (see `pluckField`). Mirrors `place` and `rung` in the shaders.
+ */
+export function position(
+  field: Field,
+  i: number,
+  u: number,
+  t: number,
+  plucks?: Float32Array,
+): Point {
+  const th = thread(field, i)
+  const { x, y, nx, ny } = spineAt(field, u)
+  const offset = beside(field, th, u, t) + (plucks ? plucked(field, th, u, t, plucks) : 0)
+  return [x + nx * offset, y + ny * offset]
+}
+
+/** How far thread `th` lies beside the spine `u` along `field` at time `t`, in px along its normal. Mirrors `place`. */
+function beside(field: Field, th: ReturnType<typeof thread>, u: number, t: number) {
+  const { cord } = field
+  const { lane, pin, strand, phase, wander, jitter, drift, edge } = th
+  const a = 1 - u
   // The braid's radius narrows linearly to `cord`; the funnel narrows onto the braid.
   const radius = cord * (1 + SHAPE.swell * a)
   const width = funnelWidth(field, u)
@@ -487,8 +511,134 @@ export function position(field: Field, i: number, u: number, t: number): Point {
   const loosened = 1 + SHAPE.ropeLoose * (1 - tight)
   const twist = twistOf(field, strand, u, t)
   const inBand = radius * band(twist, strand, jitter, edge, u, drift, curl, loosened, look)
-  const offset = current + (inBand - current) * braided
-  return [x + nx * offset, y + ny * offset]
+  return current + (inBand - current) * braided
+}
+
+/** Floats per pluck in a field's ring, as the shaders read it: see `pluckField`. */
+export const FIELD_SLOT = 8
+
+/**
+ * Where page point `x`, `y` (in the field's pixels) lies against `field`'s spine: `u` along it, at the foot of the
+ * perpendicular, and `o` px beside it along its normal, as threads lie (see `place` in the shaders).
+ */
+export function spineFoot(field: Field, x: number, y: number) {
+  const { start: p0, control: p1, end: p2 } = field
+  const near = (u: number) => {
+    const { x: sx, y: sy } = spineAt(field, u)
+    return (sx - x) ** 2 + (sy - y) ** 2
+  }
+  // The nearest of a few points, then Newton's method on the quadratic: (B(u) - P) · B'(u) = 0.
+  let u = 0
+  for (let k = 1; k <= 16; k++) if (near(k / 16) < near(u)) u = k / 16
+  const ddx = 2 * (p0[0] - 2 * p1[0] + p2[0])
+  const ddy = 2 * (p0[1] - 2 * p1[1] + p2[1])
+  for (let step = 0; step < 4; step++) {
+    const a = 1 - u
+    const bx = a * a * p0[0] + 2 * a * u * p1[0] + u * u * p2[0] - x
+    const by = a * a * p0[1] + 2 * a * u * p1[1] + u * u * p2[1] - y
+    const tx = 2 * a * (p1[0] - p0[0]) + 2 * u * (p2[0] - p1[0])
+    const ty = 2 * a * (p1[1] - p0[1]) + 2 * u * (p2[1] - p1[1])
+    const slope = tx * tx + ty * ty + bx * ddx + by * ddy
+    if (slope <= 0) break
+    u = Math.min(1, Math.max(0, u - (bx * tx + by * ty) / slope))
+  }
+  const foot = spineAt(field, u)
+  return { u, o: (x - foot.x) * foot.nx + (y - foot.y) * foot.ny, nx: foot.nx, ny: foot.ny }
+}
+
+/**
+ * Turns the pointer's `ring` (see pluck.ts) into `field`'s, `FIELD_SLOT` floats a pluck, for the shaders and
+ * `plucked`: its path's ends against the spine (u0, o0, u1, o1, see `spineFoot`), its pull across the threads, signed
+ * along the spine's normal and less as the path runs along them, then its start, span, and strength as the ring has
+ * them. `origin` is the field's top-left on the page. An empty slot gets no pull.
+ */
+export function pluckField(field: Field, ring: Float32Array, origin: Point, out: Float32Array) {
+  for (let k = 0; k < PLUCK.ring; k++) {
+    const o = k * FIELD_SLOT
+    const r = k * SLOT
+    out[o + 4] = 0
+    if ((ring[r + 4] ?? 0) === 0) continue
+    const x0 = (ring[r] ?? 0) - origin[0]
+    const y0 = (ring[r + 1] ?? 0) - origin[1]
+    const x1 = (ring[r + 2] ?? 0) - origin[0]
+    const y1 = (ring[r + 3] ?? 0) - origin[1]
+    const a = spineFoot(field, x0, y0)
+    const b = spineFoot(field, x1, y1)
+    const across = ((x1 - x0) * (a.nx + b.nx) + (y1 - y0) * (a.ny + b.ny)) / 2
+    out[o] = a.u
+    out[o + 1] = a.o
+    out[o + 2] = b.u
+    out[o + 3] = b.o
+    out[o + 4] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
+    out[o + 5] = ring[r + 5] ?? 0
+    out[o + 6] = ring[r + 6] ?? 0
+    out[o + 7] = ring[r + 7] ?? 0
+  }
+}
+
+/**
+ * How far thread `th` is displaced along the spine's normal `u` along `field` at time `t` by the plucks in `plucks`
+ * (as `pluckField` writes them), in px. Its loose stretch is anchored where it enters and where it has joined its
+ * strand's rope: a pluck it crossed, at the time it was plucked, rings the stretch around where it crossed (see
+ * `ringing`), less as it gathers, and not at all once gathered, so the plait never rings. Mirrors `rung` in the shaders.
+ */
+export function plucked(
+  field: Field,
+  th: ReturnType<typeof thread>,
+  u: number,
+  t: number,
+  plucks: Float32Array,
+) {
+  const loose = 1 - ease(th.leaves, th.joins, u)
+  if (loose <= 0) return 0
+  // Along the thread in px, as `ringing` takes it: about the spine's length per unit along.
+  const px = spineLength(field)
+  let shift = 0
+  for (let k = 0; k < PLUCK.ring; k++) {
+    const o = k * FIELD_SLOT
+    const pull = plucks[o + 4] ?? 0
+    const start = plucks[o + 5] ?? 0
+    const span = plucks[o + 6] ?? 0
+    if (pull === 0 || t < start || t > start + span + PLUCK.life) continue
+    const u0 = plucks[o] ?? 0
+    const o0 = plucks[o + 1] ?? 0
+    const u1 = plucks[o + 2] ?? 0
+    const o1 = plucks[o + 3] ?? 0
+    const strength = plucks[o + 7] ?? 0
+    const nearest = Math.min(Math.max(u, Math.min(u0, u1)), Math.max(u0, u1))
+    if (Math.abs(u - nearest) * px >= PLUCK.stretch / 2) continue
+    if (missed(field, th, u0, o0, u1, o1)) continue
+    const hit = caught(beside(field, th, u0, start) - o0, beside(field, th, u1, start) - o1)
+    const contact = u0 + (u1 - u0) * hit.along
+    const grip = hit.grip * (1 - ease(th.leaves, th.joins, contact))
+    const age = t - start - hit.along * span
+    const ring = ringing(u * px, 0, th.joins * px, contact * px, age, strength, th.drift / TAU)
+    shift += pull * grip * ring.shift
+  }
+  return shift * loose
+}
+
+/**
+ * Whether thread `th` passes too far from the pointer's path from (u0, o0) to (u1, o1) to ring at all, wherever it sways:
+ * loose there, it lies within its lane's sway and its own wander, so most threads are ruled out without placing them.
+ * Mirrors the test in `rung` in the shaders.
+ */
+function missed(
+  field: Field,
+  th: ReturnType<typeof thread>,
+  u0: number,
+  o0: number,
+  u1: number,
+  o1: number,
+) {
+  if (Math.max(u0, u1) > th.leaves) return false
+  const sway = SHAPE.wave + th.wander.reach
+  const w0 = funnelWidth(field, u0)
+  const w1 = funnelWidth(field, u1)
+  return (
+    (o0 > w0 * (th.lane + sway) + MISS && o1 > w1 * (th.lane + sway) + MISS) ||
+    (o0 < w0 * (th.lane - sway) - MISS && o1 < w1 * (th.lane - sway) - MISS)
+  )
 }
 
 /**

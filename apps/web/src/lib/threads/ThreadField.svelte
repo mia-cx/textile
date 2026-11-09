@@ -1,7 +1,8 @@
 <script lang="ts">
 import { onMount } from 'svelte'
 import { advance, STILL_TIME } from './clock'
-import { type Field, position } from './geometry'
+import { FIELD_SLOT, type Field, type Point, pluckField, position } from './geometry'
+import { listen, PLUCK, ring, written } from './pluck'
 import { hex, type Palette, type Renderer, type RGB, still, webgl2, webgpu } from './renderer'
 
 /**
@@ -10,7 +11,8 @@ import { hex, type Palette, type Renderer, type RGB, still, webgl2, webgpu } fro
  * and when webfonts finish loading.
  * Decorative: the page around it says what it shows.
  *
- * Each label rides its thread: the frame loop moves its mark by the same math the shaders run.
+ * Its loose threads ring where a mouse or pen plucks them (see pluck.ts). Each label rides its thread: the frame loop
+ * moves its mark by the same math the shaders run.
  *
  * It renders only while on screen and the tab is visible. With reduced motion it draws one still frame.
  */
@@ -53,21 +55,39 @@ onMount(() => {
   /** The canvas no longer shows the current frame: it was resized, or the still frame changed. */
   let dirty = false
   const motion = matchMedia('(prefers-reduced-motion: no-preference)')
+  /** The field's top-left on the page, where the pointer's plucks are. */
+  let origin: Point = [0, 0]
+  /** The plucks in the field's own terms (see `pluckField`), turned from the ring when it or the field changes. */
+  const plucks = new Float32Array(PLUCK.ring * FIELD_SLOT)
+  let turnedWrites = -1
+  let turnedField: Field | undefined
+  const stopListening = listen()
 
+  /** The field's plucks for this frame, while it animates; still, nothing rings. */
+  const strum = () => {
+    if (!field || !animates()) return undefined
+    if (turnedWrites !== written() || turnedField !== field) {
+      pluckField(field, ring, origin, plucks)
+      turnedWrites = written()
+      turnedField = field
+    }
+    return plucks
+  }
   /** Moves each mark to where its thread passes its label now, by the same math the shaders run. */
-  const ride = () => {
+  const ride = (rung: Float32Array | undefined) => {
     if (!field) return
     for (const [i, label] of field.labels.entries()) {
       const knot = knots[i]
       if (!knot) continue
-      const [x, y] = position(field, i, label.at, time)
+      const [x, y] = position(field, i, label.at, time, rung)
       knot.style.translate = `${x}px ${y}px`
     }
   }
   const draw = () => {
     if (!renderer || !field || !palette) return
-    renderer.draw(field, palette, time)
-    ride()
+    const rung = strum()
+    renderer.draw(field, palette, time, rung)
+    ride(rung)
     dirty = false
   }
   const animates = () => motion.matches && renderer !== undefined && renderer.kind !== '2d'
@@ -92,6 +112,7 @@ onMount(() => {
   const measure = () => {
     const rect = box.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return
+    origin = [rect.left + scrollX, rect.top + scrollY]
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
     canvas.width = Math.round(rect.width * dpr)
     canvas.height = Math.round(rect.height * dpr)
@@ -182,6 +203,7 @@ onMount(() => {
 
   return () => {
     destroyed = true
+    stopListening()
     cancelAnimationFrame(frame)
     resize.disconnect()
     document.fonts.removeEventListener('loadingdone', measure)

@@ -22,3 +22,7 @@ export function advance(now: number) {
   last = now
   return elapsed
 }
+
+/** The clock's time at `now` (ms, as events and frames stamp it), between frames: as the next frame will see it. */
+export const clockAt = (now: number) =>
+  elapsed + Math.min(Math.max((now - last) / 1000, 0), MAX_STEP)

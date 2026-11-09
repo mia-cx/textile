@@ -25,6 +25,7 @@ import {
   TEXT_FADE,
   TEXT_LIGHT,
 } from './geometry'
+import { MISS, PLUCK } from './pluck'
 
 /** A matrix given by rows as a shader's mat3 arguments, which run by columns. */
 const columns = (rows: ReadonlyArray<ReadonlyArray<number>>) =>
@@ -51,7 +52,9 @@ const OKLAB_RGB = columns(OKLAB.rgb)
  * falls off as the inverse square of distance: a tight core and a long, faint tail. `tone` adds the glare to the light
  * and maps it to the screen with AgX, which keeps hues saturated and burns only the hottest light toward white.
  *
- * Uniforms are twelve vec4s, packed by `pack` in renderer.ts:
+ * A loose thread the pointer plucked rings (see pluck.ts): `rung` displaces it along the spine's normal and lights it.
+ *
+ * Uniforms are vec4s, packed by `pack` in renderer.ts:
  *   0  width, height (CSS px), device pixel ratio, time (s)
  *   1  start.xy, control.xy
  *   2  end.xy, spread, cord
@@ -61,8 +64,11 @@ const OKLAB_RGB = columns(OKLAB.rgb)
  *   10 background rgb, exposure
  *   11 where the plait is whole, where the bundles start to gather, how many text boxes, -
  *   12–19  text boxes over the field: left, top, right, bottom
+ *   20–51  plucks, two to each, as `pluckField` in geometry.ts writes them: where the pointer's path ran against the
+ *          spine (u0, o0, u1, o1); its pull, start, span, and strength
  */
-export const UNIFORM_VEC4S = 20
+export const FIELD_PLUCKS = 20
+export const UNIFORM_VEC4S = FIELD_PLUCKS + PLUCK.ring * 2
 export const VERTICES_PER_THREAD = (SEGMENTS + 1) * 2
 /** The first bloom target's size, as a fraction of the canvas's CSS size: the same glare at every pixel ratio. */
 export const BLOOM_SCALE = 0.25
@@ -223,7 +229,120 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('TEXT_LIGHT', float(TEXT_LIGHT)),
     declare('TEXT_FADE_IN', float(TEXT_FADE[0])),
     declare('TEXT_FADE_OUT', float(TEXT_FADE[1])),
+    // How a plucked thread rings: see PLUCK in pluck.ts.
+    declare('PI', '3.141592654'),
+    declare('PLUCK_LIFE', float(PLUCK.life)),
+    declare('PLUCK_CATCH', float(PLUCK.catch)),
+    declare('PLUCK_REACH', float(PLUCK.reach)),
+    declare('PLUCK_SYMPATHY', float(PLUCK.sympathy)),
+    declare('PLUCK_SYMPATHETIC', float(PLUCK.sympatheticReach)),
+    declare('PLUCK_MISS', float(MISS)),
+    declare('PLUCK_STRETCH', float(PLUCK.stretch)),
+    declare('PLUCK_WAVE', float(PLUCK.wave)),
+    declare('PLUCK_DETUNE', float(PLUCK.detune)),
+    declare('PLUCK_PITCH_LOW', float(PLUCK.pitch[0])),
+    declare('PLUCK_PITCH_HIGH', float(PLUCK.pitch[1])),
+    declare('PLUCK_DECAY_SOFT', float(PLUCK.decay[0])),
+    declare('PLUCK_DECAY_HARD', float(PLUCK.decay[1])),
+    declare('PLUCK_EDGE', float(PLUCK.edge)),
+    declare('PLUCK_LIGHT', float(PLUCK.light)),
+    declare('PLUCK_GLOW', float(PLUCK.glow)),
+    declare('PLUCK_GLINT_WAVE', float(PLUCK.glintWave)),
+    declare('PLUCK_GLINT_SPEED', float(PLUCK.glintSpeed)),
   ].join('\n')
+
+/**
+ * `caught` and `ringing` from pluck.ts, in either language: `vec2` is its two-float vector type, and `fn` declares a
+ * function returning `type` with the given parameters, in that language's syntax.
+ */
+const pluckFunctions = (
+  vec2: string,
+  fn: (name: string, type: string, params: ReadonlyArray<string>, body: string) => string,
+  local: string,
+  mutable: string,
+) => `
+// Where a thread meets the pointer's path, from how far beside each end of the path it ran: x how far along the path it
+// crossed (the nearer end if it missed), y how firmly it was caught, 1 if it crossed, falling off fast with distance,
+// and a little for its neighbours. Mirrors caught in pluck.ts.
+${fn(
+  'caught',
+  vec2,
+  ['d0', 'd1'],
+  `
+  ${local} gap = d0 - d1;
+  ${mutable} along = 0.0;
+  ${mutable} miss = 0.0;
+  if (d0 * d1 <= 0.0) { if (abs(gap) > 1e-6) { along = clamp(d0 / gap, 0.0, 1.0); } }
+  else {
+    miss = min(abs(d0), abs(d1));
+    if (abs(d0) > abs(d1)) { along = 1.0; }
+  }
+  ${local} near = exp(-(miss * miss) / (PLUCK_REACH * PLUCK_REACH));
+  ${local} far = PLUCK_SYMPATHY * exp(-(miss * miss) / (PLUCK_SYMPATHETIC * PLUCK_SYMPATHETIC));
+  return ${vec2}(along, mix(far, 1.0, near));`,
+)}
+// How a thread rings along px along it, plucked at px along it, between anchors anchorA and anchorB, age seconds after the
+// pointer reached it, struck at strength, for a fibre strung as tightly as seed (0 to 1) says: x how far it is displaced
+// for a pull of 1 px, y the light it adds. It rings the stretch around where it was plucked, at most PLUCK_STRETCH
+// long: the pull draws it into the first three modes of a plucked string's triangle; released, each rings at its
+// multiple of the fundamental and dies faster the higher it is. Mirrors ringing in pluck.ts.
+${fn(
+  'ringing',
+  vec2,
+  ['along', 'anchorA', 'anchorB', 'at', 'age', 'strength', 'seed'],
+  `
+  ${local} low = max(anchorA, at - PLUCK_STRETCH / 2.0);
+  ${local} stretch = min(anchorB, at + PLUCK_STRETCH / 2.0) - low;
+  ${local} x = (along - low) / stretch;
+  if (age <= 0.0 || !(stretch > 0.0) || x <= 0.0 || x >= 1.0) { return ${vec2}(0.0, 0.0); }
+  ${local} p = clamp((at - low) / stretch, PLUCK_EDGE, 1.0 - PLUCK_EDGE);
+  ${local} sp = sin(PI * p);
+  ${local} cp = cos(PI * p);
+  ${local} sx = sin(PI * x);
+  ${local} cx = cos(PI * x);
+  ${local} k = 2.0 / (PI * PI * p * (1.0 - p));
+  ${local} m1 = k * sp * sx;
+  ${local} m2 = k * 2.0 * sp * cp / 4.0 * 2.0 * sx * cx;
+  ${local} m3 = k * sp * (3.0 - 4.0 * sp * sp) / 9.0 * sx * (3.0 - 4.0 * sx * sx);
+  ${local} shape = m1 + m2 + m3;
+  ${local} fade = 1.0 - smoothstep(PLUCK_LIFE * 0.6, PLUCK_LIFE, age);
+  ${mutable} shift = 0.0;
+  ${mutable} energy = 0.0;
+  if (age < PLUCK_CATCH) {
+    ${local} pulled = smoothstep(0.0, PLUCK_CATCH, age);
+    shift = shape * pulled;
+    energy = pulled;
+  } else {
+    ${local} a = age - PLUCK_CATCH;
+    ${local} pitch = clamp(PLUCK_WAVE / (2.0 * stretch), PLUCK_PITCH_LOW, PLUCK_PITCH_HIGH) * (1.0 + PLUCK_DETUNE * (2.0 * seed - 1.0));
+    ${local} q1 = cos(TAU * pitch * a);
+    ${local} q2 = 2.0 * q1 * q1 - 1.0;
+    ${local} q3 = q1 * (4.0 * q1 * q1 - 3.0);
+    ${local} e1 = exp(-a / mix(PLUCK_DECAY_SOFT, PLUCK_DECAY_HARD, strength));
+    shift = m1 * q1 * e1 + m2 * q2 * e1 * e1 + m3 * q3 * e1 * e1 * e1;
+    energy = e1;
+  }
+  ${local} away = abs(x - p) * stretch;
+  ${local} crest = 0.5 + 0.5 * cos(TAU * (away - PLUCK_GLINT_SPEED * age) / PLUCK_GLINT_WAVE);
+  ${local} crest2 = crest * crest;
+  ${local} crest4 = crest2 * crest2;
+  return ${vec2}(shift * fade, strength * energy * fade * abs(shape) * mix(PLUCK_GLOW, 1.0, crest4 * crest4));`,
+)}`
+
+const pluckWgsl = pluckFunctions(
+  'vec2f',
+  (name, type, params, body) =>
+    `fn ${name}(${params.map((p) => `${p}: f32`).join(', ')}) -> ${type} {${body}\n}`,
+  'let',
+  'var',
+)
+const pluckGlsl = pluckFunctions(
+  'vec2',
+  (name, type, params, body) =>
+    `${type} ${name}(${params.map((p) => `float ${p}`).join(', ')}) {${body}\n}`,
+  'float',
+  'float',
+)
 
 /** What every WGSL thread module and the tone pass share, for a scene of `vec4s` uniforms. */
 export const commonWgslFor = (vec4s: number) => /* wgsl */ `
@@ -342,6 +461,7 @@ fn blend(w: f32) -> vec3f {
   let chroma = mix(length(a.yz), length(b.yz), toward);
   return max(fromOklab(vec3f(m.x, m.yz * chroma / max(length(m.yz), 1e-5))), vec3f(0.0));
 }
+${pluckWgsl}
 ${agxWgsl}
 `
 
@@ -452,33 +572,78 @@ fn forming(u: f32) -> vec3f {
   return vec3f(ease(forms - CURL * (forms - gathers), whole, u), ease(gathers, whole, u), ease(forms, whole, u));
 }
 
-// Where a thread is u along it: in CSS px, how far it has gathered into its strand (0 to 1), how far the plait has
-// formed (as forming returns it), and its strand's depth in the plait.
-struct Placed { at: vec2f, braided: f32, form: vec3f, depth: f32 };
+// The funnel's half-width u along the field: the braid's radius and the current's beyond it. Mirrors funnelWidth in
+// geometry.ts.
+fn widthAt(u: f32, form: vec3f) -> f32 {
+  return U[2].w * (1.0 + SWELL * (1.0 - u)) * (1.0 + (SWING + FRAY - 1.0) * form.x) + U[2].z * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+}
 
-fn place(th: Thread, u: f32) -> Placed {
+// About how long the spine is, in px. Mirrors spineLength in geometry.ts.
+fn spineLength() -> f32 {
   let p0 = U[1].xy; let p1 = U[1].zw; let p2 = U[2].xy;
-  let spread = U[2].z; let cord = U[2].w; let t = U[0].w;
+  return (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
+}
+
+// Where a thread is u along it at time t: in CSS px; the spine's normal there and how far beside the spine the thread
+// lies along it; how far it has gathered into its strand (0 to 1), how far the plait has formed (as forming returns it),
+// and its strand's depth in the plait.
+struct Placed { at: vec2f, n: vec2f, offset: f32, braided: f32, form: vec3f, depth: f32 };
+
+fn place(th: Thread, u: f32, t: f32) -> Placed {
+  let p0 = U[1].xy; let p1 = U[1].zw; let p2 = U[2].xy;
+  let cord = U[2].w;
   let a = 1.0 - u;
   let p = a * a * p0 + 2.0 * a * u * p1 + u * u * p2;
   let tangent = 2.0 * a * (p1 - p0) + 2.0 * u * (p2 - p1);
   let n = vec2f(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
-  let spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   let radius = cord * (1.0 + SWELL * a);
   let form = forming(u);
-  let width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+  let width = widthAt(u, form);
   var held = 1.0;
   if (th.pin >= 0.0) { let d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   let sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
   let bend = th.wander.z * sin(u * th.wander.x + t * 0.12 + th.wander.y);
   let current = width * (th.lane + WAVE * held * sway + bend);
 
-  let turns = spine / (PITCH * cord * SWELL);
+  let turns = spineLength() / (PITCH * cord * SWELL);
   let twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
   let inBand = radius * band(twist, th.strand, th.fibre, u, vec3f(form.x, 1.0 + ROPE_LOOSE * (1.0 - form.y), form.z));
   let braided = ease(th.leaves, th.joins, u);
-  return Placed(p + n * mix(current, inBand, braided), braided, form, depthOf(twist));
+  let offset = mix(current, inBand, braided);
+  return Placed(p + n * offset, n, offset, braided, form, depthOf(twist));
+}
+
+// How thread th rings u along it at time t, gathered braided (0 to 1) into its strand there, from the plucks at
+// FIELD_PLUCKS: x how far it is displaced along the spine's normal, y the light it adds. Its loose stretch is anchored
+// where it enters and where it has joined its strand's rope. A pluck rings the stretch around where the thread crossed
+// the pointer's path, where it was when plucked: a point too far along from the path, or a thread too far from it
+// wherever it sways, rings nothing and places nothing. Mirrors plucked in geometry.ts.
+fn rung(th: Thread, u: f32, braided: f32, t: f32) -> vec2f {
+  let loose = 1.0 - braided;
+  if (loose <= 0.0) { return vec2f(0.0); }
+  // Along the thread in px, as ringing takes it: about the spine's length per unit along.
+  let px = spineLength();
+  let sway = WAVE + th.wander.z;
+  var sum = vec2f(0.0);
+  for (var k = 0u; k < ${PLUCK.ring}u; k++) {
+    let a = U[${FIELD_PLUCKS}u + 2u * k];
+    let b = U[${FIELD_PLUCKS}u + 2u * k + 1u];
+    if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) { continue; }
+    if (abs(u - clamp(u, min(a.x, a.z), max(a.x, a.z))) * px >= PLUCK_STRETCH / 2.0) { continue; }
+    if (max(a.x, a.z) <= th.leaves) {
+      let w0 = widthAt(a.x, forming(a.x));
+      let w1 = widthAt(a.z, forming(a.z));
+      if ((a.y > w0 * (th.lane + sway) + PLUCK_MISS && a.w > w1 * (th.lane + sway) + PLUCK_MISS)
+        || (a.y < w0 * (th.lane - sway) - PLUCK_MISS && a.w < w1 * (th.lane - sway) - PLUCK_MISS)) { continue; }
+    }
+    let hit = caught(place(th, a.x, b.y).offset - a.y, place(th, a.z, b.y).offset - a.w);
+    let contact = mix(a.x, a.z, hit.x);
+    let grip = hit.y * (1.0 - ease(th.leaves, th.joins, contact));
+    let ring = ringing(u * px, 0.0, th.joins * px, contact * px, t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
+    sum += vec2f(ring.x * b.x, ring.y) * grip;
+  }
+  return sum * loose;
 }
 
 @vertex
@@ -488,13 +653,17 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   let u = along(s / SEGMENTS);
   let side = select(-1.0, 1.0, (vi & 1u) == 1u);
   let th = threadOf(i);
-  let here = place(th, u);
-  // The direction toward the next point, or from the one before at the end.
+  let t = U[0].w;
+  let here = place(th, u, t);
+  // The direction toward the next point, or from the one before at the end. A ringing thread bends too gently for its
+  // own bend to turn the strip.
   let last = s >= SEGMENTS;
-  let other = place(th, along(select(s + 1.0, s - 1.0, last) / SEGMENTS)).at;
+  let other = place(th, along(select(s + 1.0, s - 1.0, last) / SEGMENTS), t).at;
   let dir = select(other - here.at, here.at - other, last);
   let tangent = dir / max(length(dir), 1e-4);
-  let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
+  let struck = rung(th, u, here.braided, t);
+  let at = here.at + here.n * struck.x;
+  let pos = at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
   // How far the band's look has taken over the thread: gathered into its strand, where the look has faded in.
   let knit = here.braided * here.form.z;
@@ -503,7 +672,6 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   // a cycle from its neighbours'. Each strand breathes, a slow swell of light and warmth travelling along it.
   var pick = hash(i + 4.4);
   if (th.lead > 1.0 || hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
-  let t = U[0].w;
   let breathing = breath(th.strand, u, t);
   let hue = hueOf(u, eased(U[3].x, U[11].x, u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   let colour = blend(cool(warmth(hue), here.depth, knit));
@@ -517,7 +685,8 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   var out: Out;
   let res = U[0].xy;
   out.clip = vec4f(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
-  out.colour = colour * shade * U[3].z * behindText(here.at);
+  // A ringing thread burns brighter while it rings.
+  out.colour = colour * shade * (1.0 + PLUCK_LIGHT * min(struck.y, 1.0)) * U[3].z * behindText(at);
   out.across = side;
   out.pulse = vec2f(
     u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
@@ -733,6 +902,7 @@ vec3 blend(float w) {
   float chroma = mix(length(a.yz), length(b.yz), toward);
   return max(fromOklab(vec3(m.x, m.yz * chroma / max(length(m.yz), 1e-5))), vec3(0.0));
 }
+${pluckGlsl}
 ${agxGlsl}
 `
 
@@ -789,31 +959,66 @@ vec3 forming(float u) {
   return vec3(ease(forms - CURL * (forms - gathers), whole, u), ease(gathers, whole, u), ease(forms, whole, u));
 }
 
-struct Placed { vec2 at; float braided; vec3 form; float depth; };
+float widthAt(float u, vec3 form) {
+  return U[2].w * (1.0 + SWELL * (1.0 - u)) * (1.0 + (SWING + FRAY - 1.0) * form.x) + U[2].z * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+}
 
-Placed place(Thread th, float u) {
+float spineLength() {
   vec2 p0 = U[1].xy; vec2 p1 = U[1].zw; vec2 p2 = U[2].xy;
-  float spread = U[2].z; float cord = U[2].w; float t = U[0].w;
+  return (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
+}
+
+struct Placed { vec2 at; vec2 n; float offset; float braided; vec3 form; float depth; };
+
+Placed place(Thread th, float u, float t) {
+  vec2 p0 = U[1].xy; vec2 p1 = U[1].zw; vec2 p2 = U[2].xy;
+  float cord = U[2].w;
   float a = 1.0 - u;
   vec2 p = a * a * p0 + 2.0 * a * u * p1 + u * u * p2;
   vec2 tangent = 2.0 * a * (p1 - p0) + 2.0 * u * (p2 - p1);
   vec2 n = vec2(-tangent.y, tangent.x) / max(length(tangent), 1.0);
 
-  float spine = (2.0 * distance(p0, p2) + distance(p0, p1) + distance(p1, p2)) / 3.0;
   float radius = cord * (1.0 + SWELL * a);
   vec3 form = forming(u);
-  float width = radius * (1.0 + (SWING + FRAY - 1.0) * form.x) + spread * pow(max(1.0 - u / U[11].x, 0.0), TAPER);
+  float width = widthAt(u, form);
   float held = 1.0;
   if (th.pin >= 0.0) { float d = (u - th.pin) / 0.09; held = 1.0 - (1.0 - PINNED) * exp(-d * d); }
   float sway = sin(u * 4.5 + t * 0.35 + th.phase) * 0.6 + sin(u * 9.0 - t * 0.23 + th.phase * 1.7) * 0.4;
   float bend = th.wander.z * sin(u * th.wander.x + t * 0.12 + th.wander.y);
   float current = width * (th.lane + WAVE * held * sway + bend);
 
-  float turns = spine / (PITCH * cord * SWELL);
+  float turns = spineLength() / (PITCH * cord * SWELL);
   float twist = turns * TAU * log((1.0 + SWELL) / (1.0 + SWELL * a)) - t * SPIN + th.strand * TAU / 3.0;
   float inBand = radius * band(twist, th.strand, th.fibre, u, vec3(form.x, 1.0 + ROPE_LOOSE * (1.0 - form.y), form.z));
   float braided = ease(th.leaves, th.joins, u);
-  return Placed(p + n * mix(current, inBand, braided), braided, form, depthOf(twist));
+  float offset = mix(current, inBand, braided);
+  return Placed(p + n * offset, n, offset, braided, form, depthOf(twist));
+}
+
+vec2 rung(Thread th, float u, float braided, float t) {
+  float loose = 1.0 - braided;
+  if (loose <= 0.0) return vec2(0.0);
+  float px = spineLength();
+  float sway = WAVE + th.wander.z;
+  vec2 sum = vec2(0.0);
+  for (int k = 0; k < ${PLUCK.ring}; k++) {
+    vec4 a = U[${FIELD_PLUCKS} + 2 * k];
+    vec4 b = U[${FIELD_PLUCKS} + 2 * k + 1];
+    if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) continue;
+    if (abs(u - clamp(u, min(a.x, a.z), max(a.x, a.z))) * px >= PLUCK_STRETCH / 2.0) continue;
+    if (max(a.x, a.z) <= th.leaves) {
+      float w0 = widthAt(a.x, forming(a.x));
+      float w1 = widthAt(a.z, forming(a.z));
+      if ((a.y > w0 * (th.lane + sway) + PLUCK_MISS && a.w > w1 * (th.lane + sway) + PLUCK_MISS)
+        || (a.y < w0 * (th.lane - sway) - PLUCK_MISS && a.w < w1 * (th.lane - sway) - PLUCK_MISS)) continue;
+    }
+    vec2 hit = caught(place(th, a.x, b.y).offset - a.y, place(th, a.z, b.y).offset - a.w);
+    float contact = mix(a.x, a.z, hit.x);
+    float grip = hit.y * (1.0 - ease(th.leaves, th.joins, contact));
+    vec2 ring = ringing(u * px, 0.0, th.joins * px, contact * px, t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
+    sum += vec2(ring.x * b.x, ring.y) * grip;
+  }
+  return sum * loose;
 }
 
 void main() {
@@ -822,17 +1027,19 @@ void main() {
   float u = along(s / SEGMENTS);
   float side = (gl_VertexID % 2) == 1 ? 1.0 : -1.0;
   Thread th = threadOf(i);
-  Placed here = place(th, u);
+  float t = U[0].w;
+  Placed here = place(th, u, t);
   // The direction toward the next point, or from the one before at the end.
   bool last = s >= SEGMENTS;
-  vec2 other = place(th, along((last ? s - 1.0 : s + 1.0) / SEGMENTS)).at;
+  vec2 other = place(th, along((last ? s - 1.0 : s + 1.0) / SEGMENTS), t).at;
   vec2 dir = last ? here.at - other : other - here.at;
   vec2 tangent = dir / max(length(dir), 1e-4);
-  vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
+  vec2 struck = rung(th, u, here.braided, t);
+  vec2 at = here.at + here.n * struck.x;
+  vec2 pos = at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH};
 
   float knit = here.braided * here.form.z;
   float pick = th.lead > 1.0 || hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
-  float t = U[0].w;
   float breathing = breath(th.strand, u, t);
   float hue = hueOf(u, eased(U[3].x, U[11].x, u), mix(pick, th.strand / 3.0, here.braided), t, breathing);
   vec3 colour = blend(cool(warmth(hue), here.depth, knit));
@@ -841,7 +1048,7 @@ void main() {
 
   vec2 res = U[0].xy;
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
-  vColour = colour * shade * U[3].z * behindText(here.at);
+  vColour = colour * shade * (1.0 + PLUCK_LIGHT * min(struck.y, 1.0)) * U[3].z * behindText(at);
   vAcross = side;
   vPulse = vec2(
     u * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * (1.0 - here.braided),
@@ -983,8 +1190,12 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   8–9  colours: violet, amber
  *   10 background rgb, exposure
  *   11–22  lines of words near the screen: left, top, right, bottom
+ *   23–70  plucks, three to each, as `pluckCord` in cord.ts writes them: where the pointer's path ran against the cord
+ *          (k0, o0, k1, o1); its pull, start, span, and strength; the loose stretch it rings (from, to along the
+ *          route), and how far along the route each end of the path lies
  */
-export const CORD_VEC4S = 23
+export const CORD_PLUCKS = 23
+export const CORD_VEC4S = CORD_PLUCKS + PLUCK.ring * 3
 
 /** The cord's own constants, in either language's syntax. */
 const cordConstants = (declare: (name: string, value: string) => string) =>
@@ -1079,12 +1290,16 @@ fn swayAt(y: f32, t: f32) -> f32 {
 
 // Where a thread is at sample k: on the page, how loose (0 braided to 1), how far its strands have drifted apart from
 // the plait (0 to 1), its strand's depth in the plait, how far along its path, how bright the path is there, its hue
-// there (gradient cycles, as weave adds them up), and whether the path carries the lead. Mirrors place in cord.ts.
-struct Placed { at: vec2f, loose: f32, apart: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32, route: f32 };
+// there (gradient cycles, as weave adds them up), whether the path carries the lead, how far along the route it is,
+// the axis it spreads across, and how far along that axis it lies from the path's sample. Mirrors place in cord.ts.
+struct Placed {
+  at: vec2f, loose: f32, apart: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32, route: f32,
+  axis: vec2f, beside: f32,
+};
 
-fn place(th: Thread, k: f32) -> Placed {
+fn place(th: Thread, k: f32, t: f32) -> Placed {
   let a = texel(k, 0.0); let b = texel(k, 1.0); let c = texel(k, 2.0);
-  let t = U[0].w; let radius = U[3].x;
+  let radius = U[3].x;
   let loose = b.y;
   // The cord comes apart in stages: the plait loosens, its strands drift apart as ropes, the ropes fray.
   let loosen = ease(0.0, UNBRAID_LOOSEN, loose);
@@ -1109,7 +1324,37 @@ fn place(th: Thread, k: f32) -> Placed {
   let rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray * d.z) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) * d.z + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   let drift = swayAt(a.y, t) * a.w;
-  return Placed(a.xy + vec2f(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x);
+  let offset = mix(plait, rope, apart);
+  return Placed(
+    a.xy + vec2f(drift, 0.0) + c.xy * offset, loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x,
+    c.xy, offset + drift * c.x,
+  );
+}
+
+// How a cord thread rings where it is placed (here) at time t, from the plucks at CORD_PLUCKS: x how far it is
+// displaced along the cord's axis, y the light it adds. A section's loose stretch, from gap to gap, is anchored where
+// the strands meet in the plait either side; a pluck rings the stretch around where a thread crossed the pointer's path,
+// where it was when plucked, as far as its strands had drifted apart there, and the thread rings only as far as its own
+// strands have drifted apart, so the plait never rings. A point too far along from the path rings nothing and places
+// nothing. Only the cord's own threads ring; the strands peeling off it hold still.
+fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
+  if (th.path > 0.5 || here.apart <= 0.0) { return vec2f(0.0); }
+  var sum = vec2f(0.0);
+  for (var k = 0u; k < ${PLUCK.ring}u; k++) {
+    let a = U[${CORD_PLUCKS}u + 3u * k];
+    let b = U[${CORD_PLUCKS}u + 3u * k + 1u];
+    let c = U[${CORD_PLUCKS}u + 3u * k + 2u];
+    if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) { continue; }
+    if (here.s <= c.x || here.s >= c.y) { continue; }
+    if (abs(here.s - clamp(here.s, min(c.z, c.w), max(c.z, c.w))) >= PLUCK_STRETCH / 2.0) { continue; }
+    let h0 = place(th, a.x, b.y);
+    let h1 = place(th, a.z, b.y);
+    let hit = caught(h0.beside - a.y, h1.beside - a.w);
+    let grip = hit.y * mix(h0.apart, h1.apart, hit.x);
+    let ring = ringing(here.s, c.x, c.y, mix(c.z, c.w, hit.x), t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
+    sum += vec2f(ring.x * b.x, ring.y) * grip;
+  }
+  return sum * here.apart;
 }
 
 // How much light shows at p: less behind a section's prose, fading back in over COPY_FADE px around it, so neither
@@ -1133,12 +1378,15 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   // Past the run's end, vertices repeat its last pair, so their triangles have no area.
   let s = min(f32(vi / 2u), max(count - 1.0, 0.0));
   let side = select(-1.0, 1.0, (vi & 1u) == 1u);
-  let here = place(th, sampleOf(walk, s));
+  let t = U[0].w;
+  let here = place(th, sampleOf(walk, s), t);
   let last = s >= count - 1.0;
-  let other = place(th, sampleOf(walk, select(s + 1.0, s - 1.0, last))).at;
+  let other = place(th, sampleOf(walk, select(s + 1.0, s - 1.0, last)), t).at;
   let dir = select(other - here.at, here.at - other, last);
   let tangent = dir / max(length(dir), 1e-4);
-  let pos = here.at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
+  let struck = rung(th, here, t);
+  let at = here.at + here.axis * struck.x;
+  let pos = at + vec2f(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
 
   // The braid's depth shading, its warm strands leaning violet behind, its glints, and its pulses in step hold while
   // the plait loosens and fade as its strands drift apart, so the loose ropes carry no rows of the braid's crossings.
@@ -1147,7 +1395,6 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   // cord, faster where it is braided, carrying on the hero's gradient and breath from the seam.
   var pick = hash(i + 4.4);
   if (th.lead > 0.0 || hash(i + 9.7) < COHERENCE) { pick = fract(th.ribbon * 0.618034 + HUE); }
-  let t = U[0].w;
   let run = here.s / DRIFT_SPAN;
   let breathing = breath(th.strand, run + U[2].w, t);
   // Loose, a rope's fibres run a little apart in the cycle across it, so it shows both colours side by side.
@@ -1166,7 +1413,8 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
   var out: Out;
   let res = U[0].xy;
   out.clip = vec4f(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
-  out.colour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
+  // A ringing strand burns brighter while it rings.
+  out.colour = colour * shade * (1.0 + PLUCK_LIGHT * min(struck.y, 1.0)) * here.light * tip * behindCopy(at) * U[1].w;
   out.across = side;
   out.pulse = vec2f(
     run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * here.apart,
@@ -1236,11 +1484,14 @@ float swayAt(float y, float t) {
   return SWAY_REACH * (sin(TAU * t / SWAY_PERIOD_A + y * SWAY_WAVE_A) * 0.6 + sin(TAU * t / SWAY_PERIOD_B + y * SWAY_WAVE_B + 2.0) * 0.4);
 }
 
-struct Placed { vec2 at; float loose; float apart; float depth; float s; float light; float hue; float leads; float route; };
+struct Placed {
+  vec2 at; float loose; float apart; float depth; float s; float light; float hue; float leads; float route;
+  vec2 axis; float beside;
+};
 
-Placed place(Thread th, float k) {
+Placed place(Thread th, float k, float t) {
   vec4 a = texel(k, 0.0); vec4 b = texel(k, 1.0); vec4 c = texel(k, 2.0);
-  float t = U[0].w; float radius = U[3].x;
+  float radius = U[3].x;
   float loose = b.y;
   float loosen = ease(0.0, UNBRAID_LOOSEN, loose);
   float apart = ease(UNBRAID_APART_FROM, UNBRAID_APART_TO, loose);
@@ -1258,7 +1509,31 @@ Placed place(Thread th, float k) {
   float rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray * d.z) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) * d.z + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   float drift = swayAt(a.y, t) * a.w;
-  return Placed(a.xy + vec2(drift, 0.0) + c.xy * mix(plait, rope, apart), loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x);
+  float offset = mix(plait, rope, apart);
+  return Placed(
+    a.xy + vec2(drift, 0.0) + c.xy * offset, loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x,
+    c.xy, offset + drift * c.x
+  );
+}
+
+vec2 rung(Thread th, Placed here, float t) {
+  if (th.path > 0.5 || here.apart <= 0.0) return vec2(0.0);
+  vec2 sum = vec2(0.0);
+  for (int k = 0; k < ${PLUCK.ring}; k++) {
+    vec4 a = U[${CORD_PLUCKS} + 3 * k];
+    vec4 b = U[${CORD_PLUCKS} + 3 * k + 1];
+    vec4 c = U[${CORD_PLUCKS} + 3 * k + 2];
+    if (b.x == 0.0 || t < b.y || t > b.y + b.z + PLUCK_LIFE) continue;
+    if (here.s <= c.x || here.s >= c.y) continue;
+    if (abs(here.s - clamp(here.s, min(c.z, c.w), max(c.z, c.w))) >= PLUCK_STRETCH / 2.0) continue;
+    Placed h0 = place(th, a.x, b.y);
+    Placed h1 = place(th, a.z, b.y);
+    vec2 hit = caught(h0.beside - a.y, h1.beside - a.w);
+    float grip = hit.y * mix(h0.apart, h1.apart, hit.x);
+    vec2 ring = ringing(here.s, c.x, c.y, mix(c.z, c.w, hit.x), t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
+    sum += vec2(ring.x * b.x, ring.y) * grip;
+  }
+  return sum * here.apart;
 }
 
 float behindCopy(vec2 p) {
@@ -1279,16 +1554,18 @@ void main() {
   float count = walk.y + walk.w;
   float s = min(float(gl_VertexID / 2), max(count - 1.0, 0.0));
   float side = (gl_VertexID % 2) == 1 ? 1.0 : -1.0;
-  Placed here = place(th, sampleOf(walk, s));
+  float t = U[0].w;
+  Placed here = place(th, sampleOf(walk, s), t);
   bool last = s >= count - 1.0;
-  vec2 other = place(th, sampleOf(walk, last ? s - 1.0 : s + 1.0)).at;
+  vec2 other = place(th, sampleOf(walk, last ? s - 1.0 : s + 1.0), t).at;
   vec2 dir = last ? here.at - other : other - here.at;
   vec2 tangent = dir / max(length(dir), 1e-4);
-  vec2 pos = here.at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
+  vec2 struck = rung(th, here, t);
+  vec2 at = here.at + here.axis * struck.x;
+  vec2 pos = at + vec2(-tangent.y, tangent.x) * side * ${HALF_WIDTH} - U[1].xy;
 
   float knit = 1.0 - here.apart;
   float pick = th.lead > 0.0 || hash(i + 9.7) < COHERENCE ? fract(th.ribbon * 0.618034 + HUE) : hash(i + 4.4);
-  float t = U[0].w;
   float run = here.s / DRIFT_SPAN;
   float breathing = breath(th.strand, run + U[2].w, t);
   float hue = hueOf(0.0, 0.0, th.strand / 3.0 + (LOOSE_HUE * (pick - 0.5) + ROPE_HUE * th.fibre.x) * here.loose, t, breathing) + here.hue + U[2].y;
@@ -1301,7 +1578,7 @@ void main() {
 
   vec2 res = U[0].xy;
   gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
-  vColour = colour * shade * here.light * tip * behindCopy(here.at) * U[1].w;
+  vColour = colour * shade * (1.0 + PLUCK_LIGHT * min(struck.y, 1.0)) * here.light * tip * behindCopy(at) * U[1].w;
   vAcross = side;
   vPulse = vec2(run * PULSES - t * PULSE_SPEED * PULSES + hash(i + 6.6) * here.apart, mix(BRAID_PULSE_LIGHT, PULSE_LIGHT, here.loose));
   vGlint = vec2(run * GLINTS - t * GLINT_SPEED * GLINTS + hash(i + 7.7), knit * glintLight(here.depth, th.fibre) * spark(shade));

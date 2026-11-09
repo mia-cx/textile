@@ -4,10 +4,12 @@ import { advance, STILL_TIME } from './clock'
 import {
   type Box,
   CORD_RADIUS,
+  CORD_SLOT,
   type Cord,
   carry,
   FADE,
   NO_SEAM,
+  pluckCord,
   reveal,
   type Stop,
   swayAt,
@@ -16,6 +18,7 @@ import {
 } from './cord'
 import { type CordRenderer, cordStill, cordWebgl2, cordWebgpu } from './cordRenderer'
 import type { Seam } from './geometry'
+import { listen, PLUCK, ring, written } from './pluck'
 import { hex, type Palette } from './renderer'
 
 /**
@@ -99,8 +102,14 @@ onMount(() => {
   let renderer: CordRenderer | undefined
   let cord: Cord | undefined
   let palette: Palette | undefined
-  /** The weave's top on the page, so scrolling needs no layout to find what shows. */
+  /** The weave's top on the page, so scrolling needs no layout to find what shows; and its left, for the plucks. */
   let offset = 0
+  let left = 0
+  /** The plucks in the cord's own terms (see `pluckCord`), turned from the ring when it or the cord changes. */
+  const plucks = new Float32Array(PLUCK.ring * CORD_SLOT)
+  let turnedWrites = -1
+  let turnedCord: Cord | undefined
+  const stopListening = listen()
   /** Where the cord's tip rests for each section, and at what scroll: see `reveal`. */
   let plateaus: Array<{ scroll: number; tip: number }> = []
   let visible = false
@@ -148,13 +157,23 @@ onMount(() => {
   }
   /** The part of the cord the screen shows now, with the canvas's margin, and how far along its route it is drawn. */
   const view = () => ({ left: 0, top: scrollY - offset - innerHeight * MARGIN, tip })
+  /** The cord's plucks for this frame, while it animates; still, nothing rings. */
+  const strum = (laid: Cord) => {
+    if (!animates()) return undefined
+    if (turnedWrites !== written() || turnedCord !== laid) {
+      pluckCord(laid, ring, [left, offset], plucks)
+      turnedWrites = written()
+      turnedCord = laid
+    }
+    return plucks
+  }
   const draw = () => {
     if (!renderer || !cord || !palette) return
     if (!loaded) renderer.load(cord)
     loaded = true
     const seen = view()
     canvas.style.translate = `0 ${seen.top}px`
-    renderer.draw(palette, time, seen)
+    renderer.draw(palette, time, seen, strum(cord))
     // Each knot rides the cord's sway where it crosses its gap, by the same math the shaders run.
     for (const [i, knot] of cord.knots.entries()) {
       const mark = marks[i]
@@ -235,6 +254,7 @@ onMount(() => {
     }
     const origin = box.getBoundingClientRect()
     offset = origin.top + scrollY
+    left = origin.left + scrollX
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
     const height = Math.ceil(innerHeight * (1 + 2 * MARGIN))
     canvas.style.height = `${height}px`
@@ -449,6 +469,7 @@ onMount(() => {
 
   return () => {
     destroyed = true
+    stopListening()
     remeasure = undefined
     cancelAnimationFrame(frame)
     resize.disconnect()

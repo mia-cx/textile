@@ -16,7 +16,7 @@ import {
 import { blend, hash, SHAPE } from './geometry'
 import { type Painter, type Scene, webgl2Painter, webgpuPainter } from './gpu'
 import { EXPOSURE, type Palette, type RGB } from './renderer'
-import { CORD_VEC4S, cordVertexGlsl, cordWgsl } from './shaders'
+import { CORD_PLUCKS, CORD_VEC4S, cordVertexGlsl, cordWgsl } from './shaders'
 
 /** The part of the page a cord canvas shows: its top-left, in the weave's pixels, and how far along its route the cord's tip is. */
 export interface View {
@@ -25,11 +25,14 @@ export interface View {
   readonly tip: number
 }
 
-/** A cord drawn on one canvas over the page; `load` gives it the cord, `draw` a frame of the part `view` shows. */
+/**
+ * A cord drawn on one canvas over the page; `load` gives it the cord, `draw` a frame of the part `view` shows, its loose
+ * strands ringing as `plucks` says (see `pluckCord`).
+ */
 export interface CordRenderer {
   readonly kind: 'webgpu' | 'webgl2' | '2d'
   load(cord: Cord): void
-  draw(palette: Palette, time: number, view: View): void
+  draw(palette: Palette, time: number, view: View, plucks?: Float32Array): void
   /** Clears the canvas, as when the cord no longer shows where it is. */
   clear(): void
   destroy(): void
@@ -59,7 +62,7 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       cord = next
       painter.upload(next.data, ROW * TEXELS, next.rows)
     },
-    draw(palette, time, view) {
+    draw(palette, time, view, plucks) {
       if (!cord) return
       const dpr = canvas.width / Math.max(canvas.clientWidth, 1)
       const width = canvas.width / dpr
@@ -81,6 +84,7 @@ const cordOn = (canvas: HTMLCanvasElement, painter: Painter): CordRenderer => {
       uniforms.set([...palette.background, EXPOSURE], 40)
       for (const [r, box] of copy.entries())
         uniforms.set([box.left, box.top, box.right, box.bottom], 44 + r * 4)
+      if (plucks) uniforms.set(plucks, CORD_PLUCKS * 4)
       const longest = Math.max(
         shown.count + Math.max(0, ...owned.map((span) => span.count)),
         ...peels.map((peel) => peel.count),

@@ -14,6 +14,7 @@ import {
   strandOf,
   warmthAt,
 } from './geometry'
+import { PLUCK, SLOT } from './pluck'
 
 /**
  * The cord that leaves the hero's window and carries the reader down the page: a braid that gathers in the gap above
@@ -166,6 +167,11 @@ export interface Cord {
   readonly seam: Seam
   /** How far up and down the page anything of the cord reaches, its braid and its peels included. */
   readonly extent: { readonly top: number; readonly bottom: number }
+  /**
+   * The cord's loose stretches, the strings a pluck rings (see `pluckCord`): from one gap, where it is braided, to the
+   * next, along its route; where it ends in a demo, on to the end of its strands' own paths.
+   */
+  readonly strings: ReadonlyArray<readonly [from: number, to: number]>
 }
 
 /**
@@ -677,6 +683,107 @@ export function weave(
       top: Math.min(...all.map(({ path }) => Math.min(...path.map((p) => p.y)))) - reach,
       bottom: Math.max(...all.map(({ path }) => Math.max(...path.map((p) => p.y)))) + reach,
     },
+    strings: stringsOf(cord, own),
+  }
+}
+
+/**
+ * The cord's loose stretches along its route, from its samples: each run whose strands have drifted apart is a string,
+ * anchored where they meet in the plait either side; one that runs into a demo goes on to the end of its strands' `own`
+ * paths.
+ */
+function stringsOf(cord: ReadonlyArray<Sample>, own: ReadonlyArray<ReadonlyArray<Sample>>) {
+  const parted = (p: Sample | undefined) => p !== undefined && stages(p.open).apart > 0
+  const strings: Array<[number, number]> = []
+  for (const [k, p] of cord.entries()) {
+    if (!parted(p)) continue
+    const previous = cord[k - 1]
+    if (!parted(previous)) strings.push([previous?.s ?? p.s, p.s])
+    const string = strings.at(-1)
+    if (string) string[1] = cord[k + 1]?.s ?? p.s
+  }
+  const runsOn = strings.at(-1)
+  if (runsOn && own.length > 0 && parted(cord.at(-1)))
+    runsOn[1] = Math.max(runsOn[1], ...own.map((path) => path.at(-1)?.s ?? 0))
+  return strings
+}
+
+/** Floats per pluck in the cord's ring, as the shaders read it: see `pluckCord`. */
+export const CORD_SLOT = 12
+
+/**
+ * The sample on the cord whose axis passes through `x`, `y` (the weave's pixels), where a strand there lies: the foot of
+ * the perpendicular from it to the cord's course, found from the sample at its height. And how far along that axis the
+ * point lies from the sample, as `place` measures a strand's.
+ */
+function footOn(cord: Cord, x: number, y: number) {
+  const d = cord.data
+  const count = cord.heights.length
+  let lo = 0
+  let hi = count - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if ((cord.heights[mid] ?? 0) < y) lo = mid + 1
+    else hi = mid
+  }
+  let k = lo
+  // Step along the course by how far the point lies along the sample's tangent, (-axis.y, axis.x), in samples.
+  const s = (n: number) => d[n * TEXELS * 4 + 4] ?? 0
+  for (let step = 0; step < 4; step++) {
+    const o = k * TEXELS * 4
+    const along = -(x - (d[o] ?? 0)) * (d[o + 9] ?? 0) + (y - (d[o + 1] ?? 0)) * (d[o + 8] ?? 0)
+    const before = Math.max(k - 1, 0)
+    const after = Math.min(k + 1, count - 1)
+    const spacing = (s(after) - s(before)) / Math.max(after - before, 1)
+    const move = Math.round(along / Math.max(spacing, 1e-3))
+    if (move === 0) break
+    k = Math.min(count - 1, Math.max(0, k + move))
+  }
+  const o = k * TEXELS * 4
+  return {
+    k,
+    beside: (x - (d[o] ?? 0)) * (d[o + 8] ?? 0) + (y - (d[o + 1] ?? 0)) * (d[o + 9] ?? 0),
+    s: d[o + 4] ?? 0,
+    ax: d[o + 8] ?? 0,
+    ay: d[o + 9] ?? 0,
+  }
+}
+
+/**
+ * Turns the pointer's `ring` (see pluck.ts) into the cord's, `CORD_SLOT` floats a pluck, for the shaders: its path's
+ * ends against the cord (k0, o0, k1, o1: the sample whose axis each lies on, and how far along it); its pull across the
+ * strands, signed along the axis and less as the path runs along them; its start, span, and strength as the ring has
+ * them; the loose stretch it rings, from and to along the route; and how far along the route each end of the path lies.
+ * `origin` is the weave's top-left on the page. An empty slot, or a pluck where the cord is braided, gets no pull.
+ */
+export function pluckCord(cord: Cord, ring: Float32Array, origin: Point, out: Float32Array) {
+  for (let k = 0; k < PLUCK.ring; k++) {
+    const o = k * CORD_SLOT
+    const r = k * SLOT
+    out[o + 4] = 0
+    if ((ring[r + 4] ?? 0) === 0) continue
+    const x0 = (ring[r] ?? 0) - origin[0]
+    const y0 = (ring[r + 1] ?? 0) - origin[1]
+    const x1 = (ring[r + 2] ?? 0) - origin[0]
+    const y1 = (ring[r + 3] ?? 0) - origin[1]
+    const a = footOn(cord, x0, y0)
+    const b = footOn(cord, x1, y1)
+    const s = (a.s + b.s) / 2
+    const string = cord.strings.find(([from, to]) => s > from && s < to)
+    if (!string) continue
+    const across = ((x1 - x0) * (a.ax + b.ax) + (y1 - y0) * (a.ay + b.ay)) / 2
+    out[o] = a.k
+    out[o + 1] = a.beside
+    out[o + 2] = b.k
+    out[o + 3] = b.beside
+    out[o + 4] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
+    out[o + 5] = ring[r + 5] ?? 0
+    out[o + 6] = ring[r + 6] ?? 0
+    out[o + 7] = ring[r + 7] ?? 0
+    out[o + 8] = string[0]
+    out[o + 9] = string[1]
+    out[o + 10] = a.s
+    out[o + 11] = b.s
   }
 }
 
