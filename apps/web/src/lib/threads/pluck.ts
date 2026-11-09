@@ -83,6 +83,12 @@ export const PLUCK = {
    */
   still: 0.05,
   leap: 64,
+  /**
+   * The slowest a moving pointer reports, in seconds between moves: a path that starts afresh after a gap no longer than
+   * this learns the gap as the pointer's pace, so a pointer reporting that slowly, each move further than `leap`, still
+   * reads as one continuous sweep.
+   */
+  cadence: 0.15,
 } as const
 
 /** Floats per slot of the ring: where the path ran (x0, y0, x1, y1, page px), its pull, start, span, and strength. */
@@ -198,8 +204,12 @@ const move = (event: PointerEvent) => {
       path.x0 = path.x1
       path.y0 = path.y1
       path.t0 = at - Math.min(gap, path.interval)
-    } else begin(x, y, at)
-  } else path.interval = Math.min(Math.max(gap, 4), PLUCK.still * 1000)
+    } else {
+      // Far off, but soon: a pointer reporting slowly, whose pace the next moves keep to.
+      if (gap <= PLUCK.cadence * 1000) path.interval = gap
+      begin(x, y, at)
+    }
+  } else path.interval = Math.min(Math.max(gap, 4), PLUCK.cadence * 1000)
   path.x1 = x
   path.y1 = y
   path.t1 = at
