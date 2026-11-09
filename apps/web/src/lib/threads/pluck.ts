@@ -207,21 +207,32 @@ const move = (event: PointerEvent) => {
   stopped = setTimeout(stop, PLUCK.segment * 1000)
 }
 
+/**
+ * The page scrolled under the pointer: the path so far plucks, and where the pointer rested is forgotten, since the
+ * page has moved beneath it without it moving, and joining across that would pluck along a path it never swept.
+ */
+const scrolled = () => {
+  clearTimeout(stopped)
+  leave(performance.now())
+}
+
 let listeners = 0
 
 /**
  * Starts listening for plucks, once for every field that reads them; the returned function stops, and the last to stop
- * removes the listener. With reduced motion nothing is plucked.
+ * removes the listeners. With reduced motion nothing is plucked.
  */
 export function listen() {
   if (listeners++ === 0) {
     motion = matchMedia('(prefers-reduced-motion: no-preference)')
     drop()
     addEventListener('pointermove', move, { passive: true })
+    addEventListener('scroll', scrolled, { passive: true })
   }
   return () => {
     if (--listeners > 0) return
     removeEventListener('pointermove', move)
+    removeEventListener('scroll', scrolled)
     clearTimeout(stopped)
   }
 }

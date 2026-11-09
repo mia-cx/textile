@@ -248,6 +248,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PLUCK_DECAY_HARD', float(PLUCK.decay[1])),
     declare('PLUCK_EDGE', float(PLUCK.edge)),
     declare('PLUCK_PULL', float(PLUCK.pull)),
+    declare('PLUCK_SPEED', float(PLUCK.speed)),
     declare('PLUCK_MOST', float(PLUCK.most)),
     declare('PLUCK_LIGHT', float(PLUCK.light)),
     declare('PLUCK_GLOW', float(PLUCK.glow)),
@@ -1208,9 +1209,9 @@ export const toneOverFragmentGlsl = toneGlsl(true)
  *   10 background rgb, exposure
  *   11–22  lines of words near the screen: left, top, right, bottom
  *   23–26  the cord's loose stretches, two to each: from, to along the route (see `strings` in cord.ts)
- *   27…    plucks, four to each of the ring's, as `pluckCord` in cord.ts writes them: how long its path is (px), its
- *          start, span, and strength, then for each strand where the pointer's path ran against the path it walks (k0,
- *          o0, k1, o1), whose offsets give that strand's pull
+ *   27…    plucks, four to each of the ring's, as `pluckCord` in cord.ts writes them: the pointer's path (dx, dy, px),
+ *          its start and span, then for each strand where it ran against the path that strand walks (k0, o0, k1, o1);
+ *          its strength comes from its speed, and each strand's pull from the path across that strand's own axes
  */
 export const CORD_STRINGS = 23
 export const CORD_PLUCKS = CORD_STRINGS + MAX_STRINGS / 2
@@ -1375,19 +1376,22 @@ fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
   for (var k = 0u; k < ${PLUCK.ring}u; k++) {
     let a = U[${CORD_PLUCKS}u + 4u * k];
     let ends = U[${CORD_PLUCKS}u + 4u * k + 1u + u32(th.strand)];
-    if (a.x == 0.0 || t < a.y || t > a.y + a.z + PLUCK_LIFE || ends.x < 0.0) { continue; }
+    if (a.w == 0.0 || t < a.z || t > a.z + a.w + PLUCK_LIFE || ends.x < 0.0) { continue; }
     let stretch = stretchOf(ends.x, ends.z);
     if (here.s <= stretch.x || here.s >= stretch.y) { continue; }
     let s0 = texel(ends.x, 1.0).x;
     let s1 = texel(ends.z, 1.0).x;
     if (abs(here.s - clamp(here.s, min(s0, s1), max(s0, s1))) >= PLUCK_STRETCH / 2.0) { continue; }
-    let h0 = place(th, ends.x, a.y);
-    let h1 = place(th, ends.z, a.y);
+    let h0 = place(th, ends.x, a.z);
+    let h1 = place(th, ends.z, a.z);
     let hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     let grip = hit.y * mix(h0.apart, h1.apart, hit.x);
-    let ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.y - hit.x * a.z, a.w, th.fibre.z / TAU);
-    let pull = PLUCK_PULL * a.w * clamp((ends.w - ends.y) / a.x, -1.0, 1.0);
-    sum += vec2f(ring.x * pull, ring.y) * grip;
+    // How hard the pointer struck, from its speed, and how far its path ran across this strand's own axes.
+    let len = max(length(a.xy), 1e-3);
+    let strength = 1.0 - exp(-len / a.w / PLUCK_SPEED);
+    let across = dot(a.xy, h0.axis + h1.axis) / (2.0 * len);
+    let ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.z - hit.x * a.w, strength, th.fibre.z / TAU);
+    sum += vec2f(ring.x * PLUCK_PULL * strength * clamp(across, -1.0, 1.0), ring.y) * grip;
   }
   return vec2f(bounded(sum.x), sum.y) * here.apart;
 }
@@ -1566,19 +1570,21 @@ vec2 rung(Thread th, Placed here, float t) {
   for (int k = 0; k < ${PLUCK.ring}; k++) {
     vec4 a = U[${CORD_PLUCKS} + 4 * k];
     vec4 ends = U[${CORD_PLUCKS} + 4 * k + 1 + int(th.strand)];
-    if (a.x == 0.0 || t < a.y || t > a.y + a.z + PLUCK_LIFE || ends.x < 0.0) continue;
+    if (a.w == 0.0 || t < a.z || t > a.z + a.w + PLUCK_LIFE || ends.x < 0.0) continue;
     vec2 stretch = stretchOf(ends.x, ends.z);
     if (here.s <= stretch.x || here.s >= stretch.y) continue;
     float s0 = texel(ends.x, 1.0).x;
     float s1 = texel(ends.z, 1.0).x;
     if (abs(here.s - clamp(here.s, min(s0, s1), max(s0, s1))) >= PLUCK_STRETCH / 2.0) continue;
-    Placed h0 = place(th, ends.x, a.y);
-    Placed h1 = place(th, ends.z, a.y);
+    Placed h0 = place(th, ends.x, a.z);
+    Placed h1 = place(th, ends.z, a.z);
     vec2 hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     float grip = hit.y * mix(h0.apart, h1.apart, hit.x);
-    vec2 ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.y - hit.x * a.z, a.w, th.fibre.z / TAU);
-    float pull = PLUCK_PULL * a.w * clamp((ends.w - ends.y) / a.x, -1.0, 1.0);
-    sum += vec2(ring.x * pull, ring.y) * grip;
+    float len = max(length(a.xy), 1e-3);
+    float strength = 1.0 - exp(-len / a.w / PLUCK_SPEED);
+    float across = dot(a.xy, h0.axis + h1.axis) / (2.0 * len);
+    vec2 ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.z - hit.x * a.w, strength, th.fibre.z / TAU);
+    sum += vec2(ring.x * PLUCK_PULL * strength * clamp(across, -1.0, 1.0), ring.y) * grip;
   }
   return vec2(bounded(sum.x), sum.y) * here.apart;
 }
