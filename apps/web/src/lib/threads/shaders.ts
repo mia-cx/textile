@@ -1298,7 +1298,8 @@ fn place(th: Thread, k: f32, t: f32) -> Placed {
   // them, which the weave keeps to a gentle turn, so no rope leaves the plait at a corner.
   let home = (th.strand - 1.0) * 2.0 / 3.0;
   let d = texel(k, 3.0);
-  // On a strand's own path, the path is the rope's centre, and the rope's swing (d.z) settles toward its end.
+  // On a strand's own path, the path is the rope's centre, and the rope's swing (d.z) settles toward its end, where
+  // its fibres pinch in onto it.
   let centre = select(home, 0.0, d.y > 0.5);
   var sway = 0.0;
   if (th.path < 0.5) {
@@ -1307,7 +1308,8 @@ fn place(th: Thread, k: f32, t: f32) -> Placed {
   let rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray * d.z) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) * d.z + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   let drift = swayAt(a.y, t) * a.w;
-  let offset = mix(plait, rope, apart);
+  // On a strand's own path, every fibre pinches in onto the path as d.z settles, to a point at its end.
+  let offset = mix(plait, rope, apart) * select(1.0, d.z, d.y > 0.5);
   return Placed(
     a.xy + vec2f(drift, 0.0) + c.xy * offset, loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x,
     c.xy, offset + drift * c.x,
@@ -1511,7 +1513,8 @@ Placed place(Thread th, float k, float t) {
   float rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray * d.z) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) * d.z + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   float drift = swayAt(a.y, t) * a.w;
-  float offset = mix(plait, rope, apart);
+  // On a strand's own path, every fibre pinches in onto the path as d.z settles, to a point at its end.
+  float offset = mix(plait, rope, apart) * (d.y > 0.5 ? d.z : 1.0);
   return Placed(
     a.xy + vec2(drift, 0.0) + c.xy * offset, loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x,
     c.xy, offset + drift * c.x

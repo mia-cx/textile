@@ -157,9 +157,9 @@ does each rope fray into its fibres. A loose rope's fibres run a little apart in
 both colours. It stays unbraided for the section's whole height, behind its words and its panels alike, and braids
 again only in the gap before the next section. Where loose strands pass behind
 panels stacked with a narrow gap, the gap dims like words, so no clipped stubs show. In Voice the cord ends: its plait
-loosens into three ropes, and each strand runs on along its own path, the same fibres, twist and colour, and pinches
-to a point over its last 160px behind its speaker's avatar to its middle, so it slips into the circle narrower than it
-and no cut end shows; the right rope runs to the top speaker so none cross. Strands keep their colour and fibres throughout; behind each line of the
+loosens into three ropes, and each strand runs on along its own path, the same fibres, twist and colour, and tapers
+to a point over its last 160px, every fibre drawing in onto its path, ending behind the middle of its speaker's avatar,
+so it slips into the circle narrower than it and no cut end shows; the right rope runs to the top speaker so none cross. Strands keep their colour and fibres throughout; behind each line of the
 prose, tight to its words with 12px to spare, the strands dim to 1%, fading back over 120px, so the prose and its links
 hold 4.5:1 or more. The cord draws down in steps as the reader scrolls: as each section's heading crosses 60% of the
 screen, the cord is drawn through the whole section; between steps it holds, then eases on, its tip following on a

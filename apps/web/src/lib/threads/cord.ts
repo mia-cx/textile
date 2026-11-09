@@ -266,11 +266,12 @@ const KNOT_LOOK = 80
  * `open` (its plait loosened and its strands parted as ropes, still fibrous, only starting to fray), its ropes `spread`
  * braid radii either side. Then each rope runs on, the same fibres, as its strand's own path to its end (see `strands`
  * in `Cord`), on under it to the end's point (Weave.svelte sets it behind the element, never at its edge), its swing
- * settling over its last `settle` px so it runs in level, and pinching to a point over its last `pinch` px, so it slips
- * behind a round avatar narrower than the circle. The cord ends `turn` of its way across to its first end above
+ * settling over its last `pinch` px so it runs in level, every fibre pinching in onto the path there to a point at its
+ * end, so it tapers behind a round avatar narrower than the circle. The cord ends `turn` of its way across to its first
+ * end above
  * that end.
  */
-const ENDING = { open: 0.6, spread: 7, turn: 0.5, settle: 80, pinch: 160 } as const
+const ENDING = { open: 0.6, spread: 7, turn: 0.5, pinch: 160 } as const
 
 /**
  * A strand peeling off at a panel's edge: its fibres leave `fat` braid radii wide and its light comes up over its first
@@ -390,18 +391,17 @@ function strandPaths(last: Sample, ends: ReadonlyArray<Point>): Sample[][] {
       [to[0] - across, to[1]],
       to,
     )
-    // The first point is where the cord ends: the strand carries on from the next. It pinches to a point over its last
-    // `pinch` px, so it reaches its end, behind a round avatar's middle, narrower than the circle all the way in.
-    const points = frame(line)
-    const end = points.at(-1)?.s ?? 0
-    return points.slice(1).map((p) => ({
-      ...p,
-      s: last.s + p.s,
-      open: last.open,
-      width: last.width * (1 - smoothstep(end - ENDING.pinch, end, p.s)),
-      light: 1,
-      sways: 0,
-    }))
+    // The first point is where the cord ends: the strand carries on from the next.
+    return frame(line)
+      .slice(1)
+      .map((p) => ({
+        ...p,
+        s: last.s + p.s,
+        open: last.open,
+        width: last.width,
+        light: 1,
+        sways: 0,
+      }))
   })
 }
 
@@ -663,8 +663,8 @@ export function weave(
           leads ? 1 : 0,
           route + p.s,
           owned ? 1 : 0,
-          // On a strand's own path, its swing settles toward its end.
-          owned ? 1 - smoothstep(end - ENDING.settle, end, p.s) : (p.swings ?? 1),
+          // On a strand's own path, its swing settles and its fibres pinch in toward its end.
+          owned ? 1 - smoothstep(end - ENDING.pinch, end, p.s) : (p.swings ?? 1),
           strung ? stringAt(strings, p.s) : -1,
         ],
         (first + k) * TEXELS * 4,
@@ -1086,7 +1086,8 @@ export function place(cord: Cord, i: number, k: number, t: number, th = cordThre
     (width * (centre + (th.lane - home) * fray) + sway * fray * swings) * loose +
     UNBRAID.rope * wide * Math.sin(twist) * (1 - fray) * swings +
     th.jitter * SHAPE.fray * wide * UNBRAID.fat * (1 - fray)
-  const offset = plait + (rope - plait) * apart
+  // On a strand's own path, every fibre pinches in onto the path as its swing settles, to a point at its end.
+  const offset = (plait + (rope - plait) * apart) * ((d[o + 13] ?? 0) > 0.5 ? swings : 1)
   const drift = swayAt(y, t) * sways
   const point: Point = [x + drift + ax * offset, y + ay * offset]
   return { point, loose, apart, twist, s }
