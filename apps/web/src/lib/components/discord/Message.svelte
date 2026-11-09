@@ -111,7 +111,7 @@ let {
   }
   .tag {
     padding: 0.05rem 0.3rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-xs);
     background: var(--accent);
     color: #fff;
     font-size: 0.6875rem;

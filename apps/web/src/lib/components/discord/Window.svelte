@@ -49,7 +49,7 @@ let {
     margin: 0;
     overflow: hidden;
     border: 1px solid rgb(255 255 255 / 0.12);
-    border-radius: 1.125rem;
+    border-radius: var(--radius-l);
     /* Nearly opaque instead of a frosted backdrop: a blur over the live threads behind re-renders every frame, and
        through this much paint it barely showed. */
     background: rgb(20 18 30 / 0.96);

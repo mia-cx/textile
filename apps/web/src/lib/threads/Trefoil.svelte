@@ -15,9 +15,17 @@ import { MARK, type Mark, markCord, markScene, markUniforms, STILL_TIME } from '
 let {
   size,
   mark = MARK,
+  bleed = 1,
   still = false,
   class: className = '',
-}: { size: number; mark?: Mark; still?: boolean; class?: string } = $props()
+}: {
+  size: number
+  mark?: Mark
+  /** The canvas's size as a multiple of the mark's, for its glow to spread out past it; place it centred on it. */
+  bleed?: number
+  still?: boolean
+  class?: string
+} = $props()
 
 let canvas: HTMLCanvasElement
 
@@ -31,7 +39,7 @@ onMount(() => {
   let stopped = false
   const start = performance.now()
   const dpr = Math.min(devicePixelRatio, 2)
-  const cord = markCord(size, mark)
+  const cord = markCord(size, mark, bleed)
   const style = getComputedStyle(canvas)
   const colours = [
     hex(style.getPropertyValue('--thread-violet')),
@@ -52,8 +60,8 @@ onMount(() => {
   const begin = async () => {
     if (starting) return
     starting = true
-    canvas.width = Math.round(size * dpr)
-    canvas.height = Math.round(size * dpr)
+    canvas.width = Math.round(cord.canvas * dpr)
+    canvas.height = Math.round(cord.canvas * dpr)
     const scene = markScene(mark)
     painter =
       (await webgpuPainter(canvas, scene).catch(() => undefined)) ?? webgl2Painter(canvas, scene)
@@ -81,4 +89,10 @@ onMount(() => {
 })
 </script>
 
-<canvas bind:this={canvas} class={className} style:width="{size}px" style:height="{size}px" aria-hidden="true"></canvas>
+<canvas
+  bind:this={canvas}
+  class={className}
+  style:width="{size * bleed}px"
+  style:height="{size * bleed}px"
+  aria-hidden="true"
+></canvas>

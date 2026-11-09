@@ -48,7 +48,7 @@ const TITLES = ['One', 'Two', 'Three']
     margin-top: 0.25rem;
     padding: 0.625rem 0.875rem;
     border-left: 4px solid var(--thread-violet);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-xs);
     background: rgb(255 255 255 / 0.05);
     color: #f2f3f5;
     font-weight: 600;

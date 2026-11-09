@@ -105,8 +105,8 @@ const knot = (t: number) =>
     -Math.sin(3 * t),
   ] as const
 
-/** The trefoil as samples `step` px apart, fitted to a square `size` px across. */
-function trefoil(size: number, fill: number, step: number) {
+/** The trefoil as samples `step` px apart, fitted to a square `size` px across, centred in one `canvas` px across. */
+function trefoil(size: number, fill: number, step: number, canvas: number) {
   const dense = Array.from({ length: 6000 }, (_, k): Sample => {
     const t = (k / 6000) * TAU
     return [...knot(t), t]
@@ -118,8 +118,8 @@ function trefoil(size: number, fill: number, step: number) {
   const cx = (Math.max(...xs) + Math.min(...xs)) / 2
   const cy = (Math.max(...ys) + Math.min(...ys)) / 2
   const toSquare = ([x, y, z, t]: Sample): Sample => [
-    size / 2 + (x - cx) * scale,
-    size / 2 + (y - cy) * scale,
+    canvas / 2 + (x - cx) * scale,
+    canvas / 2 + (y - cy) * scale,
     z,
     t,
   ]
@@ -166,9 +166,13 @@ export function unders(points: ReadonlyArray<Sample>) {
   return found
 }
 
-/** The mark drawn in a square `size` CSS px across: its data texture, packed as `weave` packs the page's cord. */
+/**
+ * The mark drawn in a square `size` CSS px across, centred on a canvas `canvas` px across, which leaves room around it
+ * for its glow: its data texture, packed as `weave` packs the page's cord.
+ */
 export interface MarkCord {
   readonly size: number
+  readonly canvas: number
   readonly radius: number
   readonly data: Float32Array
   readonly rows: number
@@ -176,11 +180,13 @@ export interface MarkCord {
   readonly length: number
 }
 
-export function markCord(size: number, mark: Mark): MarkCord {
+/** `bleed` is the canvas's size as a multiple of the mark's: 1 to fill it, more to let the glow spread past it. */
+export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
   const step = Math.max(0.25, size * SAMPLES_PER_SIZE)
   const band = size * mark.band
   const radius = size * RADIUS
-  const loop = trefoil(size, mark.fill, step)
+  const canvas = size * bleed
+  const loop = trefoil(size, mark.fill, step, canvas)
   // Start the loop under a crossing, where it is dimmest and the strand on top covers it: the fibres' wander follows
   // the route, so where the route closes they can't quite meet, and there nobody sees it.
   const start = unders(loop)[0] ?? 0
@@ -242,7 +248,7 @@ export function markCord(size: number, mark: Mark): MarkCord {
       k * TEXELS * 4,
     )
   }
-  return { size, radius, data, rows, count: closed.length, length }
+  return { size, canvas, radius, data, rows, count: closed.length, length }
 }
 
 /**
@@ -261,7 +267,7 @@ export function markUniforms(
   time: number,
 ) {
   const uniforms = new Float32Array(CORD_VEC4S * 4)
-  uniforms.set([cord.size, cord.size, dpr, time], 0)
+  uniforms.set([cord.canvas, cord.canvas, dpr, time], 0)
   const intensity = mark.intensity * Math.min(1, cord.size / REFERENCE)
   uniforms.set([0, 0, cord.length + FADE + 1, intensity], 4)
   uniforms.set([cord.radius, mark.threads, 0, 0], 12)

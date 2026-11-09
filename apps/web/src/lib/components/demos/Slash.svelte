@@ -59,7 +59,7 @@ function onsubmit(event: SubmitEvent) {
     align-items: center;
     gap: 0.5rem;
     padding: 0.375rem 0.375rem 0.375rem 0.875rem;
-    border-radius: 0.75rem;
+    border-radius: var(--radius-m);
     background: rgb(255 255 255 / 0.06);
   }
   .command {
@@ -72,7 +72,7 @@ function onsubmit(event: SubmitEvent) {
   }
   .option {
     padding: 0.125rem 0.5rem;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-s);
     background: rgb(255 255 255 / 0.1);
     color: #dbdee1;
     font-weight: 500;
@@ -104,7 +104,7 @@ function onsubmit(event: SubmitEvent) {
     flex: none;
     min-height: 2.75rem;
     padding-inline: 1.125rem;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-s);
     background: var(--accent);
     color: var(--on-accent);
     font-weight: 550;

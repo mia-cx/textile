@@ -28,6 +28,12 @@ const TILE_RADIUS = 0.22
 const SMALL = 64
 /** The thicker capture: the small mark's band and intensity (SMALL_MARK in src/lib/threads/trefoil.ts). */
 const THICK = `&band=${SMALL_MARK.band}&intensity=${SMALL_MARK.intensity}`
+/**
+ * The favicons' capture: the small mark drawn smaller in its square (`fill`), its band shrunk with it, so it keeps its
+ * look with clear ink between the knot and the tile's rounded edge.
+ */
+const TILE_FILL = 0.6
+const TILE = `&fill=${TILE_FILL}&band=${(SMALL_MARK.band * TILE_FILL) / SMALL_MARK.fill}&intensity=${SMALL_MARK.intensity}`
 /** The site's ink (src/lib/tokens.css): only light above it is brightened, so the ground stays the ink. */
 const INK = '#07060c'
 
@@ -182,11 +188,12 @@ function light(image: Image, size: number) {
 
 const mark = capture('')
 const thick = capture(THICK)
+const tile = capture(TILE)
 mkdirSync(OUT, { recursive: true })
-for (const size of SIZES)
-  writeFileSync(
-    new URL(`${size}.png`, OUT),
-    icon(size <= SMALL ? thick : mark, size, FAVICONS.includes(size)),
-  )
+for (const size of SIZES) {
+  const favicon = FAVICONS.includes(size)
+  const source = favicon ? tile : size <= SMALL ? thick : mark
+  writeFileSync(new URL(`${size}.png`, OUT), icon(source, size, favicon))
+}
 /** The header's mark, as light, at 2× its 32px. */
 writeFileSync(new URL('light-64.png', OUT), light(thick, 64))

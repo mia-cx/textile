@@ -509,7 +509,7 @@ function close(
     --reach: 3.5rem;
     --hot: #fff3ea;
     --lit: color-mix(in srgb, var(--thread-violet) 70%, white);
-    --lit-radius: 1.125rem;
+    --lit-radius: var(--radius-l);
   }
   .cord-lit::before,
   .cord-lit::after {

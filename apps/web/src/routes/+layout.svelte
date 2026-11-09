@@ -10,6 +10,8 @@ let { data, children } = $props()
 
 /** The header's live mark, in CSS px: about the wordmark's cap height and a half. */
 const MARK_SIZE = 34
+/** How far the header mark's glow spreads, as a multiple of its size: far enough to fade out on its own. */
+const MARK_BLEED = 5
 /** Brighter than the icons' small mark: it sits over the hero's threads, whose light it has to stand out from. */
 const HEADER_MARK = { ...SMALL_MARK, intensity: SMALL_MARK.intensity * 2 }
 
@@ -31,7 +33,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
 <a href="#content" class="skip">Skip to content</a>
 
 <header class="site-header">
-  <a href="/" class="wordmark" aria-label="Textile home"><span class="mark"><Trefoil size={MARK_SIZE} mark={HEADER_MARK} /></span>textile</a>
+  <a href="/" class="wordmark" aria-label="Textile home"><span class="mark" style:--mark-size="{MARK_SIZE}px"><Trefoil size={MARK_SIZE} mark={HEADER_MARK} bleed={MARK_BLEED} /></span>textile</a>
   <nav aria-label="Site" class="flex items-center gap-x-1 sm:gap-x-3">
     <a class="nav-link" href="/docs/">Docs</a>
     <a class="nav-link" href={GITHUB_URL}>GitHub</a>
@@ -119,10 +121,23 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     width: 1.1em;
     height: 1.1em;
   }
-  /* The live mark's bloom veils its whole square; faded out past the knot, it leaves no square edge on the threads. */
+  /* The live mark holds its place beside the name; its canvas, several times wider, is centred on it and laid behind
+     the name, so its glow spreads out past the knot and under the letters, and fades out long before its edge. */
+  span.mark {
+    position: relative;
+    z-index: -1;
+    width: var(--mark-size);
+    height: var(--mark-size);
+  }
   .mark :global(canvas) {
-    display: block;
-    mask-image: radial-gradient(closest-side, #000 92%, transparent);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    pointer-events: none;
+    /* The bloom's faintest veil reaches the canvas's edge; it tapers away from just outside the knot (a fifth of the
+       canvas) to nothing there, so the glow fades out without a square. */
+    mask-image: radial-gradient(closest-side, #000 22%, rgb(0 0 0 / 0.35) 55%, transparent);
   }
   :global(:root.dark) .mark,
   :global(:root:has([data-scheme='dark'])) .mark {

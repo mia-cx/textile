@@ -373,7 +373,7 @@ async function undo() {
   .discord-button {
     min-height: 2.75rem;
     padding: 0.375rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-s);
     background: #4e5058;
     color: #fff;
     font-weight: 500;

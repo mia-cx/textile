@@ -74,15 +74,17 @@ function onkeydown(event: KeyboardEvent) {
     gap: 0.25rem;
     width: fit-content;
     max-width: 100%;
-    padding: 0.3125rem;
+    /* A rounded rectangle, not a pill: the list wraps on narrow columns, where a pill stretches into an ellipse. Its
+       corner is the tabs' plus the padding between them, so the curves nest. */
+    padding: 0.375rem;
     border: 1px solid rgb(255 255 255 / 0.08);
-    border-radius: var(--radius-pill);
+    border-radius: calc(var(--radius-m) + 0.375rem);
     background: var(--sunken);
   }
   [role='tab'] {
     min-height: 2.75rem;
     padding: 0.375rem 1.125rem;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-m);
     color: var(--muted);
     font-family: var(--font-code);
     font-size: 0.9375rem;
