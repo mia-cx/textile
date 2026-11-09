@@ -30,8 +30,11 @@ export const PLUCK = {
    */
   pull: 28,
   most: 40,
-  /** The pointer's speed, in px/s, at which a gust reaches 63% of its strength: a slow sweep stirs softly. */
-  speed: 1200,
+  /**
+   * The pointer's speed, in px/s, at which a gust reaches 63% of its strength (see `strengthOf`): a fifth of it at half
+   * this speed, a twenty-fifth at a fifth, so a slow sweep barely stirs.
+   */
+  speed: 1500,
   /** Slower than this, in px/s, the pointer is resting over the threads, not stirring them. */
   rest: 60,
   /**
@@ -59,17 +62,14 @@ export const PLUCK = {
    */
   segment: 0.05,
   /**
-   * How long without moving the pointer rests, in seconds, at least, and longer than two of its recent moves: a move
-   * after a rest counts from where it rested, as long as one of its recent moves took, so a flick from beside a string
-   * catches it as firmly as the rest. From further than `leap` px away (it left the window, or crossed a panel), the
-   * path starts where it is.
+   * How long without moving, in seconds, at least, and longer than two of its recent moves, the pointer has paused: the
+   * path so far is cut, and the next move runs on from where it paused.
    */
   still: 0.05,
-  leap: 64,
   /**
-   * The slowest a moving pointer reports, in seconds between moves: a path that starts afresh after a gap no longer than
-   * this learns the gap as the pointer's pace, so a pointer reporting that slowly, each move further than `leap`, still
-   * reads as one continuous sweep.
+   * The slowest a moving pointer reports, in seconds between moves: a move after a gap no longer than this took the whole
+   * gap, so a pointer reporting slowly reads as one continuous sweep at its real pace. After a longer gap the pointer was
+   * at rest, and the move took as long as one of its recent moves, so a flick from rest reads as fast as it went.
    */
   cadence: 0.15,
 } as const
@@ -124,6 +124,16 @@ const GLASS = '[data-weave-panel]'
 let motion: MediaQueryList | undefined
 
 /**
+ * How hard a gust blows, 0 to 1, for a pointer that moved `length` px in `span` seconds. Like the drag of a moving
+ * body, it grows with the square of the speed, so a slow pointer barely stirs the threads and a fast one blows them
+ * hard. And it carries as much air as the path covered of the reach either side of it: a slow pointer cuts many short
+ * gusts across one thread where a fast one cuts a single long one, and the gusts on a thread add up to the same either
+ * way, so only the speed sets how far it moves. Mirrors `strengthOf` in the shaders.
+ */
+export const strengthOf = (length: number, span: number) =>
+  (1 - Math.exp(-((length / span / PLUCK.speed) ** 2))) * Math.min(1, length / (2 * PLUCK.reach))
+
+/**
  * Cuts the path so far into a pluck at `now` (ms, the events' clock), if the pointer moved along it fast enough to
  * pluck, and carries the path on from its latest move. Its threads are caught from `now` on, never before, so none
  * starts mid-catch. Plucks ring on the fields' clock, which runs only while one of them animates: with none on screen,
@@ -134,7 +144,7 @@ const cut = (now: number) => {
   const span = (path.t1 - path.t0) / 1000
   const speed = Math.hypot(path.x1 - path.x0, path.y1 - path.y0) / span
   if (speed >= PLUCK.rest && ticking(now)) {
-    const strength = 1 - Math.exp(-speed / PLUCK.speed)
+    const strength = strengthOf(Math.hypot(path.x1 - path.x0, path.y1 - path.y0), span)
     const slot = soonest()
     const o = slot * SLOT
     ring[o] = path.x0
@@ -180,18 +190,23 @@ const move = (event: PointerEvent) => {
   if (!plucking) return leave(at)
   const gap = at - path.t1
   if (Number.isNaN(path.t0) || !(gap <= Math.max(PLUCK.still * 1000, 2 * path.interval))) {
-    // From rest, or from nothing: what came before plucks, and this move counts from where the pointer rested, over one
-    // recent move's time; from far off, or with nowhere it rested, the path starts here.
+    // After a pause, or from nowhere: what came before blows, and this move runs on from where the pointer was, however
+    // far, along the straight line it swept between, so every thread that line crosses is caught. With nowhere it was
+    // (it left the window, crossed a panel, or the page scrolled), the path starts here.
     settle(at)
-    if (gap > 0 && Math.hypot(x - path.x1, y - path.y1) <= PLUCK.leap) {
+    if (gap > 0) {
       path.x0 = path.x1
       path.y0 = path.y1
-      path.t0 = at - Math.min(gap, path.interval)
-    } else {
-      // Far off, but soon: a pointer reporting slowly, whose pace the next moves keep to.
-      if (gap <= PLUCK.cadence * 1000) path.interval = gap
-      begin(x, y, at)
-    }
+      if (gap <= PLUCK.cadence * 1000) {
+        // Moving, but reporting slowly (a busy frame holds its moves back): the line took the whole gap, and the next
+        // moves keep to its pace.
+        path.t0 = path.t1
+        path.interval = gap
+      } else {
+        // From rest: the move took as long as one of its recent moves, so a flick from rest blows as hard as it went.
+        path.t0 = at - path.interval
+      }
+    } else begin(x, y, at)
   } else path.interval = Math.min(Math.max(gap, 4), PLUCK.cadence * 1000)
   path.x1 = x
   path.y1 = y
@@ -209,6 +224,13 @@ const scrolled = () => {
   leave(performance.now())
 }
 
+/** The pointer left the window: where it was is forgotten, so its return never joins across where it went. */
+const out = (event: PointerEvent) => {
+  if (event.relatedTarget !== null) return
+  clearTimeout(stopped)
+  leave(event.timeStamp)
+}
+
 let listeners = 0
 
 /**
@@ -220,11 +242,13 @@ export function listen() {
     motion = matchMedia('(prefers-reduced-motion: no-preference)')
     drop()
     addEventListener('pointermove', move, { passive: true })
+    addEventListener('pointerout', out, { passive: true })
     addEventListener('scroll', scrolled, { passive: true })
   }
   return () => {
     if (--listeners > 0) return
     removeEventListener('pointermove', move)
+    removeEventListener('pointerout', out)
     removeEventListener('scroll', scrolled)
     clearTimeout(stopped)
   }

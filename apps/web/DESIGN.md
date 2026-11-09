@@ -174,10 +174,15 @@ the pointer passed, up to 1000px long and shorter near its anchors (where it ent
 on the cord, where the strands meet in the plait), flat at its ends and its peak so it bends with no corner. It starts
 moving the moment the pointer passes, slows to its furthest over 0.6 seconds, and drifts back to rest by 2.4 seconds,
 without overshooting. Only 40% of the fibres move at all, each by its own share, from barely to fully, so some threads
-stir in front of others that hold still, for depth. A faster sweep blows harder (up to 28px), and gusts on one thread
-add up to 40px at most. A blown thread brightens a little. The pointer's path is cut every 50ms, and when it
-stops, into a ring of 48 gusts, uniforms both renderers' vertex shaders read; a move from rest counts from where the
-pointer rested. Each thread is tested against a gust where it was when the pointer passed, on the path its strand walks
+stir in front of others that hold still, for depth. Like drag, a gust grows with the square of the pointer's speed
+(63% at 1500px/s, 4% at 300px/s), so a slow sweep barely stirs and a fast one blows hard, up to 28px; each gust also
+carries as much air as its path covered of the reach, so the many short gusts of a slow sweep add up to no more than
+one long fast one. Gusts on one thread add up to 40px at most. A blown thread brightens a little. The pointer's path is
+cut every 50ms, and when it stops, into a ring of 48 gusts, uniforms both renderers' vertex shaders read. Between two
+moves it swept the straight line, however far apart they are, and every thread that line crosses is caught: a move
+after a pause runs on from where the pointer paused, over the whole gap while it was moving and over one recent move's
+time from rest, so a flick from rest blows as hard as it went. Only leaving the window, crossing a panel, or a scroll
+starts the path afresh. Each thread is tested against a gust where it was when the pointer passed, on the path its strand walks
 there, and only along the stretch a gust can reach; in the hero most threads are also ruled out by their lane before
 they are placed. The hero's labels ride their threads through the same math on the CPU, and the cord's knots sit where
 it is braided. Touch scrolls instead; over a panel the pointer is on glass; with reduced motion, in the 2D fallbacks,

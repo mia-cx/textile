@@ -306,6 +306,16 @@ ${fn(
   `
   ${local} q = (shift / PLUCK_MOST) * (shift / PLUCK_MOST);
   return shift / sqrt(sqrt(1.0 + q * q));`,
+)}
+// How hard a gust blows for a pointer that moved len px in span seconds: growing with the square of its speed, as drag
+// does, and with how much of the reach either side its path covered. Mirrors strengthOf in pluck.ts.
+${fn(
+  'strengthOf',
+  scalar,
+  ['len', 'span'],
+  `
+  ${local} v = len / span / PLUCK_SPEED;
+  return (1.0 - exp(-v * v)) * min(1.0, len / (2.0 * PLUCK_REACH));`,
 )}`
 
 const pluckWgsl = pluckFunctions(
@@ -1277,7 +1287,7 @@ fn swayAt(y: f32, t: f32) -> f32 {
 // the axis it spreads across, and how far along that axis it lies from the path's sample. Mirrors place in cord.ts.
 struct Placed {
   at: vec2f, loose: f32, apart: f32, depth: f32, s: f32, light: f32, hue: f32, leads: f32, route: f32,
-  axis: vec2f, beside: f32,
+  axis: vec2f, beside: f32, pinch: f32,
 };
 
 fn place(th: Thread, k: f32, t: f32) -> Placed {
@@ -1308,11 +1318,13 @@ fn place(th: Thread, k: f32, t: f32) -> Placed {
   let rope = (b.z * (centre + (th.lane - home) * fray) + sway * fray * d.z) * loose
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) * d.z + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   let drift = swayAt(a.y, t) * a.w;
-  // On a strand's own path, every fibre pinches in onto the path as d.z settles, to a point at its end.
-  let offset = mix(plait, rope, apart) * select(1.0, d.z, d.y > 0.5);
+  // On a strand's own path, every fibre pinches in onto the path as d.z settles, to a point at its end, and the
+  // pointer's air moves it less and less there, to nothing at its end (see rung).
+  let pinch = select(1.0, d.z, d.y > 0.5);
+  let offset = mix(plait, rope, apart) * pinch;
   return Placed(
     a.xy + vec2f(drift, 0.0) + c.xy * offset, loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x,
-    c.xy, offset + drift * c.x,
+    c.xy, offset + drift * c.x, pinch,
   );
 }
 
@@ -1351,14 +1363,15 @@ fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
     let h1 = place(th, ends.z, a.z);
     let hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     let grip = hit.y * mix(h0.apart, h1.apart, hit.x);
-    // How hard the pointer struck, from its speed, and how far its path ran across this strand's own axes.
+    // How hard the air blows, from the pointer's speed and how far it went, and how far its path ran across this
+    // strand's own axes.
     let len = max(length(a.xy), 1e-3);
-    let strength = 1.0 - exp(-len / a.w / PLUCK_SPEED);
+    let strength = strengthOf(len, a.w);
     let across = dot(a.xy, h0.axis + h1.axis) / (2.0 * len);
     let ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.z - hit.x * a.w, strength, th.fibre.z / TAU);
     sum += vec2f(ring.x * PLUCK_PULL * strength * clamp(across, -1.0, 1.0), ring.y) * grip;
   }
-  return vec2f(bounded(sum.x), sum.y) * here.apart;
+  return vec2f(bounded(sum.x), sum.y) * here.apart * here.pinch;
 }
 
 // How much light shows at p: less behind a section's prose, fading back in over COPY_FADE px around it, so neither
@@ -1490,7 +1503,7 @@ float swayAt(float y, float t) {
 
 struct Placed {
   vec2 at; float loose; float apart; float depth; float s; float light; float hue; float leads; float route;
-  vec2 axis; float beside;
+  vec2 axis; float beside; float pinch;
 };
 
 Placed place(Thread th, float k, float t) {
@@ -1514,10 +1527,11 @@ Placed place(Thread th, float k, float t) {
     + UNBRAID_ROPE * wide * sin(twist) * (1.0 - fray) * d.z + th.fibre.x * FRAY * wide * UNBRAID_FAT * (1.0 - fray);
   float drift = swayAt(a.y, t) * a.w;
   // On a strand's own path, every fibre pinches in onto the path as d.z settles, to a point at its end.
-  float offset = mix(plait, rope, apart) * (d.y > 0.5 ? d.z : 1.0);
+  float pinch = d.y > 0.5 ? d.z : 1.0;
+  float offset = mix(plait, rope, apart) * pinch;
   return Placed(
     a.xy + vec2(drift, 0.0) + c.xy * offset, loose, apart, depthOf(twist), b.x, c.z, b.w, c.w, d.x,
-    c.xy, offset + drift * c.x
+    c.xy, offset + drift * c.x, pinch
   );
 }
 
@@ -1547,12 +1561,12 @@ vec2 rung(Thread th, Placed here, float t) {
     vec2 hit = caught(h0.beside - ends.y, h1.beside - ends.w);
     float grip = hit.y * mix(h0.apart, h1.apart, hit.x);
     float len = max(length(a.xy), 1e-3);
-    float strength = 1.0 - exp(-len / a.w / PLUCK_SPEED);
+    float strength = strengthOf(len, a.w);
     float across = dot(a.xy, h0.axis + h1.axis) / (2.0 * len);
     vec2 ring = ringing(here.s, stretch.x, stretch.y, mix(s0, s1, hit.x), t - a.z - hit.x * a.w, strength, th.fibre.z / TAU);
     sum += vec2(ring.x * PLUCK_PULL * strength * clamp(across, -1.0, 1.0), ring.y) * grip;
   }
-  return vec2(bounded(sum.x), sum.y) * here.apart;
+  return vec2(bounded(sum.x), sum.y) * here.apart * here.pinch;
 }
 
 float behindCopy(vec2 p) {
