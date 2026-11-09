@@ -399,7 +399,9 @@ function close(
     display: grid;
     align-items: center;
     gap: 3rem;
-    min-height: clamp(42rem, 100svh, 75rem);
+    /* Always the whole screen, however tall, so the next section never shows beneath it; on a very short screen it
+       grows past the screen to fit its copy and window instead. */
+    min-height: max(42rem, 100svh);
     margin-top: calc(-1 * var(--header-height));
     padding: calc(var(--header-height) + 2rem) var(--hero-inset) 4rem;
   }
