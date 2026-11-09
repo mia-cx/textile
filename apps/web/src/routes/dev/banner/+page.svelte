@@ -5,8 +5,8 @@ import ThreadField from '$lib/threads/ThreadField.svelte'
 
 /**
  * Textile's social banner, in development only: `pnpm logo` captures it into static/icons/banner.png. The hero's threads
- * fan in from the right edge behind the headline and subline, shaded there so they read, gather slowly into a slim
- * plait, and run on whole past the left edge, so its end never shows. `?w=` and `?h=` set its size in CSS px.
+ * stream in from the left edge and gather toward the right behind the headline and subline, shaded there so they read;
+ * they braid only past the right edge, so the banner shows loose threads alone. `?w=` and `?h=` set its size in CSS px.
  */
 const params = new URLSearchParams(typeof location === 'undefined' ? '' : location.search)
 const width = Number(params.get('w') ?? 1500)
@@ -15,10 +15,15 @@ const height = Number(params.get('h') ?? 500)
 let stage: HTMLDivElement
 let copy = $state<HTMLElement>()
 
-/** The braid's radius at the left edge: thinner than the page's cord, so the banner's slim plait tapers out of it. */
+/** The braid's radius at its end: thinner than the page's cord, so the threads narrow onto it gently. */
 const CORD = 7
-/** The threads, braided by `WHOLE` of the way along, then running on whole past the left edge. */
-const WHOLE = 0.82
+/**
+ * Where the spine ends, past the right edge as a share of the banner's width, and where along it the threads gather,
+ * curl, and are whole: they start to gather in view, and curl and braid only off it, so the banner shows loose threads
+ * alone.
+ */
+const END = 1.5
+const BRAID = [0.45, 0.75, 0.9] as const
 function banner(box: { width: number; height: number }): Field {
   const origin = stage?.getBoundingClientRect()
   const text = copy
@@ -29,14 +34,14 @@ function banner(box: { width: number; height: number }): Field {
       })
     : []
   return {
-    start: [box.width * 1.06, box.height * 0.5],
-    control: [box.width * 0.5, box.height * 0.5],
-    end: [-box.width * 0.06, box.height * 0.5],
+    start: [-box.width * 0.06, box.height * 0.5],
+    control: [box.width * ((END - 0.06) / 2), box.height * 0.5],
+    end: [box.width * END, box.height * 0.5],
     spread: box.height * 0.62,
     cord: CORD,
     count: 520,
     intensity: 0.75,
-    braid: [0.3, 0.6, WHOLE],
+    braid: BRAID,
     labels: [],
     text,
   }
