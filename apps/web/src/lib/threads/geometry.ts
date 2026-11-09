@@ -8,7 +8,7 @@
  * that narrows to a cord of radius `cord` and twists tighter as it goes, so it ends at `end` at its thinnest.
  */
 
-import { caught, MISS, PLUCK, ringing, SLOT } from './pluck'
+import { bounded, caught, MISS, PLUCK, ringing, SLOT } from './pluck'
 
 export type Point = readonly [x: number, y: number]
 
@@ -615,7 +615,7 @@ export function plucked(
     const ring = ringing(u * px, 0, th.joins * px, contact * px, age, strength, th.drift / TAU)
     shift += pull * grip * ring.shift
   }
-  return shift * loose
+  return bounded(shift) * loose
 }
 
 /**

@@ -245,6 +245,7 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('PLUCK_DECAY_SOFT', float(PLUCK.decay[0])),
     declare('PLUCK_DECAY_HARD', float(PLUCK.decay[1])),
     declare('PLUCK_EDGE', float(PLUCK.edge)),
+    declare('PLUCK_MOST', float(PLUCK.most)),
     declare('PLUCK_LIGHT', float(PLUCK.light)),
     declare('PLUCK_GLOW', float(PLUCK.glow)),
     declare('PLUCK_GLINT_WAVE', float(PLUCK.glintWave)),
@@ -252,10 +253,11 @@ const constants = (declare: (name: string, value: string) => string) =>
   ].join('\n')
 
 /**
- * `caught` and `ringing` from pluck.ts, in either language: `vec2` is its two-float vector type, and `fn` declares a
- * function returning `type` with the given parameters, in that language's syntax.
+ * `caught`, `ringing`, and `bounded` from pluck.ts, in either language: `scalar` and `vec2` are its float and two-float
+ * vector types, and `fn` declares a function returning `type` with the given parameters, in that language's syntax.
  */
 const pluckFunctions = (
+  scalar: string,
   vec2: string,
   fn: (name: string, type: string, params: ReadonlyArray<string>, body: string) => string,
   local: string,
@@ -327,9 +329,20 @@ ${fn(
   ${local} crest2 = crest * crest;
   ${local} crest4 = crest2 * crest2;
   return ${vec2}(shift * fade, strength * energy * fade * abs(shape) * mix(PLUCK_GLOW, 1.0, crest4 * crest4));`,
+)}
+// Every pluck's displacement of one point, summed, bounded smoothly to PLUCK_MOST: one pluck passes nearly whole, and
+// a thread swept again and again never bends further. Mirrors bounded in pluck.ts.
+${fn(
+  'bounded',
+  scalar,
+  ['shift'],
+  `
+  ${local} q = (shift / PLUCK_MOST) * (shift / PLUCK_MOST);
+  return shift / sqrt(sqrt(1.0 + q * q));`,
 )}`
 
 const pluckWgsl = pluckFunctions(
+  'f32',
   'vec2f',
   (name, type, params, body) =>
     `fn ${name}(${params.map((p) => `${p}: f32`).join(', ')}) -> ${type} {${body}\n}`,
@@ -337,6 +350,7 @@ const pluckWgsl = pluckFunctions(
   'var',
 )
 const pluckGlsl = pluckFunctions(
+  'float',
   'vec2',
   (name, type, params, body) =>
     `${type} ${name}(${params.map((p) => `float ${p}`).join(', ')}) {${body}\n}`,
@@ -643,7 +657,7 @@ fn rung(th: Thread, u: f32, braided: f32, t: f32) -> vec2f {
     let ring = ringing(u * px, 0.0, th.joins * px, contact * px, t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
     sum += vec2f(ring.x * b.x, ring.y) * grip;
   }
-  return sum * loose;
+  return vec2f(bounded(sum.x), sum.y) * loose;
 }
 
 @vertex
@@ -1018,7 +1032,7 @@ vec2 rung(Thread th, float u, float braided, float t) {
     vec2 ring = ringing(u * px, 0.0, th.joins * px, contact * px, t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
     sum += vec2(ring.x * b.x, ring.y) * grip;
   }
-  return sum * loose;
+  return vec2(bounded(sum.x), sum.y) * loose;
 }
 
 void main() {
@@ -1354,7 +1368,7 @@ fn rung(th: Thread, here: Placed, t: f32) -> vec2f {
     let ring = ringing(here.s, c.x, c.y, mix(c.z, c.w, hit.x), t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
     sum += vec2f(ring.x * b.x, ring.y) * grip;
   }
-  return sum * here.apart;
+  return vec2f(bounded(sum.x), sum.y) * here.apart;
 }
 
 // How much light shows at p: less behind a section's prose, fading back in over COPY_FADE px around it, so neither
@@ -1533,7 +1547,7 @@ vec2 rung(Thread th, Placed here, float t) {
     vec2 ring = ringing(here.s, c.x, c.y, mix(c.z, c.w, hit.x), t - b.y - hit.x * b.z, b.w, th.fibre.z / TAU);
     sum += vec2(ring.x * b.x, ring.y) * grip;
   }
-  return sum * here.apart;
+  return vec2(bounded(sum.x), sum.y) * here.apart;
 }
 
 float behindCopy(vec2 p) {

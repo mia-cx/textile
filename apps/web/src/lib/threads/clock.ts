@@ -23,6 +23,9 @@ export function advance(now: number) {
   return elapsed
 }
 
+/** Whether a field advanced the clock within a frame's longest step before `now` (ms): some field is animating. */
+export const ticking = (now: number) => now - last <= MAX_STEP * 1000
+
 /** The clock's time at `now` (ms, as events and frames stamp it), between frames: as the next frame will see it. */
 export const clockAt = (now: number) =>
   elapsed + Math.min(Math.max((now - last) / 1000, 0), MAX_STEP)

@@ -712,11 +712,11 @@ function stringsOf(cord: ReadonlyArray<Sample>, own: ReadonlyArray<ReadonlyArray
 export const CORD_SLOT = 12
 
 /**
- * The sample on the cord whose axis passes through `x`, `y` (the weave's pixels), where a strand there lies: the foot of
- * the perpendicular from it to the cord's course, found from the sample at its height. And how far along that axis the
- * point lies from the sample, as `place` measures a strand's.
+ * The sample on the cord whose axis passes through `x`, `y` (the weave's pixels) at time `t`, where a strand there lies:
+ * the foot of the perpendicular from it to the cord's course as it sways then, found from the sample at its height. And
+ * how far along that axis the point lies from the sample at rest, as the shaders measure a strand's (`beside`).
  */
-function footOn(cord: Cord, x: number, y: number) {
+function footOn(cord: Cord, x: number, y: number, t: number) {
   const d = cord.data
   const count = cord.heights.length
   let lo = 0
@@ -727,11 +727,14 @@ function footOn(cord: Cord, x: number, y: number) {
     else hi = mid
   }
   let k = lo
-  // Step along the course by how far the point lies along the sample's tangent, (-axis.y, axis.x), in samples.
+  // Step along the course by how far the point lies along the sample's tangent, (-axis.y, axis.x), in samples, from
+  // where the sample has swayed to.
   const s = (n: number) => d[n * TEXELS * 4 + 4] ?? 0
   for (let step = 0; step < 4; step++) {
     const o = k * TEXELS * 4
-    const along = -(x - (d[o] ?? 0)) * (d[o + 9] ?? 0) + (y - (d[o + 1] ?? 0)) * (d[o + 8] ?? 0)
+    const sy = d[o + 1] ?? 0
+    const swayed = (d[o] ?? 0) + swayAt(sy, t) * (d[o + 3] ?? 0)
+    const along = -(x - swayed) * (d[o + 9] ?? 0) + (y - sy) * (d[o + 8] ?? 0)
     const before = Math.max(k - 1, 0)
     const after = Math.min(k + 1, count - 1)
     const spacing = (s(after) - s(before)) / Math.max(after - before, 1)
@@ -766,10 +769,13 @@ export function pluckCord(cord: Cord, ring: Float32Array, origin: Point, out: Fl
     const y0 = (ring[r + 1] ?? 0) - origin[1]
     const x1 = (ring[r + 2] ?? 0) - origin[0]
     const y1 = (ring[r + 3] ?? 0) - origin[1]
-    const a = footOn(cord, x0, y0)
-    const b = footOn(cord, x1, y1)
-    const s = (a.s + b.s) / 2
-    const string = cord.strings.find(([from, to]) => s > from && s < to)
+    const start = ring[r + 5] ?? 0
+    const a = footOn(cord, x0, y0, start)
+    const b = footOn(cord, x1, y1, start)
+    // The stretch it crossed: the one under its middle, or, where that is braided, under either end.
+    const string = [(a.s + b.s) / 2, a.s, b.s]
+      .map((s) => cord.strings.find(([from, to]) => s > from && s < to))
+      .find((found) => found !== undefined)
     if (!string) continue
     const across = ((x1 - x0) * (a.ax + b.ax) + (y1 - y0) * (a.ay + b.ay)) / 2
     out[o] = a.k
@@ -777,7 +783,7 @@ export function pluckCord(cord: Cord, ring: Float32Array, origin: Point, out: Fl
     out[o + 2] = b.k
     out[o + 3] = b.beside
     out[o + 4] = ((ring[r + 4] ?? 0) * across) / Math.max(Math.hypot(x1 - x0, y1 - y0), 1e-3)
-    out[o + 5] = ring[r + 5] ?? 0
+    out[o + 5] = start
     out[o + 6] = ring[r + 6] ?? 0
     out[o + 7] = ring[r + 7] ?? 0
     out[o + 8] = string[0]

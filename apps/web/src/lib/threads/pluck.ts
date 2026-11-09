@@ -1,4 +1,4 @@
-import { clockAt } from './clock'
+import { clockAt, ticking } from './clock'
 
 /**
  * Plucking the loose threads with the pointer. As a mouse or pen moves over the page, its path is cut into short
@@ -26,8 +26,12 @@ export const PLUCK = {
   reach: 4,
   sympathy: 0.2,
   sympatheticReach: 24,
-  /** How far a thread is pulled aside at most, in px, by the fastest flick: never a kink, never over text. */
+  /**
+   * How far a thread is pulled aside at most, in px, by the fastest flick; and how far, at most, every pluck ringing it
+   * at once can displace it together, reached smoothly: never a kink, never over text.
+   */
   pull: 12,
+  most: 16,
   /** The pointer's speed, in px/s, at which a pluck reaches 63% of its strength: a slow sweep ripples softly. */
   speed: 1200,
   /** Slower than this, in px/s, the pointer is resting on the threads, not plucking them. */
@@ -66,6 +70,11 @@ export const PLUCK = {
    * soon after the pointer crosses it, and seldom enough that the ring holds a whole sweep, however fast, for `life`.
    */
   segment: 0.06,
+  /**
+   * The longest a path runs before it is cut, in seconds: longer, the pointer paused or left the window, and its path
+   * starts afresh rather than replaying the gap.
+   */
+  pause: 0.15,
 } as const
 
 /** Floats per slot of the ring: where the path ran (x0, y0, x1, y1, page px), its pull, start, span, and strength. */
@@ -91,11 +100,15 @@ const restart = (x = 0, y = 0, at = Number.NaN) => {
   from.at = at
 }
 
-/** A slot no thread rings in any more at clock time `time`, or -1 while every slot still rings. */
-const free = (time: number) => {
-  for (let k = 0; k < PLUCK.ring; k++)
-    if ((ring[k * SLOT + 5] ?? 0) + (ring[k * SLOT + 6] ?? 0) + PLUCK.life < time) return k
-  return -1
+/**
+ * The slot whose pluck stops ringing soonest: one long done, or, when a sweep fills the ring, the oldest, by then faded
+ * all but to nothing, so the newest is never kept waiting.
+ */
+const soonest = () => {
+  let best = 0
+  const end = (k: number) => (ring[k * SLOT + 5] ?? 0) + (ring[k * SLOT + 6] ?? 0)
+  for (let k = 1; k < PLUCK.ring; k++) if (end(k) < end(best)) best = k
+  return best
 }
 
 /** Panels are opaque: over one, the pointer is on the glass, not on the threads behind it. */
@@ -109,17 +122,17 @@ const move = (event: PointerEvent) => {
   if (!motion?.matches) return restart()
   if (event.target instanceof Element && event.target.closest(GLASS)) return restart()
   const { pageX: x, pageY: y, timeStamp: at } = event
-  if (Number.isNaN(from.at)) return restart(x, y, at)
+  // Plucks ring on the fields' clock, which runs only while one of them animates: with none on screen, nothing shows
+  // them, and their time could never run out.
+  if (!ticking(at)) return restart()
+  if (Number.isNaN(from.at) || at - from.at > PLUCK.pause * 1000) return restart(x, y, at)
   const span = (at - from.at) / 1000
   if (span < PLUCK.segment) return
   const speed = Math.hypot(x - from.x, y - from.y) / span
   if (speed < PLUCK.rest) return restart(x, y, at)
-  const time = clockAt(at)
-  const k = free(time)
-  // Every slot still rings: the path runs on into the next pluck.
-  if (k < 0) return
   const strength = 1 - Math.exp(-speed / PLUCK.speed)
-  const o = k * SLOT
+  const o = soonest() * SLOT
+  const time = clockAt(at)
   ring[o] = from.x
   ring[o + 1] = from.y
   ring[o + 2] = x
@@ -159,6 +172,9 @@ export function listen() {
  * stretch into a plucked string's shape, the first three modes of a triangle peaking where it was plucked, so it bends
  * smoothly with no corner. Released, each mode rings at its own multiple of the fundamental, set by the stretch's
  * length, and dies away faster the higher it is; harder plucks ring longer. All of it fades to nothing by `life`.
+ *
+ * It returns the same object every call, so labels can ride their threads every frame without allocating: read it
+ * before calling again.
  */
 export function ringing(
   along: number,
@@ -172,7 +188,9 @@ export function ringing(
   const low = Math.max(from, at - PLUCK.stretch / 2)
   const stretch = Math.min(to, at + PLUCK.stretch / 2) - low
   const x = (along - low) / stretch
-  if (age <= 0 || !(stretch > 0) || x <= 0 || x >= 1) return { shift: 0, light: 0 }
+  rung.shift = 0
+  rung.light = 0
+  if (age <= 0 || !(stretch > 0) || x <= 0 || x >= 1) return rung
   const p = Math.min(Math.max((at - low) / stretch, PLUCK.edge), 1 - PLUCK.edge)
   const sp = Math.sin(Math.PI * p)
   const cp = Math.cos(Math.PI * p)
@@ -207,17 +225,26 @@ export function ringing(
   const crest =
     0.5 + 0.5 * Math.cos((Math.PI * 2 * (away - PLUCK.glintSpeed * age)) / PLUCK.glintWave)
   const glint = crest ** 8
-  return {
-    shift: shift * fade,
-    light: strength * energy * fade * Math.abs(shape) * (PLUCK.glow + (1 - PLUCK.glow) * glint),
-  }
+  rung.shift = shift * fade
+  rung.light = strength * energy * fade * Math.abs(shape) * (PLUCK.glow + (1 - PLUCK.glow) * glint)
+  return rung
+}
+const rung = { shift: 0, light: 0 }
+
+/**
+ * Every pluck's displacement of one point, `shift` px summed, bounded smoothly to `most`: one pluck passes nearly
+ * whole, and a thread swept again and again never bends further. Mirrors `bounded` in the shaders.
+ */
+export const bounded = (shift: number) => {
+  const q = (shift / PLUCK.most) ** 2
+  return shift / Math.sqrt(Math.sqrt(1 + q * q))
 }
 
 /**
  * Where a thread meets the pointer's path, from how far beside each end of the path it ran (`d0`, `d1`, px across):
  * `along`, how far along the path it crossed (0 to 1; the nearer end if it missed), and `grip`, how firmly it was
  * caught: 1 if it crossed, falling off fast with distance, and a little for neighbours within `sympatheticReach`.
- * Mirrors `caught` in the shaders.
+ * Mirrors `caught` in the shaders. Like `ringing`, it returns the same object every call.
  */
 export function caught(d0: number, d1: number) {
   const crosses = d0 * d1 <= 0
@@ -232,8 +259,11 @@ export function caught(d0: number, d1: number) {
   const miss = crosses ? 0 : Math.min(Math.abs(d0), Math.abs(d1))
   const near = Math.exp(-((miss / PLUCK.reach) ** 2))
   const far = PLUCK.sympathy * Math.exp(-((miss / PLUCK.sympatheticReach) ** 2))
-  return { along, grip: far + (1 - far) * near }
+  hit.along = along
+  hit.grip = far + (1 - far) * near
+  return hit
 }
+const hit = { along: 0, grip: 0 }
 
 /** How far beyond either side of its own sway a thread can be missed and still ring at all, in px. */
 export const MISS = PLUCK.sympatheticReach * 3
