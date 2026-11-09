@@ -230,30 +230,18 @@ const constants = (declare: (name: string, value: string) => string) =>
     declare('TEXT_LIGHT', float(TEXT_LIGHT)),
     declare('TEXT_FADE_IN', float(TEXT_FADE[0])),
     declare('TEXT_FADE_OUT', float(TEXT_FADE[1])),
-    // How a plucked thread rings: see PLUCK in pluck.ts.
-    declare('PI', '3.141592654'),
+    // How the pointer's air moves a thread: see PLUCK in pluck.ts.
     declare('PLUCK_LIFE', float(PLUCK.life)),
     declare('PLUCK_CATCH', float(PLUCK.catch)),
     declare('PLUCK_REACH', float(PLUCK.reach)),
-    declare('PLUCK_SYMPATHY', float(PLUCK.sympathy)),
-    declare('PLUCK_SYMPATHETIC', float(PLUCK.sympatheticReach)),
     declare('PLUCK_MISS', float(MISS)),
     declare('PLUCK_STRETCH', float(PLUCK.stretch)),
-    declare('PLUCK_TAPER', float(PLUCK.taper)),
-    declare('PLUCK_WAVE', float(PLUCK.wave)),
-    declare('PLUCK_DETUNE', float(PLUCK.detune)),
-    declare('PLUCK_PITCH_LOW', float(PLUCK.pitch[0])),
-    declare('PLUCK_PITCH_HIGH', float(PLUCK.pitch[1])),
-    declare('PLUCK_DECAY_SOFT', float(PLUCK.decay[0])),
-    declare('PLUCK_DECAY_HARD', float(PLUCK.decay[1])),
     declare('PLUCK_EDGE', float(PLUCK.edge)),
+    declare('PLUCK_DETUNE', float(PLUCK.detune)),
     declare('PLUCK_PULL', float(PLUCK.pull)),
     declare('PLUCK_SPEED', float(PLUCK.speed)),
     declare('PLUCK_MOST', float(PLUCK.most)),
     declare('PLUCK_LIGHT', float(PLUCK.light)),
-    declare('PLUCK_GLOW', float(PLUCK.glow)),
-    declare('PLUCK_GLINT_WAVE', float(PLUCK.glintWave)),
-    declare('PLUCK_GLINT_SPEED', float(PLUCK.glintSpeed)),
   ].join('\n')
 
 /**
@@ -268,8 +256,8 @@ const pluckFunctions = (
   mutable: string,
 ) => `
 // Where a thread meets the pointer's path, from how far beside each end of the path it ran: x how far along the path it
-// crossed (the nearer end if it missed), y how firmly it was caught, 1 if it crossed, falling off fast with distance,
-// and a little for its neighbours. Mirrors caught in pluck.ts.
+// crossed (the nearer end if it missed), y how much of the air reaches it, 1 if it crossed, falling off softly with
+// distance. Mirrors caught in pluck.ts.
 ${fn(
   'caught',
   vec2,
@@ -283,15 +271,13 @@ ${fn(
     miss = min(abs(d0), abs(d1));
     if (abs(d0) > abs(d1)) { along = 1.0; }
   }
-  ${local} near = exp(-(miss * miss) / (PLUCK_REACH * PLUCK_REACH));
-  ${local} far = PLUCK_SYMPATHY * exp(-(miss * miss) / (PLUCK_SYMPATHETIC * PLUCK_SYMPATHETIC));
-  return ${vec2}(along, mix(far, 1.0, near));`,
+  return ${vec2}(along, exp(-(miss * miss) / (PLUCK_REACH * PLUCK_REACH)));`,
 )}
-// How a thread rings along px along it, plucked at px along it, between anchors anchorA and anchorB, age seconds after the
-// pointer reached it, struck at strength, for a fibre strung as tightly as seed (0 to 1) says: x how far it is displaced
-// for a pull of 1 px, y the light it adds. It rings the stretch around where it was plucked, at most PLUCK_STRETCH
-// long: the pull draws it into the first three modes of a plucked string's triangle; released, each rings at its
-// multiple of the fundamental and dies faster the higher it is. Mirrors ringing in pluck.ts.
+// How a thread drifts along px along it, where the pointer passed it at px along it, between anchors anchorA and anchorB,
+// age seconds after, blown at strength, for a fibre as free as seed (0 to 1) says: x how far it is displaced for a pull
+// of 1 px, y the light it adds. The stretch around where the pointer passed, at most PLUCK_STRETCH long, bows aside,
+// flat at its ends and at its peak; it eases out over PLUCK_CATCH and drifts back without overshooting by PLUCK_LIFE.
+// Mirrors ringing in pluck.ts.
 ${fn(
   'ringing',
   vec2,
@@ -300,39 +286,14 @@ ${fn(
   ${local} low = max(anchorA, at - PLUCK_STRETCH / 2.0);
   ${local} stretch = min(anchorB, at + PLUCK_STRETCH / 2.0) - low;
   ${local} x = (along - low) / stretch;
-  if (age <= 0.0 || !(stretch > 0.0) || x <= 0.0 || x >= 1.0) { return ${vec2}(0.0, 0.0); }
+  if (age <= 0.0 || age >= PLUCK_LIFE || !(stretch > 0.0) || x <= 0.0 || x >= 1.0) { return ${vec2}(0.0, 0.0); }
   ${local} p = clamp((at - low) / stretch, PLUCK_EDGE, 1.0 - PLUCK_EDGE);
-  ${local} sp = sin(PI * p);
-  ${local} cp = cos(PI * p);
-  ${local} sx = sin(PI * x);
-  ${local} cx = cos(PI * x);
-  ${local} k = 2.0 / (PI * PI * p * (1.0 - p));
-  ${local} m1 = k * sp * sx;
-  ${local} m2 = k * 2.0 * sp * cp / 4.0 * 2.0 * sx * cx;
-  ${local} m3 = k * sp * (3.0 - 4.0 * sp * sp) / 9.0 * sx * (3.0 - 4.0 * sx * sx);
-  ${local} shape = m1 + m2 + m3;
-  ${local} fade = (1.0 - smoothstep(PLUCK_LIFE * 0.6, PLUCK_LIFE, age)) * smoothstep(0.0, PLUCK_TAPER, x) * smoothstep(0.0, PLUCK_TAPER, 1.0 - x);
-  ${mutable} shift = 0.0;
-  ${mutable} energy = 0.0;
-  if (age < PLUCK_CATCH) {
-    ${local} pulled = smoothstep(0.0, PLUCK_CATCH, age);
-    shift = shape * pulled;
-    energy = pulled;
-  } else {
-    ${local} a = age - PLUCK_CATCH;
-    ${local} pitch = clamp(PLUCK_WAVE / (2.0 * stretch), PLUCK_PITCH_LOW, PLUCK_PITCH_HIGH) * (1.0 + PLUCK_DETUNE * (2.0 * seed - 1.0));
-    ${local} q1 = cos(TAU * pitch * a);
-    ${local} q2 = 2.0 * q1 * q1 - 1.0;
-    ${local} q3 = q1 * (4.0 * q1 * q1 - 3.0);
-    ${local} e1 = exp(-a / mix(PLUCK_DECAY_SOFT, PLUCK_DECAY_HARD, strength));
-    shift = m1 * q1 * e1 + m2 * q2 * e1 * e1 + m3 * q3 * e1 * e1 * e1;
-    energy = e1;
-  }
-  ${local} away = abs(x - p) * stretch;
-  ${local} crest = 0.5 + 0.5 * cos(TAU * (away - PLUCK_GLINT_SPEED * age) / PLUCK_GLINT_WAVE);
-  ${local} crest2 = crest * crest;
-  ${local} crest4 = crest2 * crest2;
-  return ${vec2}(shift * fade, strength * energy * fade * abs(shape) * mix(PLUCK_GLOW, 1.0, crest4 * crest4));`,
+  ${mutable} shape = 0.0;
+  if (x < p) { shape = smoothstep(0.0, p, x); } else { shape = 1.0 - smoothstep(p, 1.0, x); }
+  ${mutable} blown = 0.0;
+  if (age < PLUCK_CATCH) { blown = smoothstep(0.0, PLUCK_CATCH, age); }
+  else { blown = 1.0 - smoothstep(PLUCK_CATCH, PLUCK_LIFE, age); }
+  return ${vec2}(shape * blown * (1.0 + PLUCK_DETUNE * (2.0 * seed - 1.0)), strength * shape * blown);`,
 )}
 // Every pluck's displacement of one point, summed, bounded smoothly to PLUCK_MOST: one pluck passes nearly whole, and
 // a thread swept again and again never bends further. Mirrors bounded in pluck.ts.

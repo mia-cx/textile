@@ -165,23 +165,21 @@ screen, the cord is drawn through the whole section; between steps it holds, the
 critically damped spring that settles in about a second, fading out along its route. With reduced motion it is simply
 drawn, and holds still.
 
-Loose threads ring like plucked strings under a mouse or pen (`pluck.ts`): in the hero's incoming field and the
-close's, behind each section where the cord is unbraided, and along the strands it runs on into in Voice; the plait
-never rings, and nor do the strands peeling off into the demos. As the pointer crosses a thread it catches it, 30 to
-50ms later with a 60 Hz mouse, pulls it aside in the direction of travel for 70ms, and lets go. The thread then rings
-as a damped standing wave over the stretch around the pluck, up to 440px long and shorter near its anchors (where it
-enters and where it joins its strand, or, on the cord, where the strands meet in the plait), tapering off at the
-stretch's ends so it bends with no corner. It rings in the first three modes of a plucked string, at a pitch set by that length, about
-2 Hz over the full 440px and up to 6 Hz near an anchor, each fibre detuned a little so neighbours shimmer apart. It is
-gone within 1.5 seconds, and neighbours within 24px ring along faintly. A faster sweep pulls harder (up to 12px) and
-rings longer, and plucks on one thread add up to 16px at most. A ringing thread brightens, with glints running out
-from the pluck. The pointer's path is cut every 30ms, and when it stops, into a ring of 48 plucks, uniforms both
-renderers' vertex shaders read; a flick from rest counts from where the pointer rested. Each thread is tested against a
-pluck where it was when plucked, on the path its strand walks there, and only along the stretch a pluck can reach; in
-the hero most threads are also ruled out by their lane before they are placed. The
-hero's labels ride their threads through the same math on the CPU, and the cord's knots sit where it is braided. Touch
-scrolls instead; over a panel the pointer is on glass; with reduced motion, in the 2D fallbacks, or with no field
-animating, nothing is plucked.
+A mouse or pen stirs the loose threads like air (`pluck.ts`): in the hero's incoming field and the close's, behind
+each section where the cord is unbraided, and along the strands it runs on into in Voice; the plait never moves, and
+nor do the strands peeling off into the demos. Threads near the pointer's path are blown aside in its direction of
+travel, fully where it crossed them and less with distance (to 37% at 70px). Each bows over the stretch around where
+the pointer passed, up to 1000px long and shorter near its anchors (where it enters and where it joins its strand, or,
+on the cord, where the strands meet in the plait), flat at its ends and its peak so it bends with no corner. It eases
+out over 0.45 seconds and drifts back to rest by 3.5 seconds, without overshooting; each fibre moves a little more or
+less than its neighbours, so a bundle stirs rather than slides. A faster sweep blows harder (up to 28px), and gusts on
+one thread add up to 40px at most. A blown thread brightens a little. The pointer's path is cut every 75ms, and when it
+stops, into a ring of 48 gusts, uniforms both renderers' vertex shaders read; a move from rest counts from where the
+pointer rested. Each thread is tested against a gust where it was when the pointer passed, on the path its strand walks
+there, and only along the stretch a gust can reach; in the hero most threads are also ruled out by their lane before
+they are placed. The hero's labels ride their threads through the same math on the CPU, and the cord's knots sit where
+it is braided. Touch scrolls instead; over a panel the pointer is on glass; with reduced motion, in the 2D fallbacks,
+or with no field animating, nothing moves.
 
 Measured in Chromium 156 on an RTX 3070 (Vulkan), hero on screen at 2000×1100:
 

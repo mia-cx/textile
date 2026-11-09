@@ -1,11 +1,11 @@
 import { clockAt, ticking } from './clock'
 
 /**
- * Plucking the loose threads with the pointer. As a mouse or pen moves over the page, its path is cut into short
- * segments, each kept in a small ring (`ring`) with how hard it was struck. Every thread field reads the ring each
- * frame: a thread that crossed a segment is caught, pulled sideways in the direction of travel, and released, and then
- * rings as a damped standing wave between its anchors (see `ringing`, mirrored as `ringing` in the shaders). Only where
- * it is loose: the plait never rings.
+ * The pointer stirring the loose threads like air. As a mouse or pen moves over the page, its path is cut into short
+ * segments, each kept in a small ring (`ring`) with how fast it moved. Every thread field reads the ring each frame:
+ * threads near a segment are blown aside in the direction of travel, the nearer the further, and drift slowly back
+ * (see `ringing`, mirrored as `ringing` in the shaders). Only where they are loose: the plait never moves. (The code
+ * calls each segment a pluck, after what it first was.)
  *
  * The ring holds page pixels and the shared clock's seconds; each field turns it into its own coordinates (`pluckField`
  * in geometry.ts, `pluckCord` in cord.ts) and hands it to its shaders as uniforms, which ring a pluck only while its
@@ -13,68 +13,45 @@ import { clockAt, ticking } from './clock'
  */
 
 export const PLUCK = {
-  /** Plucks the ring holds: a pointer moving all the time cuts this many in a `life`, each `segment` long. */
+  /** Gusts the ring holds: a pointer moving all the time cuts this many in a `life`, each `segment` long. */
   ring: 48,
-  /** Seconds a thread rings after the pointer reaches it, its ring fading to nothing by the end. */
-  life: 1.5,
-  /** Seconds the pointer holds a thread, pulling it aside, before it slips free and rings. */
-  catch: 0.07,
+  /** Seconds a thread drifts after the pointer passes, back at rest by the end. */
+  life: 3.5,
+  /** Seconds a thread takes to be blown aside, easing out at the start and in at its furthest. */
+  catch: 0.45,
+  /** How far from the pointer's path the air reaches, in px: a thread this far off moves 37% as far as one it crossed. */
+  reach: 70,
   /**
-   * How near the pointer's path a thread passes to be caught outright, in px; and how much its neighbours within
-   * `sympatheticReach` ring along, a little, as fibres in one bundle do.
+   * How far a thread is blown aside at most, in px, by the fastest sweep; and how far, at most, every gust on it at once
+   * can displace it together, reached smoothly: never a kink.
    */
-  reach: 4,
-  sympathy: 0.2,
-  sympatheticReach: 24,
-  /**
-   * How far a thread is pulled aside at most, in px, by the fastest flick; and how far, at most, every pluck ringing it
-   * at once can displace it together, reached smoothly: never a kink, never over text.
-   */
-  pull: 12,
-  most: 16,
-  /** The pointer's speed, in px/s, at which a pluck reaches 63% of its strength: a slow sweep ripples softly. */
+  pull: 28,
+  most: 40,
+  /** The pointer's speed, in px/s, at which a gust reaches 63% of its strength: a slow sweep stirs softly. */
   speed: 1200,
-  /** Slower than this, in px/s, the pointer is resting on the threads, not plucking them. */
+  /** Slower than this, in px/s, the pointer is resting over the threads, not stirring them. */
   rest: 60,
   /**
-   * The longest stretch a pluck rings, in px, centred where it was plucked: a fibre is held by its neighbours further
-   * out, so a pluck rings the stretch around it, shorter where an anchor (where the thread enters, or meets its
-   * strand's plait) is nearer. Where the stretch ends short of an anchor, its ring tapers off over its outer `taper`,
-   * so the thread runs on from it with no corner.
+   * The longest stretch of thread a gust moves, in px, centred where the pointer passed, shorter where an anchor (where
+   * the thread enters, or meets its strand's plait) is nearer. It bows smoothly from rest at the stretch's ends to its
+   * furthest where the pointer passed, with no corner.
    */
-  stretch: 440,
-  taper: 0.15,
+  stretch: 1000,
   /**
-   * How fast a wave runs along a thread, in px/s, which sets its pitch: its fundamental rings at `wave / 2L` for a
-   * stretch L px long, about 2 Hz for the longest and higher as an anchor shortens it, up to `pitch[1]` Hz, low enough
-   * for every frame to show it. Each fibre is strung a little tighter or looser, up to `detune` of its pitch either way,
-   * so neighbours plucked together drift apart and shimmer.
+   * How near either end of the stretch, as a share of it, the bow peaks at most: passed nearer an anchor, it peaks here,
+   * so it never climbs steeply off the anchor.
    */
-  wave: 1800,
-  pitch: [2, 6] as const,
-  detune: 0.15,
+  edge: 0.25,
+  /** How much more or less than its neighbours each fibre moves, either way, so a bundle stirs, not slides. */
+  detune: 0.25,
+  /** How much brighter a blown thread burns at its furthest. */
+  light: 0.35,
   /**
-   * How long the fundamental takes to fall to 1/e, in seconds, for the softest pluck and the hardest; each overtone
-   * dies `n` times faster.
+   * How long, in seconds, the pointer's path runs before it is cut into a gust: often enough that a thread starts to move
+   * soon after the pointer passes, and seldom enough that the ring holds a whole sweep for `life`. A path is also cut
+   * when the pointer stops for this long.
    */
-  decay: [0.3, 0.55] as const,
-  /** How close to an anchor, as a share of the stretch, a pluck counts as being plucked: nearer, the shape holds. */
-  edge: 0.03,
-  /**
-   * How much brighter a ringing thread burns at its strongest, and its glints: crests of light running out from where
-   * it was plucked, `glintWave` px apart at `glintSpeed` px/s, over a share `glow` of light along the whole stretch.
-   */
-  light: 0.9,
-  glow: 0.35,
-  glintWave: 140,
-  glintSpeed: 700,
-  /**
-   * How long, in seconds, the pointer's path runs before it is cut into a pluck: often enough that a thread is caught
-   * soon after the pointer crosses it (each is caught a segment's span after, so 30 to 50ms at 60 Hz), and seldom
-   * enough that the ring holds a whole sweep, however fast, for `life`. A path is also cut when the pointer stops for
-   * this long.
-   */
-  segment: 0.03,
+  segment: 0.075,
   /**
    * How long without moving the pointer rests, in seconds, at least, and longer than two of its recent moves: a move
    * after a rest counts from where it rested, as long as one of its recent moves took, so a flick from beside a string
@@ -248,15 +225,14 @@ export function listen() {
 }
 
 /**
- * How a thread rings `along` px along it, plucked `at` px along it, between anchors `from` and `to` (px along it),
- * `age` seconds after the pointer reached it, struck at `strength` (0 to 1), for a fibre whose `seed` (0 to 1) sets how
- * tightly it is strung: how far it is displaced for a pull of 1 px, and how much light it adds. Mirrors `ringing` in
- * the shaders.
+ * How a thread drifts `along` px along it, where the pointer passed it `at` px along it, between anchors `from` and `to`
+ * (px along it), `age` seconds after the pointer passed, blown at `strength` (0 to 1), for a fibre whose `seed` (0 to 1)
+ * sets how freely it moves: how far it is displaced for a pull of 1 px, and how much light it adds. Mirrors `ringing`
+ * in the shaders.
  *
- * It rings the stretch around where it was plucked, at most `stretch` long, between the anchors. The pull draws that
- * stretch into a plucked string's shape, the first three modes of a triangle peaking where it was plucked, so it bends
- * smoothly with no corner. Released, each mode rings at its own multiple of the fundamental, set by the stretch's
- * length, and dies away faster the higher it is; harder plucks ring longer. All of it fades to nothing by `life`.
+ * Air, not a pluck: the stretch around where the pointer passed, at most `stretch` long between the anchors, bows
+ * aside, from rest at its ends to its furthest where the pointer passed, flat at both so it bends with no corner. It
+ * eases out to its furthest over `catch`, then drifts back to rest, slowly and without overshooting, by `life`.
  *
  * It returns the same object every call, so labels can ride their threads every frame without allocating: read it
  * before calling again.
@@ -275,47 +251,15 @@ export function ringing(
   const x = (along - low) / stretch
   rung.shift = 0
   rung.light = 0
-  if (age <= 0 || !(stretch > 0) || x <= 0 || x >= 1) return rung
+  if (age <= 0 || age >= PLUCK.life || !(stretch > 0) || x <= 0 || x >= 1) return rung
   const p = Math.min(Math.max((at - low) / stretch, PLUCK.edge), 1 - PLUCK.edge)
-  const sp = Math.sin(Math.PI * p)
-  const cp = Math.cos(Math.PI * p)
-  const sx = Math.sin(Math.PI * x)
-  const cx = Math.cos(Math.PI * x)
-  // A plucked string's modes, sin(nπp) sin(nπx) / n², scaled so the triangle they sum to peaks at 1.
-  const k = 2 / (Math.PI * Math.PI * p * (1 - p))
-  const m1 = k * sp * sx
-  const m2 = ((k * 2 * sp * cp) / 4) * 2 * sx * cx
-  const m3 = ((k * sp * (3 - 4 * sp * sp)) / 9) * sx * (3 - 4 * sx * sx)
-  const shape = m1 + m2 + m3
-  // Fading out by `life`, and tapering off at the stretch's ends so the thread runs on from them with no corner.
-  const fade =
-    (1 - smoothstep(PLUCK.life * 0.6, PLUCK.life, age)) *
-    smoothstep(0, PLUCK.taper, x) *
-    smoothstep(0, PLUCK.taper, 1 - x)
-  let shift: number
-  let energy: number
-  if (age < PLUCK.catch) {
-    const pulled = smoothstep(0, PLUCK.catch, age)
-    shift = shape * pulled
-    energy = pulled
-  } else {
-    const a = age - PLUCK.catch
-    const pitch =
-      Math.min(Math.max(PLUCK.wave / (2 * stretch), PLUCK.pitch[0]), PLUCK.pitch[1]) *
-      (1 + PLUCK.detune * (2 * seed - 1))
-    const q1 = Math.cos(Math.PI * 2 * pitch * a)
-    const q2 = 2 * q1 * q1 - 1
-    const q3 = q1 * (4 * q1 * q1 - 3)
-    const e1 = Math.exp(-a / (PLUCK.decay[0] + (PLUCK.decay[1] - PLUCK.decay[0]) * strength))
-    shift = m1 * q1 * e1 + m2 * q2 * e1 * e1 + m3 * q3 * e1 * e1 * e1
-    energy = e1
-  }
-  const away = Math.abs(x - p) * stretch
-  const crest =
-    0.5 + 0.5 * Math.cos((Math.PI * 2 * (away - PLUCK.glintSpeed * age)) / PLUCK.glintWave)
-  const glint = crest ** 8
-  rung.shift = shift * fade
-  rung.light = strength * energy * fade * Math.abs(shape) * (PLUCK.glow + (1 - PLUCK.glow) * glint)
+  const shape = x < p ? smoothstep(0, p, x) : 1 - smoothstep(p, 1, x)
+  const blown =
+    age < PLUCK.catch
+      ? smoothstep(0, PLUCK.catch, age)
+      : 1 - smoothstep(PLUCK.catch, PLUCK.life, age)
+  rung.shift = shape * blown * (1 + PLUCK.detune * (2 * seed - 1))
+  rung.light = strength * shape * blown
   return rung
 }
 const rung = { shift: 0, light: 0 }
@@ -331,9 +275,9 @@ export const bounded = (shift: number) => {
 
 /**
  * Where a thread meets the pointer's path, from how far beside each end of the path it ran (`d0`, `d1`, px across):
- * `along`, how far along the path it crossed (0 to 1; the nearer end if it missed), and `grip`, how firmly it was
- * caught: 1 if it crossed, falling off fast with distance, and a little for neighbours within `sympatheticReach`.
- * Mirrors `caught` in the shaders. Like `ringing`, it returns the same object every call.
+ * `along`, how far along the path it crossed (0 to 1; the nearer end if it missed), and `grip`, how much of the air
+ * reaches it: 1 if it crossed, falling off softly with distance over `reach`. Mirrors `caught` in the shaders. Like
+ * `ringing`, it returns the same object every call.
  */
 export function caught(d0: number, d1: number) {
   const crosses = d0 * d1 <= 0
@@ -346,16 +290,14 @@ export function caught(d0: number, d1: number) {
       ? 0
       : 1
   const miss = crosses ? 0 : Math.min(Math.abs(d0), Math.abs(d1))
-  const near = Math.exp(-((miss / PLUCK.reach) ** 2))
-  const far = PLUCK.sympathy * Math.exp(-((miss / PLUCK.sympatheticReach) ** 2))
   hit.along = along
-  hit.grip = far + (1 - far) * near
+  hit.grip = Math.exp(-((miss / PLUCK.reach) ** 2))
   return hit
 }
 const hit = { along: 0, grip: 0 }
 
-/** How far beyond either side of its own sway a thread can be missed and still ring at all, in px. */
-export const MISS = PLUCK.sympatheticReach * 3
+/** How far beyond either side of its own sway a thread can be missed and still move at all, in px. */
+export const MISS = PLUCK.reach * 3
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
