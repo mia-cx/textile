@@ -1,5 +1,6 @@
 // Renders Textile's mark, the trefoil, into static/icons/<size>.png: the favicons, the touch and manifest icons, and
-// the header's mark; and social.png, a padded avatar for social profiles and the Discord server. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
+// the header's mark; social.png, a padded avatar for social profiles and the Discord server; and banner.png, a profile
+// header of the hero's threads beside its headline. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
 // pixel density, so every pixel of glow is the browser's own, then downsizes it the way Ditherette's
 // lanczos3-scale-aware does: a Lanczos-3 kernel stretched by the scale factor, in linear light, so thin bright fibres
 // average as light does instead of darkening. Sizes of 64 and below start from a capture with a thicker band, and
@@ -41,6 +42,8 @@ const TILE = `&fill=${TILE_FILL}&band=${(SMALL_MARK.band * TILE_FILL) / SMALL_MA
 const SOCIAL_FILL = 0.55
 const SOCIAL_SIZE = 1024
 const SOCIAL = `&fill=${SOCIAL_FILL}&band=${(MARK.band * SOCIAL_FILL) / MARK.fill}`
+/** The social banner, banner.png (src/routes/dev/banner), at a profile header's 3:1. */
+const BANNER = [1500, 500] as const
 /** The site's ink (src/lib/tokens.css): only light above it is brightened, so the ground stays the ink. */
 const INK = '#07060c'
 
@@ -51,27 +54,31 @@ const ink = [1, 3, 5].map((i) => toLinear(Number.parseInt(INK.slice(i, i + 2), 1
 const gain = (size: number) => 1 + 0.1 * Math.max(0, Math.log2(512 / size))
 
 interface Image {
-  readonly size: number
+  readonly width: number
+  readonly height: number
   readonly data: Float32Array
 }
 
-/** How many times a capture is tried: headless Chromium now and then shoots before the mark's first frame. */
+/** How many times a capture is tried: headless Chromium now and then shoots before the page's first frame. */
 const ATTEMPTS = 4
 
-/** The study page, still, as a linear RGB image 2048 px square. */
-function capture(query: string): Image {
+/** The mark's study page at 1024, still, with `query`'s settings. */
+const study = (query = '') => capture(`/dev/trefoil?size=1024&still${query}`, 1024, 1024)
+
+/** A study page `width` by `height` CSS px, still, as a linear RGB image at 2× that. */
+function capture(path: string, width: number, height: number): Image {
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
-    const image = shoot(query)
-    // Drawn, the mark lights pixels far above the ink; a frame shot too early is ink all over.
+    const image = shoot(path, width, height)
+    // Drawn, the threads light pixels far above the ink; a frame shot too early is ink all over.
     if (image.data.some((v) => v > 0.2)) return image
   }
   throw new Error(
-    `The study page drew nothing in ${ATTEMPTS} tries. Is the dev server running at ${URL_BASE}?`,
+    `${path} drew nothing in ${ATTEMPTS} tries. Is the dev server running at ${URL_BASE}?`,
   )
 }
 
-function shoot(query: string): Image {
-  const file = join(mkdtempSync(join(tmpdir(), 'textile-logo-')), 'mark.png')
+function shoot(path: string, width: number, height: number): Image {
+  const file = join(mkdtempSync(join(tmpdir(), 'textile-logo-')), 'shot.png')
   execFileSync(process.env.CHROMIUM ?? 'chromium', [
     '--headless=new',
     '--no-sandbox',
@@ -79,17 +86,19 @@ function shoot(query: string): Image {
     // Software WebGL, so it renders the same on a machine without a GPU.
     '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader',
+    // The thread field's one still frame, at the moment its current looks settled.
+    '--force-prefers-reduced-motion',
     '--force-device-scale-factor=2',
-    '--window-size=1024,1024',
+    `--window-size=${width},${height}`,
     '--virtual-time-budget=8000',
     `--screenshot=${file}`,
-    `${URL_BASE}/dev/trefoil?size=1024&still${query}`,
+    `${URL_BASE}${path}`,
   ])
   const png = PNG.sync.read(readFileSync(file))
   const data = new Float32Array(png.width * png.height * 3)
   for (let i = 0; i < png.width * png.height; i++)
     for (let c = 0; c < 3; c++) data[i * 3 + c] = toLinear((png.data[i * 4 + c] ?? 0) / 255)
-  return { size: png.width, data }
+  return { width: png.width, height: png.height, data }
 }
 
 const lanczos = (x: number) => {
@@ -137,22 +146,26 @@ function cover(x: number, y: number, size: number, radius: number) {
   return Math.min(1, Math.max(0, radius - Math.hypot(dx, dy) + 0.5))
 }
 
+/** `image` resized to `width` by `height`, one axis and then the other. */
+const resize = (image: Image, width: number, height: number) =>
+  pass(pass(image.data, image.width, width, image.height), image.height, height, width)
+
 /**
- * The mark on the site's ink, as a square, or as a little app icon: the ink a rounded square with clear corners, so a
- * favicon stands on its own dark tile in a light browser too.
+ * The image on the site's ink, `width` by `height`, or as a little app icon: the ink a rounded square with clear
+ * corners, so a favicon stands on its own dark tile in a light browser too.
  */
-function icon(image: Image, size: number, rounded: boolean) {
-  const data = pass(pass(image.data, image.size, size, image.size), image.size, size, size)
-  const png = new PNG({ width: size, height: size })
-  const extra = gain(size)
-  const radius = size * TILE_RADIUS
-  for (let i = 0; i < size * size; i++) {
+function icon(image: Image, width: number, height = width, rounded = false) {
+  const data = resize(image, width, height)
+  const png = new PNG({ width, height })
+  const extra = gain(Math.min(width, height))
+  const radius = width * TILE_RADIUS
+  for (let i = 0; i < width * height; i++) {
     for (let c = 0; c < 3; c++) {
       const base = ink[c] ?? 0
       const lit = base + Math.max(0, (data[i * 3 + c] ?? 0) - base) * extra
       png.data[i * 4 + c] = Math.round(toSrgb(Math.min(1, lit)) * 255)
     }
-    const alpha = rounded ? cover(i % size, Math.floor(i / size), size, radius) : 1
+    const alpha = rounded ? cover(i % width, Math.floor(i / width), width, radius) : 1
     png.data[i * 4 + 3] = Math.round(alpha * 255)
   }
   return PNG.sync.write(png)
@@ -164,7 +177,7 @@ function icon(image: Image, size: number, rounded: boolean) {
  * transparent PNG that is as opaque as its brightest channel, the way the page's canvases lay their light.
  */
 function light(image: Image, size: number) {
-  const data = pass(pass(image.data, image.size, size, image.size), image.size, size, size)
+  const data = resize(image, size, size)
   const extra = gain(size)
   const above = (i: number, c: number) =>
     Math.max(0, (data[i * 3 + c] ?? 0) - (ink[c] ?? 0)) * extra
@@ -193,15 +206,20 @@ function light(image: Image, size: number) {
   return PNG.sync.write(png)
 }
 
-const mark = capture('')
-const thick = capture(THICK)
-const tile = capture(TILE)
+const mark = study()
+const thick = study(THICK)
+const tile = study(TILE)
 mkdirSync(OUT, { recursive: true })
 for (const size of SIZES) {
   const favicon = FAVICONS.includes(size)
   const source = favicon ? tile : size <= SMALL ? thick : mark
-  writeFileSync(new URL(`${size}.png`, OUT), icon(source, size, favicon))
+  writeFileSync(new URL(`${size}.png`, OUT), icon(source, size, size, favicon))
 }
 /** The header's mark, as light, at 2× its 32px. */
 writeFileSync(new URL('light-64.png', OUT), light(thick, 64))
-writeFileSync(new URL('social.png', OUT), icon(capture(SOCIAL), SOCIAL_SIZE, false))
+writeFileSync(new URL('social.png', OUT), icon(study(SOCIAL), SOCIAL_SIZE))
+const [width, height] = BANNER
+writeFileSync(
+  new URL('banner.png', OUT),
+  icon(capture(`/dev/banner?w=${width}&h=${height}`, width, height), width, height),
+)
