@@ -394,11 +394,15 @@ function close(
     position: relative;
     overflow-x: clip;
   }
+  /* A container, so the headline can size itself to its column (see h1). */
   .hero {
+    --hero-gap: 3rem;
+    --hero-window: 0px;
+    container-type: inline-size;
     position: relative;
     display: grid;
     align-items: center;
-    gap: 3rem;
+    gap: var(--hero-gap);
     /* Always the whole screen, however tall, so the next section never shows beneath it; on a very short screen it
        grows past the screen to fit its copy and window instead. */
     min-height: max(42rem, 100svh);
@@ -472,11 +476,13 @@ function close(
     mask-image: linear-gradient(transparent, #000 35%, #000 65%, transparent);
     pointer-events: none;
   }
-  /* Never one line: "Discord bots" fits in 6em and "Discord bots for" doesn't, so on the widest screens the headline
-     stays a block beside the braid instead of one line it runs through. Columns narrower than 6em wrap it further. */
+  /* Always two lines: "Discord bots" fits in 6em and "Discord bots for" doesn't, so the headline stays a block beside
+     the braid instead of one line it runs through. It grows with the screen, but never past a sixth of its column, so
+     "Discord bots" always fits on one line: on the widest screens the hero stops widening while the window keeps
+     growing, and the column narrows. */
   h1 {
     max-width: 6em;
-    font-size: clamp(3.25rem, 1.2rem + 5.6vw, 8.75rem);
+    font-size: min(clamp(3.25rem, 1.2rem + 5.6vw, 8.75rem), (100cqi - var(--hero-gap) - var(--hero-window)) / 6);
     font-weight: 600;
     line-height: 0.98;
     letter-spacing: -0.045em;
@@ -548,8 +554,9 @@ function close(
   }
   @media (min-width: 60rem) {
     .hero {
-      grid-template-columns: minmax(0, 1fr) clamp(26rem, 36vw, 50rem);
-      gap: clamp(3rem, 7vw, 10rem);
+      --hero-gap: clamp(3rem, 7vw, 10rem);
+      --hero-window: clamp(26rem, 36vw, 50rem);
+      grid-template-columns: minmax(0, 1fr) var(--hero-window);
     }
     .hero-window {
       --tip: 0 50%;
