@@ -207,7 +207,12 @@ const move = (event: PointerEvent) => {
         path.t0 = at - path.interval
       }
     } else begin(x, y, at)
-  } else path.interval = Math.min(Math.max(gap, 4), PLUCK.cadence * 1000)
+  } else {
+    path.interval = Math.min(Math.max(gap, 4), PLUCK.cadence * 1000)
+    // Turning back on itself, the path so far is cut where it turned, so a quick wiggle blows each way it went rather
+    // than only what it netted.
+    if ((x - path.x1) * (path.x1 - path.x0) + (y - path.y1) * (path.y1 - path.y0) < 0) cut(path.t1)
+  }
   path.x1 = x
   path.y1 = y
   path.t1 = at
