@@ -36,7 +36,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
   <a href="/" class="wordmark" aria-label="Textile home"><span class="mark" style:--mark-size="{MARK_SIZE}px"><Trefoil size={MARK_SIZE} mark={HEADER_MARK} bleed={MARK_BLEED} /></span>textile</a>
   <nav aria-label="Site" class="flex items-center gap-x-1 sm:gap-x-3">
     <a class="nav-link" href="/docs/">Docs</a>
-    <a class="nav-link" href={GITHUB_URL}>GitHub</a>
+    <a class="nav-link github" href={GITHUB_URL}>GitHub</a>
     {#if data.signedIn}
       <a class="nav-pill" href="/access">Access</a>
     {:else}
@@ -164,6 +164,7 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
     display: inline-flex;
     align-items: center;
     min-height: 2.75rem;
+    white-space: nowrap;
     margin-left: 0.5rem;
     padding-inline: 1.25rem;
     border: 1px solid color-mix(in srgb, var(--ink) 40%, transparent);
@@ -191,6 +192,12 @@ const PAPER = { light: '#f8f7fb', dark: '#07060c' }
       margin-left: 0.25rem;
       padding-inline: 1rem;
       font-size: 1rem;
+    }
+  }
+  /* Narrow phones fit the mark, the name, Docs and Sign in within the gutters; GitHub stays in the footer. */
+  @media (max-width: 24rem) {
+    .nav-link.github {
+      display: none;
     }
   }
   .site-footer {
