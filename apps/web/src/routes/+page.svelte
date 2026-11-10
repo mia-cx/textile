@@ -248,9 +248,10 @@ function hero(
 /**
  * The close: threads braiding into the sign-in button, as the hero's braid into its window, at the hero's weight and
  * light. They gather into loose ropes from well back, curl as they near the button, and form a short plait, CLOSE_PLAIT
- * pixels, about a twist and a half at the hero's pitch, at the page cord's radius, whole at the button's edge. It runs on
- * at full thickness behind the button to its middle, so the opaque pill always hides its end, and lights its rim
- * (`.cord-lit`). Only side by side; stacked, the close shows no field.
+ * pixels, about a twist and a half at the hero's pitch, at the page cord's radius, whole at the button's edge. It ends
+ * just behind the edge, at the centre of the pill's rounded end, so it is at the cord's radius where it goes behind and
+ * the opaque pill hides all of it there, and lights its rim (`.cord-lit`). Only side by side; stacked, the close shows
+ * no field.
  */
 const CLOSE_PLAIT = 220
 const CLOSE_GATHER = 640
@@ -259,7 +260,7 @@ function close(
   target: DOMRect | undefined,
 ): Field {
   const end: Point = target
-    ? [target.x + target.width / 2, target.y + target.height / 2]
+    ? [target.x + target.height / 2, target.y + target.height / 2]
     : [width * 0.6, height * 0.6]
   // The plait forms before the button's edge, and is whole there, then runs on behind it.
   const edge = target?.x ?? end[0]
