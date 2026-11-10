@@ -122,15 +122,20 @@ const drop = () => {
   path.t0 = path.tt = Number.NaN
 }
 
+/** Seconds after the pointer passed when a thread has drifted back all but a hundredth of the way: under 0.3px. */
+const FADED = PLUCK.life - 2 * PLUCK.segment
+
 /**
- * The slot whose pluck stops ringing soonest: one long done, or, when a sweep fills the ring, the oldest, by then faded
- * all but to nothing, so the newest is never kept waiting.
+ * The slot whose pluck stops ringing soonest, at `clock` (the fields' clock): one long done, or, when a sweep fills the
+ * ring, the oldest, by then `FADED` into its `life` (one cut a `segment` turns the ring over in a `life`). If even that
+ * one still drifts, as when the pointer cuts plucks faster than the ring turns over, -1: the new pluck is let go, since
+ * cutting the old one short would snap its threads back.
  */
-const soonest = () => {
+const soonest = (clock: number) => {
   let best = 0
   const end = (k: number) => (ring[k * SLOT + 5] ?? 0) + (ring[k * SLOT + 6] ?? 0)
   for (let k = 1; k < PLUCK.ring; k++) if (end(k) < end(best)) best = k
-  return best
+  return clock - end(best) >= FADED ? best : -1
 }
 
 /** Panels are opaque: over one, the pointer is on the glass, not on the threads behind it. */
@@ -158,16 +163,17 @@ const blow = (x: number, y: number, t: number, now: number) => {
   if (t > path.t0) {
     const span = (t - path.t0) / 1000
     const length = Math.hypot(x - path.x0, y - path.y0)
-    if (length / span >= PLUCK.rest && ticking(now)) {
+    const clock = clockAt(now)
+    const slot = soonest(clock)
+    if (length / span >= PLUCK.rest && ticking(now) && slot >= 0) {
       const strength = strengthOf(length, span)
-      const slot = soonest()
       const o = slot * SLOT
       ring[o] = path.x0
       ring[o + 1] = path.y0
       ring[o + 2] = x
       ring[o + 3] = y
       ring[o + 4] = PLUCK.pull * strength
-      ring[o + 5] = clockAt(now)
+      ring[o + 5] = clock
       ring[o + 6] = span
       ring[o + 7] = strength
       writes += 1
