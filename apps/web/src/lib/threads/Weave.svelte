@@ -41,8 +41,8 @@ import { hex, type Palette } from './renderer'
  * Without a GPU it is drawn in canvas 2D. It is drawn only side by side; stacked, each section names its event above
  * its demo instead. Decorative.
  *
- * `seam` is where the hero's strands stand where they meet the window's left edge: the cord carries each on, as itself,
- * from there behind the window to its bottom, and down the page.
+ * `seam` is where the hero's strands stand where its braid ends, behind the window's middle: the cord carries each on,
+ * as itself, from there behind the window to its bottom, and down the page.
  */
 let { seam }: { seam?: Seam | undefined } = $props()
 
@@ -412,8 +412,8 @@ onMount(() => {
       above = stop.box.bottom
       headings.push(rect(section.querySelector('h2') ?? copy).top + offset)
     }
-    // Behind the window, the hero's strands run from its left edge's middle to its bottom's middle.
-    const hidden = (from.right - from.left) / 2 + (from.bottom - from.top) / 2
+    // Behind the window, the hero's strands run from its middle, where the hero's braid ends, down to its bottom's middle.
+    const hidden = (from.bottom - from.top) / 2
     cord = weave(
       [(from.left + from.right) / 2, from.bottom],
       stops,

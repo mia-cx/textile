@@ -85,17 +85,17 @@ for event labels, the 2D fallbacks, and the social card. The page's cord (`cord.
   side, inner lanes mostly first; from `forms`, the strands grow their swing into a plait over half the stretch to
   `whole`, and every thread has joined its strand by 70% of it. The hero measures them from its layout, again when
   webfonts load: the bundles start to gather behind the copy, 1.2 gaps before its right edge and at least 360px, so
-  they converge over a long stretch even where the gap is narrow; the plait forms only in the open gap between the copy
-  and the window, at every width, never behind the window, whose glass would show it through the messages; and it is
-  whole where it meets the window. Each thread eases in with no corner, so the plait has no visible start. The braid
-  narrows linearly to `cord` and keeps one helix angle, a long pitch of 11 radii per twist (about 34°), so each crossing
-  has room, twisting tighter as it goes. It meets the window at the page cord's own radius, with no taper, so one braid
-  runs in at the window's left and out of its bottom; it runs on 24px under the window's server rail, so its end never
-  shows. The window drops its black shadow there, so the cord's end stays
+  they converge over a long stretch even where the gap is narrow; the plait forms in the open gap between the copy and
+  the window, at every width, and is whole where it meets the window. Each thread eases in with no corner, so the plait
+  has no visible start. The braid narrows linearly to `cord` and keeps one helix angle, a long pitch of 11 radii per
+  twist (about 34°), so each crossing has room, twisting tighter as it goes. It runs on behind the window to its middle,
+  reaching the page cord's own radius there, and the cord comes out of the window's bottom below that point: one braid.
+  Side by side, the hero's window is glass a little see-through (85%, no blur), so the braid shows faintly behind it.
+  The window drops its black shadow, so the cord's end stays
   bright, and a frame around it, which the window's clipping can't cut, takes the cord's light: a band on its rim about
   as tall as the braid, and faintly across its face, falling off as the inverse square of the distance from the cord's
-  end. The close's button takes the same contact: the plait is whole at its edge and runs on behind the opaque pill to
-  its middle, with a subtle warm rim, its violet face kept, its label 4.5:1. Wherever the cord meets an element, it
+  end. The close's button takes the same contact: the plait is whole at its edge and ends just behind it, at the centre of
+  the opaque pill's rounded end, at the cord's radius, with a subtle warm rim, its violet face kept, its label 4.5:1. Wherever the cord meets an element, it
   ends hidden behind it, never at its edge.
 - Only violet and amber: every thread runs one long gradient from violet through magenta and pink to amber and back,
   on a plain sine, so it spends as long between the two as in them, flowing toward the target. A cycle spans about

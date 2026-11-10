@@ -118,12 +118,6 @@ function labelBox(field: Field, label: Label): NonNullable<Field['text']>[number
   ]
 }
 /**
- * How far the hero's braid runs on behind the window's left edge, in CSS pixels: at full radius under its server rail,
- * which sits above the field, so it reads as passing behind and its end never shows, and never behind the messages,
- * whose glass would show it. The close's braid runs on to the middle of its button.
- */
-const BEHIND = 24
-/**
  * The hero's plait forms over a long stretch, each change on its own ramp (see `forming` in geometry.ts). The bundles
  * start to gather into three loose ropes well behind the copy, GATHER times the gap between the copy and the window
  * before the copy's edge and at least MIN_GATHER pixels; the ropes start to curl gently around each other behind the
@@ -148,12 +142,12 @@ function crossing(field: Spine, axis: 0 | 1, value: number) {
 }
 
 /**
- * Where `field` braids: its plait forms where its spine leaves the copy, at `copyEdge` on `axis`, and is whole at its
- * end, the window; its bundles gather from well before that, behind the copy.
+ * Where `field` braids: its plait forms where its spine leaves the copy, at `copyEdge` on `axis`, and is whole at
+ * `whole` (along it), by default its end; its bundles gather from well before that, behind the copy.
  */
-function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number) {
+function braidBetween(field: Spine, axis: 0 | 1, copyEdge: number, whole = 1) {
   const gather = Math.max((field.end[axis] - copyEdge) * GATHER, MIN_GATHER)
-  return [crossing(field, axis, copyEdge - gather), crossing(field, axis, copyEdge), 1] as const
+  return [crossing(field, axis, copyEdge - gather), crossing(field, axis, copyEdge), whole] as const
 }
 
 /** Where the hero's strands stand where they meet the window, so the page's cord carries them on below it. */
@@ -193,10 +187,10 @@ function hero(
 ): Field {
   const copy = copyBox()
   if (width >= SIDE_BY_SIDE) {
-    // The braid passes behind the window's left edge, which glows where it arrives, and comes out of its bottom as the
-    // page's cord: one braid.
+    // The braid passes behind the window's left edge, which glows where it arrives, and runs on behind its glass, faintly
+    // seen, to its middle, where the page's cord turns down to come out of its bottom: one braid.
     const end: Point = target
-      ? [target.x + BEHIND, target.y + target.height * 0.5]
+      ? [target.x + target.width * 0.5, target.y + target.height * 0.5]
       : [width * 0.66, height * 0.5]
     const shape = {
       start: [-width * 0.06, height * 0.5],
@@ -211,7 +205,13 @@ function hero(
     } satisfies Omit<Field, 'braid'>
     const field: Field = {
       ...shape,
-      braid: braidBetween(shape, 0, copy?.right ?? width * 0.45),
+      // Whole at the window's edge, as it goes behind.
+      braid: braidBetween(
+        shape,
+        0,
+        copy?.right ?? width * 0.45,
+        target ? crossing(shape, 0, target.x) : 1,
+      ),
       text: textBoxes(),
     }
     seam = seamOf(field)
@@ -433,6 +433,13 @@ function close(
     box-shadow:
       0 0 0 1px rgb(255 255 255 / 0.04),
       0 0 60px -10px color-mix(in srgb, var(--thread-violet) 35%, transparent);
+  }
+  /* Glass a little see-through, side by side, so the braid shows faintly running on behind it. No blur: one over the
+     live threads would re-render every frame. */
+  @media (min-width: 60rem) {
+    .hero-window :global(.hero-card) {
+      background: rgb(20 18 30 / 0.85);
+    }
   }
   /* The copy's box hugs its text, so the shade behind it covers the text and no more. */
   .hero-copy {
