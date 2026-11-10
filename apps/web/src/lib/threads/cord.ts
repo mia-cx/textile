@@ -268,8 +268,7 @@ const KNOT_LOOK = 80
  * in `Cord`), on under it to the end's point (Weave.svelte sets it behind the element, never at its edge), its swing
  * settling over its last `pinch` px so it runs in level, every fibre pinching in onto the path there to a point at its
  * end, so it tapers behind a round avatar narrower than the circle. The cord ends `turn` of its way across to its first
- * end above
- * that end.
+ * end above that end.
  */
 const ENDING = { open: 0.6, spread: 7, turn: 0.5, pinch: 160 } as const
 

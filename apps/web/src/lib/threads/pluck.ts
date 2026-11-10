@@ -4,8 +4,8 @@ import { clockAt, ticking } from './clock'
  * The pointer stirring the loose threads like air. As a mouse or pen moves over the page, its path is cut into short
  * segments, each kept in a small ring (`ring`) with how fast it moved. Every thread field reads the ring each frame:
  * threads near a segment are blown aside in the direction of travel, the nearer the further, and drift slowly back
- * (see `ringing`, mirrored as `ringing` in the shaders). Only where they are loose: the plait never moves. (The code
- * calls each segment a pluck, after what it first was.)
+ * (see `ringing`, mirrored as `ringing` in the shaders). Only where they are loose: the plait never moves. A pluck, in
+ * the code, is one such segment and the gust it blows.
  *
  * The ring holds page pixels and the shared clock's seconds; each field turns it into its own coordinates (`pluckField`
  * in geometry.ts, `pluckCord` in cord.ts) and hands it to its shaders as uniforms, which ring a pluck only while its
@@ -91,20 +91,35 @@ export const ring = new Float32Array(PLUCK.ring * SLOT)
  */
 export const stamps = new Uint32Array(PLUCK.ring)
 let writes = 0
+/** When the last pluck was cut, ms on the events' clock: a moving pointer cuts at most one a `segment`. */
+let blown = Number.NEGATIVE_INFINITY
 
 /**
  * The pointer's path since the last pluck was cut: where it started (`x0`, `y0`, at `t0`, ms on the events' clock),
- * and the latest move along it (`x1`, `y1`, at `t1`), which it keeps while there is no path (`t0` NaN), as where the
- * pointer rests. And how long its recent moves took, ms.
+ * where it first turned back on itself, if it has (`tx`, `ty`, at `tt`, NaN if not), and the latest move along it
+ * (`x1`, `y1`, at `t1`), which it keeps while there is no path (`t0` NaN), as where the pointer rests. And how long its
+ * recent moves took, ms.
  */
-const path = { x0: 0, y0: 0, t0: Number.NaN, x1: 0, y1: 0, t1: Number.NaN, interval: 16 }
+const path = {
+  x0: 0,
+  y0: 0,
+  t0: Number.NaN,
+  tx: 0,
+  ty: 0,
+  tt: Number.NaN,
+  x1: 0,
+  y1: 0,
+  t1: Number.NaN,
+  interval: 16,
+}
 const begin = (x: number, y: number, at: number) => {
   path.x0 = path.x1 = x
   path.y0 = path.y1 = y
   path.t0 = path.t1 = at
+  path.tt = Number.NaN
 }
 const drop = () => {
-  path.t0 = Number.NaN
+  path.t0 = path.tt = Number.NaN
 }
 
 /**
@@ -134,31 +149,49 @@ export const strengthOf = (length: number, span: number) =>
   (1 - Math.exp(-((length / span / PLUCK.speed) ** 2))) * Math.min(1, length / (2 * PLUCK.reach))
 
 /**
- * Cuts the path so far into a pluck at `now` (ms, the events' clock), if the pointer moved along it fast enough to
- * pluck, and carries the path on from its latest move. Its threads are caught from `now` on, never before, so none
- * starts mid-catch. Plucks ring on the fields' clock, which runs only while one of them animates: with none on screen,
- * nothing shows them, and their time could never run out, so then nothing is cut.
+ * Cuts the path from its start to (`x`, `y`), where the pointer was at `t`, into a pluck at `now` (ms, the events'
+ * clock), if the pointer moved along it faster than `rest`, and carries the path on from there. Its threads are caught
+ * from `now` on, never before, so none starts mid-catch. Plucks ring on the fields' clock, which runs only while one of
+ * them animates: with none on screen, nothing shows them, and their time could never run out, so then nothing is cut.
  */
-const cut = (now: number) => {
-  if (Number.isNaN(path.t0) || path.t1 <= path.t0) return
-  const span = (path.t1 - path.t0) / 1000
-  const speed = Math.hypot(path.x1 - path.x0, path.y1 - path.y0) / span
-  if (speed >= PLUCK.rest && ticking(now)) {
-    const strength = strengthOf(Math.hypot(path.x1 - path.x0, path.y1 - path.y0), span)
-    const slot = soonest()
-    const o = slot * SLOT
-    ring[o] = path.x0
-    ring[o + 1] = path.y0
-    ring[o + 2] = path.x1
-    ring[o + 3] = path.y1
-    ring[o + 4] = PLUCK.pull * strength
-    ring[o + 5] = clockAt(now)
-    ring[o + 6] = span
-    ring[o + 7] = strength
-    writes += 1
-    stamps[slot] = writes
+const blow = (x: number, y: number, t: number, now: number) => {
+  if (t > path.t0) {
+    const span = (t - path.t0) / 1000
+    const length = Math.hypot(x - path.x0, y - path.y0)
+    if (length / span >= PLUCK.rest && ticking(now)) {
+      const strength = strengthOf(length, span)
+      const slot = soonest()
+      const o = slot * SLOT
+      ring[o] = path.x0
+      ring[o + 1] = path.y0
+      ring[o + 2] = x
+      ring[o + 3] = y
+      ring[o + 4] = PLUCK.pull * strength
+      ring[o + 5] = clockAt(now)
+      ring[o + 6] = span
+      ring[o + 7] = strength
+      writes += 1
+      stamps[slot] = writes
+      blown = now
+    }
   }
-  begin(path.x1, path.y1, path.t1)
+  path.x0 = x
+  path.y0 = y
+  path.t0 = t
+  path.tt = Number.NaN
+}
+
+/**
+ * Cuts the path so far into plucks at `now`: up to where it turned back on itself, if it did, so a quick wiggle blows
+ * each way it went rather than only what it netted, and on from there to its latest move only if `whole`, as when the
+ * pointer stops. Cut only at a turn, the rest runs on into the next segment, so the pointer still cuts about one pluck
+ * a segment however it wiggles, and the ring keeps every pluck for its whole `life`.
+ */
+const cut = (now: number, whole = false) => {
+  if (Number.isNaN(path.t0)) return
+  const turned = !Number.isNaN(path.tt)
+  if (turned) blow(path.tx, path.ty, path.tt, now)
+  if (whole || !turned) blow(path.x1, path.y1, path.t1, now)
 }
 
 /**
@@ -169,14 +202,14 @@ const cut = (now: number) => {
  */
 let stopped: ReturnType<typeof setTimeout> | undefined
 const settle = (now: number) => {
-  cut(now)
+  cut(now, true)
   drop()
 }
 const leave = (now: number) => {
   settle(now)
   path.t1 = Number.NaN
 }
-const stop = () => cut(performance.now())
+const stop = () => cut(performance.now(), true)
 
 const move = (event: PointerEvent) => {
   clearTimeout(stopped)
@@ -209,14 +242,18 @@ const move = (event: PointerEvent) => {
     } else begin(x, y, at)
   } else {
     path.interval = Math.min(Math.max(gap, 4), PLUCK.cadence * 1000)
-    // Turning back on itself, the path so far is cut where it turned, so a quick wiggle blows each way it went rather
-    // than only what it netted.
-    if ((x - path.x1) * (path.x1 - path.x0) + (y - path.y1) * (path.y1 - path.y0) < 0) cut(path.t1)
+    // Turning back on itself: the next cut ends there (see `cut`).
+    const back = (x - path.x1) * (path.x1 - path.x0) + (y - path.y1) * (path.y1 - path.y0) < 0
+    if (back && Number.isNaN(path.tt)) {
+      path.tx = path.x1
+      path.ty = path.y1
+      path.tt = path.t1
+    }
   }
   path.x1 = x
   path.y1 = y
   path.t1 = at
-  if (at - path.t0 >= PLUCK.segment * 1000) cut(at)
+  if (Math.min(at - path.t0, at - blown) >= PLUCK.segment * 1000) cut(at)
   stopped = setTimeout(stop, PLUCK.segment * 1000)
 }
 
@@ -229,11 +266,16 @@ const scrolled = () => {
   leave(performance.now())
 }
 
-/** The pointer left the window: where it was is forgotten, so its return never joins across where it went. */
-const out = (event: PointerEvent) => {
-  if (event.relatedTarget !== null) return
+/**
+ * The pointer left the window (`out`), or the browser took it over for a drag (`cancel`), which reports no moves until
+ * the drop: where it was is forgotten, so its next move never joins across where it went.
+ */
+const cancel = (event: PointerEvent) => {
   clearTimeout(stopped)
   leave(event.timeStamp)
+}
+const out = (event: PointerEvent) => {
+  if (event.relatedTarget === null) cancel(event)
 }
 
 let listeners = 0
@@ -248,12 +290,14 @@ export function listen() {
     drop()
     addEventListener('pointermove', move, { passive: true })
     addEventListener('pointerout', out, { passive: true })
+    addEventListener('pointercancel', cancel, { passive: true })
     addEventListener('scroll', scrolled, { passive: true })
   }
   return () => {
     if (--listeners > 0) return
     removeEventListener('pointermove', move)
     removeEventListener('pointerout', out)
+    removeEventListener('pointercancel', cancel)
     removeEventListener('scroll', scrolled)
     clearTimeout(stopped)
   }
@@ -265,10 +309,9 @@ export function listen() {
  * sets how freely it moves: how far it is displaced for a pull of 1 px, and how much light it adds. Mirrors `ringing`
  * in the shaders.
  *
- * Air, not a pluck: the stretch around where the pointer passed, at most `stretch` long between the anchors, bows
- * aside, from rest at its ends to its furthest where the pointer passed, flat at both so it bends with no corner. It
- * starts moving at once and slows to its furthest over `catch`, then drifts back to rest, slowly and without
- * overshooting, by `life`. Only the
+ * The stretch around where the pointer passed, at most `stretch` long between the anchors, bows aside, from rest at its
+ * ends to its furthest where the pointer passed, flat at both so it bends with no corner. It starts moving at once and
+ * slows to its furthest over `catch`, then drifts back to rest, slowly and without overshooting, by `life`. Only the
  * `free` share of fibres moves, each as far as its seed says, from barely to fully, so some threads stir in front of
  * others that hold still, and the field shows depth.
  *

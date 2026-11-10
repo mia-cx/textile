@@ -178,10 +178,11 @@ stir in front of others that hold still, for depth. Like drag, a gust grows with
 (63% at 1500px/s, 4% at 300px/s), so a slow sweep barely stirs and a fast one blows hard, up to 28px; each gust also
 carries as much air as its path covered of the reach, so the many short gusts of a slow sweep add up to no more than
 one long fast one. Gusts on one thread add up to 40px at most. A blown thread brightens a little. The pointer's path is
-cut every 50ms, and when it stops, into a ring of 48 gusts, uniforms both renderers' vertex shaders read. Between two
+cut every 50ms, and when it stops, into a ring of 48 gusts, uniforms both renderers' vertex shaders read; a cut ends
+where the path turned back on itself, so a quick wiggle blows each way it went. Between two
 moves it swept the straight line, however far apart they are, and every thread that line crosses is caught: a move
 after a pause runs on from where the pointer paused, over the whole gap while it was moving and over one recent move's
-time from rest, so a flick from rest blows as hard as it went. Only leaving the window, crossing a panel, or a scroll
+time from rest, so a flick from rest blows as hard as it went. Only leaving the window, crossing a panel, a drag, or a scroll
 starts the path afresh. Each thread is tested against a gust where it was when the pointer passed, on the path its strand walks
 there, and only along the stretch a gust can reach; in the hero most threads are also ruled out by their lane before
 they are placed. The hero's labels ride their threads through the same math on the CPU, and the cord's knots sit where
