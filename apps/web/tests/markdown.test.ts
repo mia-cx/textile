@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { WORKFLOW } from '../src/lib/landing.ts'
 import { ORIGIN, request } from './server.ts'
 
 const CHROME =
@@ -87,13 +88,21 @@ describe('Markdown for agents', () => {
     expect(home.headers.get('content-type')).toBe(MARKDOWN)
     const markdown = await home.text()
     expect(markdown).toMatch(/^# Discord bots for AI agents\n/)
-    // Every workflow sample, not only the selected tab's.
-    for (const tab of ['Messages', 'Slash commands', 'Schedules', 'Webhooks'])
-      expect(markdown).toContain(`### ${tab}`)
+    // The landing page's story, written for reading: each part the page shows, with the workflow it runs.
+    for (const part of [
+      '## Bot hosting',
+      '## Slash commands',
+      '## Scheduled messages',
+      '## Webhook updates',
+      '## One-off scripts',
+      '## Voice chat',
+    ])
+      expect(markdown).toContain(part)
+    expect(markdown).toContain(WORKFLOW)
     expect(markdown).toContain(`(${ORIGIN}/docs/workflows.md)`)
     // Sign-in is an action, not a page.
     expect(markdown).toContain(`(${ORIGIN}/login)`)
-    expect(markdown).toContain('> I’m relaying voice in this channel to an AI agent.')
+    expect(markdown).toContain("> I'm relaying voice in this channel to an AI agent.")
     // The notice's buttons are its opt-out wording.
     expect(markdown).toContain('Opt out of all Textile bots')
   })
@@ -141,6 +150,7 @@ describe('Markdown for agents', () => {
         '/docs/voice.md',
         '/docs/security.md',
         '/docs/operating.md',
+        '/docs/tools.md',
         '/docs/feed.md',
       ]),
     )

@@ -13,8 +13,8 @@ let { path, title, children }: { path: '/terms' | '/privacy'; title: string; chi
 
 <Seo {path} />
 
-<article class="mx-auto max-w-[44rem] px-4 pt-14 sm:px-8 sm:pt-20">
-  <h1 class="text-4xl font-extrabold sm:text-5xl">Textile {title.toLowerCase()}</h1>
+<article class="page">
+  <h1 class="page-title">Textile {title.toLowerCase()}</h1>
   <p class="mt-5 text-muted">Effective <time datetime="2026-10-19">19 October 2026</time></p>
   <nav aria-label="Textile policies" class="mt-2 flex flex-wrap gap-x-6">
     <a class="policy" href="/terms" aria-current={page.url.pathname === '/terms' ? 'page' : undefined}>Terms of service</a>

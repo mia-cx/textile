@@ -1,74 +1,70 @@
 <script lang="ts">
-import Code from './Code.svelte'
+import type { Snippet } from 'svelte'
 
 /**
- * Code samples behind a tab list, with the WAI-ARIA tabs pattern: arrow keys, Home, and End move between tabs, and
- * only the selected tab is in the tab order. Every panel stays in the page, so the Markdown twin carries them all.
+ * Panels behind a tab list, with the WAI-ARIA tabs pattern: arrow keys, Home, and End move between tabs, and only the
+ * selected tab is in the tab order. Every panel stays in the page, inert when unselected, and all share one grid cell,
+ * so switching never moves what follows.
  */
 let {
   id,
+  label,
   tabs,
-}: { id: string; tabs: ReadonlyArray<{ name: string; summary: string; source: string }> } = $props()
+  panel,
+}: {
+  id: string
+  label: string
+  tabs: ReadonlyArray<string>
+  panel: Snippet<[index: number]>
+} = $props()
 let selected = $state(0)
 const buttons: Array<HTMLButtonElement> = []
 
+const KEYS: Record<string, (current: number, last: number) => number> = {
+  ArrowRight: (current, last) => (current === last ? 0 : current + 1),
+  ArrowLeft: (current, last) => (current === 0 ? last : current - 1),
+  Home: () => 0,
+  End: (_, last) => last,
+}
+
 function onkeydown(event: KeyboardEvent) {
-  const last = tabs.length - 1
-  const next =
-    event.key === 'ArrowRight'
-      ? selected === last
-        ? 0
-        : selected + 1
-      : event.key === 'ArrowLeft'
-        ? selected === 0
-          ? last
-          : selected - 1
-        : event.key === 'Home'
-          ? 0
-          : event.key === 'End'
-            ? last
-            : undefined
-  if (next === undefined) return
+  const move = KEYS[event.key]
+  if (!move) return
   event.preventDefault()
-  selected = next
-  buttons[next]?.focus()
+  selected = move(selected, tabs.length - 1)
+  buttons[selected]?.focus()
 }
 </script>
 
-<div>
-  <div role="tablist" aria-label="Workflow triggers" class="tablist" tabindex="-1" {onkeydown}>
-    {#each tabs as tab, i}
-      <button
-        bind:this={buttons[i]}
-        type="button"
-        role="tab"
-        id="{id}-tab-{i}"
-        aria-controls="{id}-panel-{i}"
-        aria-selected={selected === i}
-        tabindex={selected === i ? 0 : -1}
-        onclick={() => (selected = i)}
-      >
-        {tab.name}
-      </button>
-    {/each}
-  </div>
-  <!-- Panels share one grid cell, so switching tabs never moves what follows. -->
-  <div class="panels">
-    {#each tabs as tab, i}
-      <div
-        role="tabpanel"
-        id="{id}-panel-{i}"
-        aria-labelledby="{id}-tab-{i}"
-        class="panel"
-        class:shown={selected === i}
-        data-markdown-heading={tab.name}
-        inert={selected !== i}
-      >
-        <p class="summary">{tab.summary}</p>
-        <Code source={tab.source} label="{tab.name} workflow" />
-      </div>
-    {/each}
-  </div>
+<div role="tablist" aria-label={label} class="tablist" tabindex="-1" {onkeydown} data-weave-panel>
+  {#each tabs as tab, i}
+    <button
+      bind:this={buttons[i]}
+      type="button"
+      role="tab"
+      id="{id}-tab-{i}"
+      aria-controls="{id}-panel-{i}"
+      aria-selected={selected === i}
+      tabindex={selected === i ? 0 : -1}
+      onclick={() => (selected = i)}
+    >
+      {tab}
+    </button>
+  {/each}
+</div>
+<div class="panels">
+  {#each tabs as _, i}
+    <div
+      role="tabpanel"
+      id="{id}-panel-{i}"
+      aria-labelledby="{id}-tab-{i}"
+      class="panel"
+      class:shown={selected === i}
+      inert={selected !== i}
+    >
+      {@render panel(i)}
+    </div>
+  {/each}
 </div>
 
 <style>
@@ -76,31 +72,35 @@ function onkeydown(event: KeyboardEvent) {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
-    padding: 0.25rem;
-    border-radius: var(--radius-l);
-    background: var(--sunken);
     width: fit-content;
     max-width: 100%;
+    /* A rounded rectangle, not a pill: the list wraps on narrow columns, where a pill stretches into an ellipse. Its
+       corner is the tabs' plus the padding between them, so the curves nest. */
+    padding: 0.375rem;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: calc(var(--radius-m) + 0.375rem);
+    background: var(--sunken);
   }
   [role='tab'] {
     min-height: 2.75rem;
-    padding: 0.375rem 0.875rem;
+    padding: 0.375rem 1.125rem;
     border-radius: var(--radius-m);
     color: var(--muted);
-    font-weight: 600;
+    font-family: var(--font-code);
+    font-size: 0.9375rem;
     cursor: pointer;
     transition:
-      background-color 250ms cubic-bezier(0.22, 1, 0.36, 1),
-      color 250ms cubic-bezier(0.22, 1, 0.36, 1);
+      background-color var(--duration-fast) var(--ease-smooth-out),
+      color var(--duration-fast) var(--ease-smooth-out);
   }
   [role='tab']:hover {
     color: var(--ink);
   }
-  /* Raised, and underlined in indigo: the underline carries the state at over 3:1 in both modes, not colour alone. */
+  /* Raised and ringed in violet: the ring carries the state, not colour alone. */
   [role='tab'][aria-selected='true'] {
     background: var(--surface);
     color: var(--ink);
-    box-shadow: inset 0 -2px 0 var(--accent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-text) 55%, transparent);
   }
   .panels {
     display: grid;
@@ -110,11 +110,7 @@ function onkeydown(event: KeyboardEvent) {
     grid-area: 1 / 1;
     min-width: 0;
   }
-  /* Unselected panels keep their size in the shared cell, unseen and inert; only the selected one shows. */
   .panel:not(.shown) {
     visibility: hidden;
-  }
-  .summary {
-    margin-bottom: 0.75rem;
   }
 </style>

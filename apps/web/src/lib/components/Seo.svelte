@@ -24,7 +24,7 @@ const image = `${ORIGIN}/og.png`
   <meta property="og:image" content={image} />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="The Textile mark, woven threads, beside the words: Discord bots for AI agents." />
+  <meta property="og:image:alt" content="Threads of light streaming in behind the words: Discord bots for AI agents." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content={title} />
   <meta name="twitter:description" content={description} />

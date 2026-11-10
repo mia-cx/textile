@@ -7,9 +7,11 @@
     <script>
       (() => { try { const m = localStorage.getItem('svartz:color-mode'); if (m === 'light' || m === 'dark') document.documentElement.classList.add(m) } catch {} })()
     </script>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta name="theme-color" content="#f5f0e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0d1130" media="(prefers-color-scheme: dark)" />
+    <!-- The trefoil, rendered by `pnpm logo` (scripts/logo.ts). -->
+    <link rel="icon" href="/icons/32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/icons/16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/icons/180.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
