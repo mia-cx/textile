@@ -57,6 +57,12 @@ const BEHIND = 24
 const STACKED = 32
 /** How far around each line of words the cord dims fully, in px: past the glyphs, so their edges stay clear. */
 const WORD_ROOM = 12
+/**
+ * How much empty space, as a strip this many px wide beside a line, may join the line to the box of the words before
+ * it: a paragraph's ragged lines become one box, so the shaders' MAX_COPY boxes cover every line near the screen. Beside
+ * a short line the cord was already dimmed most of the way, by the longer line just above.
+ */
+const LINE_JOIN = 96
 /** The canvas reaches this share of a screen above and below the screen, so a fast scroll doesn't outrun it. */
 const MARGIN = 0.15
 /** How far down the screen a section's heading is when the cord is drawn through the whole section. */
@@ -284,7 +290,8 @@ onMount(() => {
     const middle = (r: Box) => (r.top + r.bottom) / 2
     /**
      * The words in `element`, line by line, as boxes around their text, WORD_ROOM wider all round: the strands dim fully
-     * behind these alone, so even body-size text and links clear 4.5:1 over the brightest of them.
+     * behind these alone, so even body-size text and links clear 4.5:1 over the brightest of them. Touching lines join
+     * into one box while that adds no more empty space than LINE_JOIN allows.
      */
     // Each text node's own line boxes, so no element's block box, wider than its words, enters the mask.
     const words = (element: Element): Box[] => {
@@ -296,14 +303,39 @@ onMount(() => {
         range.selectNodeContents(node)
         lines.push(...range.getClientRects())
       }
-      return lines
-        .filter((r) => r.width > 0 && r.height > 0)
-        .map((r) => ({
+      const area = (b: Box) => Math.max(0, b.right - b.left) * Math.max(0, b.bottom - b.top)
+      const boxes: Box[] = []
+      for (const r of lines) {
+        if (r.width <= 0 || r.height <= 0) continue
+        const line = {
           left: r.left - origin.left - WORD_ROOM,
           top: r.top - origin.top - WORD_ROOM,
           right: r.right - origin.left + WORD_ROOM,
           bottom: r.bottom - origin.top + WORD_ROOM,
-        }))
+        }
+        const last = boxes.at(-1)
+        if (last && line.top <= last.bottom) {
+          const joined = {
+            left: Math.min(last.left, line.left),
+            top: Math.min(last.top, line.top),
+            right: Math.max(last.right, line.right),
+            bottom: Math.max(last.bottom, line.bottom),
+          }
+          const shared = {
+            left: Math.max(last.left, line.left),
+            top: Math.max(last.top, line.top),
+            right: Math.min(last.right, line.right),
+            bottom: Math.min(last.bottom, line.bottom),
+          }
+          const empty = area(joined) - area(last) - area(line) + area(shared)
+          if (empty <= LINE_JOIN * (line.bottom - line.top)) {
+            boxes[boxes.length - 1] = joined
+            continue
+          }
+        }
+        boxes.push(line)
+      }
+      return boxes
     }
     // The narrow gaps between the `[data-weave-panel]`s on show stacked one above another, where they overlap across:
     // the cord dims there as behind words, so its strands never show as rows of clipped stubs between the panels.
