@@ -1,6 +1,7 @@
 // Renders Textile's mark, the trefoil, into static/icons/<size>.png: the favicons, the touch and manifest icons, and
 // the header's mark; social.png, a padded avatar for social profiles and the Discord server; and banner.png, a profile
-// header of the hero's threads beside its headline. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
+// header of the hero's threads beside its headline, also drawn at 1200×630 as static/og.png, the card social sites
+// show for every page. It captures the study page (src/routes/dev/trefoil) on the site's ink, as the 1024 page at 2×
 // pixel density, so every pixel of glow is the browser's own, then downsizes it the way Ditherette's
 // lanczos3-scale-aware does: a Lanczos-3 kernel stretched by the scale factor, in linear light, so thin bright fibres
 // average as light does instead of darkening. Sizes of 64 and below start from a capture with a thicker band, and
@@ -44,6 +45,8 @@ const SOCIAL_SIZE = 1024
 const SOCIAL = `&fill=${SOCIAL_FILL}&band=${(MARK.band * SOCIAL_FILL) / MARK.fill}`
 /** The social banner, banner.png (src/routes/dev/banner), at a profile header's 3:1. */
 const BANNER = [1500, 500] as const
+/** The same banner as the social card, static/og.png, at the 1.91:1 social sites show. */
+const CARD = [1200, 630] as const
 /** The site's ink (src/lib/tokens.css): only light above it is brightened, so the ground stays the ink. */
 const INK = '#07060c'
 
@@ -218,8 +221,11 @@ for (const size of SIZES) {
 /** The header's mark, as light, at 2× its 32px. */
 writeFileSync(new URL('light-64.png', OUT), light(thick, 64))
 writeFileSync(new URL('social.png', OUT), icon(study(SOCIAL), SOCIAL_SIZE))
-const [width, height] = BANNER
-writeFileSync(
-  new URL('banner.png', OUT),
-  icon(capture(`/dev/banner?w=${width}&h=${height}`, width, height), width, height),
-)
+for (const [file, [width, height]] of [
+  ['banner.png', BANNER],
+  ['../og.png', CARD],
+] as const)
+  writeFileSync(
+    new URL(file, OUT),
+    icon(capture(`/dev/banner?w=${width}&h=${height}`, width, height), width, height),
+  )

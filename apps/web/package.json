@@ -13,7 +13,6 @@
     "preview": "wrangler dev",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --threshold warning",
     "test": "vitest run",
-    "og": "tsx scripts/og.ts",
     "logo": "tsx scripts/logo.ts"
   },
   "devDependencies": {

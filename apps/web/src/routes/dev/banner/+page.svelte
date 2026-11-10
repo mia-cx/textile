@@ -6,7 +6,8 @@ import ThreadField from '$lib/threads/ThreadField.svelte'
 /**
  * Textile's social banner, in development only: `pnpm logo` captures it into static/icons/banner.png. The hero's threads
  * stream in from the left edge and gather toward the right behind the headline and subline, shaded there so they read;
- * they braid only past the right edge, so the banner shows loose threads alone. `?w=` and `?h=` set its size in CSS px.
+ * they braid only past the right edge, so the banner shows loose threads alone. `?w=` and `?h=` set its size in CSS px;
+ * the copy scales with the height, or with the width where the banner is less than 3:1 (the 1200×630 social card).
  */
 const params = new URLSearchParams(typeof location === 'undefined' ? '' : location.search)
 const width = Number(params.get('w') ?? 1500)
@@ -68,6 +69,7 @@ onMount(() => {
   style:width="{width}px"
   style:height="{height}px"
   style:--banner-height="{height}px"
+  style:--banner-width="{width}px"
 >
   <ThreadField layout={banner} />
   <div bind:this={copy} class="copy">
@@ -119,7 +121,7 @@ onMount(() => {
   }
   .headline {
     max-width: 6em;
-    font-size: calc(var(--banner-height) * 0.2);
+    font-size: min(var(--banner-height) * 0.2, var(--banner-width) * 0.2 / 3);
     font-weight: 600;
     line-height: 0.98;
     letter-spacing: -0.045em;
@@ -127,7 +129,7 @@ onMount(() => {
   .lede {
     margin-top: 0.9em;
     max-width: 24em;
-    font-size: calc(var(--banner-height) * 0.05);
+    font-size: min(var(--banner-height) * 0.05, var(--banner-width) * 0.05 / 3);
     line-height: 1.35;
     letter-spacing: -0.01em;
   }
