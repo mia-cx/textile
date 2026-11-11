@@ -295,23 +295,24 @@ export function markUniforms(
 }
 
 /**
- * The animated mark's loop, as shares of the knot's length and of the loop's time. Three heads run round the knot,
- * a third of it apart, `travel` of it each loop. Behind each runs a tail `length` long, fading out over its last
- * `fade` (all of it when shorter) and in over the head's first `edge`: long enough, they overlap and the knot is whole.
- * The tails hold whole, draw back to short comets that fade the knot out, hold, then grow and fill it back in.
+ * The animated mark's loop, in shares of the knot's length and of the loop's time. The knot splits in thirds where it
+ * passes under itself: the knot starts under a crossing, and its three crossings lie a third apart along it. Each
+ * third's trailing end sets off from under its crossing and follows the head down to `tiny` behind it; then the head
+ * runs on a whole third, round to the next crossing, and the trailing end catches up to it unseen, beneath the third
+ * ahead. Both ends only ever run forward, and a third is only ever cut beneath another, never where it crosses over.
+ * Each end fades out past itself: the trailing end over `trail`, the head over `head`, short enough to hide under a
+ * crossing.
  */
 const TAILS = {
-  travel: 2 / 3,
-  fade: 0.15,
-  edge: 0.02,
-  short: 0.08,
-  /** Where in the loop the tails start drawing back, are short, start growing, and are whole again. */
-  times: [0.2, 0.45, 0.55, 0.9],
+  tiny: 0.02,
+  trail: 0.035,
+  head: 0.012,
+  /** Where in the loop the trailing ends set off, reach the tiny bit, the heads set off, and arrive. */
+  times: [0.12, 0.5, 0.56, 0.92],
 } as const
 /** How long the loop runs, in seconds. */
 export const TAILS_SECONDS = 6
-const HEADS = 3
-const WHOLE = 1 / HEADS + TAILS.fade + TAILS.edge
+const THIRD = 1 / 3
 
 const smooth = (from: number, to: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - from) / (to - from)))
@@ -320,17 +321,18 @@ const smooth = (from: number, to: number, x: number) => {
 
 /** The knot's light at `phase` (0 to 1) through the animated mark's loop, which starts and ends whole. */
 export function tails(phase: number): Light {
-  const [shrink, short, grow, whole] = TAILS.times
-  const length =
-    phase < grow
-      ? WHOLE + (TAILS.short - WHOLE) * smooth(shrink, short, phase)
-      : TAILS.short + (WHOLE - TAILS.short) * smooth(grow, whole, phase)
-  const fade = Math.min(length, TAILS.fade)
+  const [trails, tiny, runs, arrives] = TAILS.times
+  // Where each third's ends are, from the crossing it starts the loop at: the trailing end follows to the tiny bit,
+  // the head runs a third on, and the trailing end closes the last of the gap while the knot is whole again.
+  const tail =
+    (THIRD - TAILS.tiny) * smooth(trails, tiny, phase) + TAILS.tiny * smooth(arrives, 1, phase)
+  const head = THIRD * (1 + smooth(runs, arrives, phase))
   return (along) =>
     Math.max(
-      ...Array.from({ length: HEADS }, (_, j) => {
-        const behind = (((j / HEADS + TAILS.travel * phase - along) % 1) + 1) % 1
-        return smooth(0, TAILS.edge, behind) * (1 - smooth(length - fade, length, behind))
+      ...[0, 1, 2].map((j) => {
+        // How far along from its starting crossing, from a third behind it to two thirds ahead.
+        const from = ((((along - j * THIRD + THIRD) % 1) + 1) % 1) - THIRD
+        return smooth(tail - TAILS.trail, tail, from) * (1 - smooth(head, head + TAILS.head, from))
       }),
     )
 }
