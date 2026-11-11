@@ -149,11 +149,11 @@ function trefoil(size: number, fill: number, step: number, canvas: number) {
   return points
 }
 
-/** Where the knot crosses itself: the sample indices of the strand underneath and the one on top at each crossing. */
-function crossings(points: ReadonlyArray<Sample>) {
+/** Where the knot crosses itself: the sample index of the strand underneath at each crossing. */
+export function unders(points: ReadonlyArray<Sample>) {
   const n = points.length
   const apart = Math.ceil(n / 30)
-  const found: { under: number; over: number }[] = []
+  const found: number[] = []
   for (let i = 0; i < n; i++)
     for (let j = i + apart; j < n; j++) {
       if (n - (j - i) < apart) continue
@@ -163,8 +163,7 @@ function crossings(points: ReadonlyArray<Sample>) {
       if (Math.abs(den) < 1e-9) continue
       const u = ((c[0] - a[0]) * (e[1] - c[1]) - (c[1] - a[1]) * (e[0] - c[0])) / den
       const w = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den
-      if (u >= 0 && u < 1 && w >= 0 && w < 1)
-        found.push(a[2] < c[2] ? { under: i, over: j } : { under: j, over: i })
+      if (u >= 0 && u < 1 && w >= 0 && w < 1) found.push(a[2] < c[2] ? i : j)
     }
   return found
 }
@@ -188,7 +187,7 @@ export type Light = (along: number) => number
 
 /**
  * `bleed` is the canvas's size as a multiple of the mark's: 1 to fill it, more to let the glow spread past it. `light`
- * dims the knot along its length; a strand under a crossing is shaded only where the strand on top is lit near it.
+ * dims the knot along its length; the shadows under its crossings stay as they are, lit or not.
  */
 export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () => 1): MarkCord {
   const step = Math.max(0.25, size * SAMPLES_PER_SIZE)
@@ -198,7 +197,7 @@ export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () 
   const loop = trefoil(size, mark.fill, step, canvas)
   // Start the loop under a crossing, where it is dimmest and the strand on top covers it: the fibres' wander follows
   // the route, so where the route closes they can't quite meet, and there nobody sees it.
-  const start = crossings(loop)[0]?.under ?? 0
+  const start = unders(loop)[0] ?? 0
   const points = [...loop.slice(start), ...loop.slice(0, start)]
   const n = points.length
   const length = n * step
@@ -207,7 +206,7 @@ export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () 
   // The hue the shader turns into the mark's colour at knot parameter `t`: warmth 0.5 - 0.5 cos(t + phase) as
   // 0.5 + 0.5 sin(2π hue), less the shader's flow by the still frame's time.
   const hueAt = (t: number) => (t + mark.phase - Math.PI / 2) / TAU + STILL_TIME * SHAPE.flow
-  const crossed = crossings(points)
+  const under = unders(points)
   // The loop's end runs on past its start, fading out as the start fades in, on the same course, so the fibres hand
   // over instead of meeting at a cut, all under a crossing, where the strand is dark anyway.
   const extra = Math.round((OVERLAP * band) / step)
@@ -217,30 +216,13 @@ export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () 
     if (k >= n) return Math.cos((Math.PI / 2) * ((k - n) / extra)) ** 2
     return 1
   }
-  // The strand on top casts its shadow from its lit points only: a point beneath is shaded by the lit points on top
-  // within `reach` of it, less out to `cast`, so an end crossing over carries its shadow with it, like a drop shadow
-  // at its edge, and the shadow shrinks away as the end leaves. Lit all over, every point the shadow reaches along the
-  // strand beneath has the crossing within `reach`, so the shadow is the still mark's own.
-  const reach = (UNDER.hide + UNDER.ease) * band
-  const cast = reach + UNDER.ease * band
-  const nearby = Math.ceil(cast / step)
-  const lit = Float64Array.from({ length: n }, (_, k) => light(k / n))
-  const shadow = (k: number, under: number, over: number) => {
-    const d = Math.min(Math.abs(k - under), n - Math.abs(k - under)) * step
-    if (d >= reach) return 0
-    const [x, y] = points[k] ?? [0, 0]
-    let near = 0
-    for (let j = -nearby; j <= nearby; j++) {
-      const o = (((over + j) % n) + n) % n
-      const on = lit[o] ?? 0
-      if (on <= near) continue
-      const [ox, oy] = points[o] ?? [0, 0]
-      near = Math.max(near, on * (1 - smooth(reach, cast, Math.hypot(x - ox, y - oy))))
-    }
-    return (1 - smooth(UNDER.hide * band, reach, d)) * near
+  const shade = (k: number) => {
+    const d = Math.min(
+      ...under.map((u) => Math.min(Math.abs((k % n) - u), n - Math.abs((k % n) - u)) * step),
+    )
+    const t = Math.min(1, Math.max(0, (d - UNDER.hide * band) / (UNDER.ease * band)))
+    return 1 - UNDER.dim * (1 - t * t * (3 - 2 * t))
   }
-  const shade = (k: number) =>
-    1 - UNDER.dim * Math.max(...crossed.map(({ under, over }) => shadow(k % n, under, over)))
   const rows = Math.ceil(closed.length / ROW)
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   for (const [k, [x, y, , t]] of closed.entries()) {
@@ -330,6 +312,12 @@ const TAILS = {
 export const TAILS_SECONDS = 6
 const THIRD = 1 / 3
 
+/** How far `x` is from `from` to `to`, eased in and out on a cubic: slow off, three times as fast midway, slow in. */
+const ease = (from: number, to: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - from) / (to - from)))
+  return t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2
+}
+
 const smooth = (from: number, to: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - from) / (to - from)))
   return t * t * (3 - 2 * t)
@@ -338,8 +326,8 @@ const smooth = (from: number, to: number, x: number) => {
 /** The knot's light at `phase` (0 to 1) through the animated mark's loop, which starts and ends whole. */
 export function tails(phase: number): Light {
   // Where each third's ends are, from the crossing it starts the loop at: each runs a third on.
-  const tail = THIRD * smooth(...TAILS.tails, phase)
-  const head = THIRD * (1 + smooth(...TAILS.heads, phase))
+  const tail = THIRD * ease(...TAILS.tails, phase)
+  const head = THIRD * (1 + ease(...TAILS.heads, phase))
   return (along) =>
     Math.max(
       ...[0, 1, 2].map((j) => {
