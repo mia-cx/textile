@@ -188,7 +188,7 @@ export type Light = (along: number) => number
 
 /**
  * `bleed` is the canvas's size as a multiple of the mark's: 1 to fill it, more to let the glow spread past it. `light`
- * dims the knot along its length; a strand under a crossing is shaded only as much as the strand on top is lit.
+ * dims the knot along its length; a strand under a crossing is shaded only where the strand on top is lit near it.
  */
 export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () => 1): MarkCord {
   const step = Math.max(0.25, size * SAMPLES_PER_SIZE)
@@ -217,22 +217,30 @@ export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () 
     if (k >= n) return Math.cos((Math.PI / 2) * ((k - n) / extra)) ** 2
     return 1
   }
-  // How much of the strand on top is lit across each crossing, out to the edge of its dark band: an end passing over
-  // it fades its shadow in or out as it crosses, rather than switching it at once.
-  const reach = Math.round((UNDER.hide * band) / step)
-  const cover = crossed.map(({ over }) => {
-    let sum = 0
-    for (let d = -reach; d <= reach; d++) sum += light(((((over + d) % n) + n) % n) / n)
-    return sum / (2 * reach + 1)
-  })
+  // The strand on top casts its shadow from its lit points only: a point beneath is shaded by the lit points on top
+  // within `reach` of it, less out to `cast`, so an end crossing over carries its shadow with it, like a drop shadow
+  // at its edge, and the shadow shrinks away as the end leaves. Lit all over, every point the shadow reaches along the
+  // strand beneath has the crossing within `reach`, so the shadow is the still mark's own.
+  const reach = (UNDER.hide + UNDER.ease) * band
+  const cast = reach + UNDER.ease * band
+  const nearby = Math.ceil(cast / step)
+  const lit = Float64Array.from({ length: n }, (_, k) => light(k / n))
+  const shadow = (k: number, under: number, over: number) => {
+    const d = Math.min(Math.abs(k - under), n - Math.abs(k - under)) * step
+    if (d >= reach) return 0
+    const [x, y] = points[k] ?? [0, 0]
+    let near = 0
+    for (let j = -nearby; j <= nearby; j++) {
+      const o = (((over + j) % n) + n) % n
+      const on = lit[o] ?? 0
+      if (on <= near) continue
+      const [ox, oy] = points[o] ?? [0, 0]
+      near = Math.max(near, on * (1 - smooth(reach, cast, Math.hypot(x - ox, y - oy))))
+    }
+    return (1 - smooth(UNDER.hide * band, reach, d)) * near
+  }
   const shade = (k: number) =>
-    Math.min(
-      ...crossed.map(({ under }, c) => {
-        const d = Math.min(Math.abs((k % n) - under), n - Math.abs((k % n) - under)) * step
-        const t = Math.min(1, Math.max(0, (d - UNDER.hide * band) / (UNDER.ease * band)))
-        return 1 - UNDER.dim * (1 - t * t * (3 - 2 * t)) * (cover[c] ?? 1)
-      }),
-    )
+    1 - UNDER.dim * Math.max(...crossed.map(({ under, over }) => shadow(k % n, under, over)))
   const rows = Math.ceil(closed.length / ROW)
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   for (const [k, [x, y, , t]] of closed.entries()) {
