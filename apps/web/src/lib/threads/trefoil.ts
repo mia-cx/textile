@@ -217,12 +217,20 @@ export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () 
     if (k >= n) return Math.cos((Math.PI / 2) * ((k - n) / extra)) ** 2
     return 1
   }
+  // How much of the strand on top is lit across each crossing, out to the edge of its dark band: an end passing over
+  // it fades its shadow in or out as it crosses, rather than switching it at once.
+  const reach = Math.round((UNDER.hide * band) / step)
+  const cover = crossed.map(({ over }) => {
+    let sum = 0
+    for (let d = -reach; d <= reach; d++) sum += light(((((over + d) % n) + n) % n) / n)
+    return sum / (2 * reach + 1)
+  })
   const shade = (k: number) =>
     Math.min(
-      ...crossed.map(({ under, over }) => {
+      ...crossed.map(({ under }, c) => {
         const d = Math.min(Math.abs((k % n) - under), n - Math.abs((k % n) - under)) * step
         const t = Math.min(1, Math.max(0, (d - UNDER.hide * band) / (UNDER.ease * band)))
-        return 1 - UNDER.dim * (1 - t * t * (3 - 2 * t)) * light(over / n)
+        return 1 - UNDER.dim * (1 - t * t * (3 - 2 * t)) * (cover[c] ?? 1)
       }),
     )
   const rows = Math.ceil(closed.length / ROW)
@@ -297,18 +305,18 @@ export function markUniforms(
 /**
  * The animated mark's loop, in shares of the knot's length and of the loop's time. The knot splits in thirds where it
  * passes under itself: the knot starts under a crossing, and its three crossings lie a third apart along it. Each
- * third's trailing end sets off from under its crossing and follows the head down to `tiny` behind it; then the head
- * runs on a whole third, round to the next crossing, and the trailing end catches up to it unseen, beneath the third
- * ahead. Both ends only ever run forward, and a third is only ever cut beneath another, never where it crosses over.
- * Each end fades out past itself: the trailing end over `trail`, the head over `head`, short enough to hide under a
- * crossing.
+ * third's trailing end sets off from under its crossing and follows its head, which stays there, under the next
+ * crossing, until the trailing end has nearly caught up; the head then runs on a whole third, round to the crossing
+ * after, while the trailing end closes the last of the way. Both ends ease in and out, only ever forward, and a third
+ * is only ever cut beneath another, never where it crosses over. Each end fades out past itself: the trailing end over
+ * `trail`, the head over `head`, short enough to hide under a crossing.
  */
 const TAILS = {
-  tiny: 0.02,
   trail: 0.035,
   head: 0.012,
-  /** Where in the loop the trailing ends set off, reach the tiny bit, the heads set off, and arrive. */
-  times: [0.12, 0.5, 0.56, 0.92],
+  /** When in the loop the trailing ends run, and the heads: the heads set off before the trailing ends arrive. */
+  tails: [0, 0.62],
+  heads: [0.38, 1],
 } as const
 /** How long the loop runs, in seconds. */
 export const TAILS_SECONDS = 6
@@ -321,12 +329,9 @@ const smooth = (from: number, to: number, x: number) => {
 
 /** The knot's light at `phase` (0 to 1) through the animated mark's loop, which starts and ends whole. */
 export function tails(phase: number): Light {
-  const [trails, tiny, runs, arrives] = TAILS.times
-  // Where each third's ends are, from the crossing it starts the loop at: the trailing end follows to the tiny bit,
-  // the head runs a third on, and the trailing end closes the last of the gap while the knot is whole again.
-  const tail =
-    (THIRD - TAILS.tiny) * smooth(trails, tiny, phase) + TAILS.tiny * smooth(arrives, 1, phase)
-  const head = THIRD * (1 + smooth(runs, arrives, phase))
+  // Where each third's ends are, from the crossing it starts the loop at: each runs a third on.
+  const tail = THIRD * smooth(...TAILS.tails, phase)
+  const head = THIRD * (1 + smooth(...TAILS.heads, phase))
   return (along) =>
     Math.max(
       ...[0, 1, 2].map((j) => {
