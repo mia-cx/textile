@@ -149,11 +149,11 @@ function trefoil(size: number, fill: number, step: number, canvas: number) {
   return points
 }
 
-/** Where the knot crosses itself: the sample index of the strand underneath at each crossing. */
-export function unders(points: ReadonlyArray<Sample>) {
+/** Where the knot crosses itself: the sample indices of the strand underneath and the one on top at each crossing. */
+function crossings(points: ReadonlyArray<Sample>) {
   const n = points.length
   const apart = Math.ceil(n / 30)
-  const found: number[] = []
+  const found: { under: number; over: number }[] = []
   for (let i = 0; i < n; i++)
     for (let j = i + apart; j < n; j++) {
       if (n - (j - i) < apart) continue
@@ -163,7 +163,8 @@ export function unders(points: ReadonlyArray<Sample>) {
       if (Math.abs(den) < 1e-9) continue
       const u = ((c[0] - a[0]) * (e[1] - c[1]) - (c[1] - a[1]) * (e[0] - c[0])) / den
       const w = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den
-      if (u >= 0 && u < 1 && w >= 0 && w < 1) found.push(a[2] < c[2] ? i : j)
+      if (u >= 0 && u < 1 && w >= 0 && w < 1)
+        found.push(a[2] < c[2] ? { under: i, over: j } : { under: j, over: i })
     }
   return found
 }
@@ -182,8 +183,14 @@ export interface MarkCord {
   readonly length: number
 }
 
-/** `bleed` is the canvas's size as a multiple of the mark's: 1 to fill it, more to let the glow spread past it. */
-export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
+/** How much of its light the knot shows at each point `along` it, 0 at its start to 1 back there. */
+export type Light = (along: number) => number
+
+/**
+ * `bleed` is the canvas's size as a multiple of the mark's: 1 to fill it, more to let the glow spread past it. `light`
+ * dims the knot along its length; a strand under a crossing is shaded only as much as the strand on top is lit.
+ */
+export function markCord(size: number, mark: Mark, bleed = 1, light: Light = () => 1): MarkCord {
   const step = Math.max(0.25, size * SAMPLES_PER_SIZE)
   const band = size * mark.band
   const radius = size * RADIUS
@@ -191,7 +198,7 @@ export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
   const loop = trefoil(size, mark.fill, step, canvas)
   // Start the loop under a crossing, where it is dimmest and the strand on top covers it: the fibres' wander follows
   // the route, so where the route closes they can't quite meet, and there nobody sees it.
-  const start = unders(loop)[0] ?? 0
+  const start = crossings(loop)[0]?.under ?? 0
   const points = [...loop.slice(start), ...loop.slice(0, start)]
   const n = points.length
   const length = n * step
@@ -200,7 +207,7 @@ export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
   // The hue the shader turns into the mark's colour at knot parameter `t`: warmth 0.5 - 0.5 cos(t + phase) as
   // 0.5 + 0.5 sin(2π hue), less the shader's flow by the still frame's time.
   const hueAt = (t: number) => (t + mark.phase - Math.PI / 2) / TAU + STILL_TIME * SHAPE.flow
-  const under = unders(points)
+  const crossed = crossings(points)
   // The loop's end runs on past its start, fading out as the start fades in, on the same course, so the fibres hand
   // over instead of meeting at a cut, all under a crossing, where the strand is dark anyway.
   const extra = Math.round((OVERLAP * band) / step)
@@ -210,13 +217,14 @@ export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
     if (k >= n) return Math.cos((Math.PI / 2) * ((k - n) / extra)) ** 2
     return 1
   }
-  const shade = (k: number) => {
-    const d = Math.min(
-      ...under.map((u) => Math.min(Math.abs((k % n) - u), n - Math.abs((k % n) - u)) * step),
+  const shade = (k: number) =>
+    Math.min(
+      ...crossed.map(({ under, over }) => {
+        const d = Math.min(Math.abs((k % n) - under), n - Math.abs((k % n) - under)) * step
+        const t = Math.min(1, Math.max(0, (d - UNDER.hide * band) / (UNDER.ease * band)))
+        return 1 - UNDER.dim * (1 - t * t * (3 - 2 * t)) * light(over / n)
+      }),
     )
-    const t = Math.min(1, Math.max(0, (d - UNDER.hide * band) / (UNDER.ease * band)))
-    return 1 - UNDER.dim * (1 - t * t * (3 - 2 * t))
-  }
   const rows = Math.ceil(closed.length / ROW)
   const data = new Float32Array(rows * ROW * TEXELS * 4)
   for (const [k, [x, y, , t]] of closed.entries()) {
@@ -240,7 +248,7 @@ export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
         hueAt(t + (k >= n ? TAU : 0)),
         -ty / l,
         tx / l,
-        shade(k) * handover(k),
+        shade(k) * handover(k) * light((k % n) / n),
         0,
         s,
         0,
@@ -260,16 +268,22 @@ export function markCord(size: number, mark: Mark, bleed = 1): MarkCord {
  */
 const REFERENCE = 1024
 
-/** The uniforms for one frame of `cord` at `time`, in `violet` and `amber`, at `dpr` device pixels per CSS px. */
+/**
+ * The uniforms for one frame of `cord` at `time`, in `violet` and `amber`, at `dpr` device pixels per CSS px. `held`
+ * keeps the colours where the still frame sets them while the fibres move on.
+ */
 export function markUniforms(
   cord: MarkCord,
   mark: Mark,
   colours: readonly [RGB, RGB],
   dpr: number,
   time: number,
+  held = false,
 ) {
   const uniforms = new Float32Array(CORD_VEC4S * 4)
   uniforms.set([cord.canvas, cord.canvas, dpr, time], 0)
+  // The shader's hue offset, undoing its flow since the still frame.
+  if (held) uniforms[9] = (time - STILL_TIME) * SHAPE.flow
   const intensity = mark.intensity * Math.min(1, cord.size / REFERENCE)
   uniforms.set([0, 0, cord.length + FADE + 1, intensity], 4)
   uniforms.set([cord.radius, mark.threads, 0, 0], 12)
@@ -278,4 +292,45 @@ export function markUniforms(
   uniforms.set(colours[1], 36)
   uniforms.set([0.027, 0.024, 0.047, EXPOSURE], 40)
   return uniforms
+}
+
+/**
+ * The animated mark's loop, as shares of the knot's length and of the loop's time. Three heads run round the knot,
+ * a third of it apart, `travel` of it each loop. Behind each runs a tail `length` long, fading out over its last
+ * `fade` (all of it when shorter) and in over the head's first `edge`: long enough, they overlap and the knot is whole.
+ * The tails hold whole, draw back to short comets that fade the knot out, hold, then grow and fill it back in.
+ */
+const TAILS = {
+  travel: 2 / 3,
+  fade: 0.15,
+  edge: 0.02,
+  short: 0.08,
+  /** Where in the loop the tails start drawing back, are short, start growing, and are whole again. */
+  times: [0.2, 0.45, 0.55, 0.9],
+} as const
+/** How long the loop runs, in seconds. */
+export const TAILS_SECONDS = 6
+const HEADS = 3
+const WHOLE = 1 / HEADS + TAILS.fade + TAILS.edge
+
+const smooth = (from: number, to: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - from) / (to - from)))
+  return t * t * (3 - 2 * t)
+}
+
+/** The knot's light at `phase` (0 to 1) through the animated mark's loop, which starts and ends whole. */
+export function tails(phase: number): Light {
+  const [shrink, short, grow, whole] = TAILS.times
+  const length =
+    phase < grow
+      ? WHOLE + (TAILS.short - WHOLE) * smooth(shrink, short, phase)
+      : TAILS.short + (WHOLE - TAILS.short) * smooth(grow, whole, phase)
+  const fade = Math.min(length, TAILS.fade)
+  return (along) =>
+    Math.max(
+      ...Array.from({ length: HEADS }, (_, j) => {
+        const behind = (((j / HEADS + TAILS.travel * phase - along) % 1) + 1) % 1
+        return smooth(0, TAILS.edge, behind) * (1 - smooth(length - fade, length, behind))
+      }),
+    )
 }
