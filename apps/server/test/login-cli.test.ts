@@ -1,19 +1,23 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { expect, it } from 'vitest'
 import { createRelay } from '../src/relay.ts'
-import { config, discordOAuth } from './login-fixture.ts'
+import { config, discordOAuth, executor } from './login-fixture.ts'
 
-it('requires an operator-supplied relay URL before starting login', () => {
-  const child = spawnSync(process.execPath, ['scripts/login.mjs', '--no-open'], {
-    encoding: 'utf8',
-    timeout: 1000,
-  })
-  expect(child.status).toBe(1)
+it('requires an operator-supplied relay URL before starting login', async () => {
+  const child = await promisify(execFile)(process.execPath, [
+    'scripts/login.mjs',
+    '--no-open',
+  ]).then(
+    () => ({ code: 0, stdout: '', stderr: '' }),
+    (failure: { code: number; stdout: string; stderr: string }) => failure,
+  )
+  expect(child.code).toBe(1)
   expect(child.stdout).toBe('')
   expect(child.stderr).toContain('Ask your relay operator for its MCP URL.')
   expect(child.stderr).toContain('Usage: node scripts/login.mjs https://HOST/mcp')
@@ -39,7 +43,7 @@ it('logs in through the CLI loopback callback and writes an owner-only credentia
   const issuer = `http://127.0.0.1:${address.port}`
   const relay = createRelay(
     { ...config, allowedHosts: ['127.0.0.1'], login: { ...config.login, publicBaseUrl: issuer } },
-    undefined,
+    executor(),
     oauth.fetch,
   )
   handle = toNodeHandler(relay)

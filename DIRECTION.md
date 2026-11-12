@@ -1,97 +1,128 @@
 # Direction
 
-Provide a stateless Discord API relay over MCP. HTTP callers must log in with Discord OAuth.
-Project code uses the MCX License v1.0; third-party materials retain their original licenses.
-Every request supplies a relay OAuth bearer credential and a separate `X-Discord-Bot-Token` header.
-Validate both grants with Discord and execute that request's tools as the supplied bot.
-OAuth identifies a human; possession of the bot token determines bot access, not that human's guild permissions.
-An optional user-ID allowlist gates both login and every authenticated request. The hosted
-deployment's operator-managed list includes accepted developer-Team members and explicitly
-approved additional accounts. Preserve those additions during Team resyncs; keep user IDs
-outside Git and no server-side bot token for lookups.
+Textile is a Discord bot platform for agents, served over MCP. Agents drive their own bots
+through it: Discord API calls, online presence, automations, voice, and one-off scripts. Textile
+hosts no inference; it relays Discord to agents and runs agent-written code. Project code uses
+the MCX License v1.0; third-party materials retain their original licenses.
 
-Today's relay keeps no bot credentials, authentication results, sessions, or Discord-response
-cache; the platform below changes that. Login grants
-travel in encrypted, audience-bound relay tokens. Spent authorization-code hashes expire after
-one minute; the next code exchange or process restart removes expired hashes. Use one process;
-an in-flight login fails on restart. Existing logins survive.
-Access lasts at most seven days. Refresh tokens are encrypted envelopes around Discord's own
-refresh token, bound to the subject and client ID. Discord rotates that token on every refresh,
-revokes the previous access token, and rejects reuse, so Discord is the replay guard and the relay
-keeps no refresh state. A refresh chain outlives its 30-day client registration; an unused refresh
-envelope expires after 30 days. Never issue a refresh token that Discord's rotation does not guard.
-One login serves one machine: its bridges share `login.json` and serialise refreshes with a lock
-file. Every other machine signs in separately, since one holder's refresh revokes every copy.
+Textile is headed for a public, paid product with a free tier, billed through Discord itself.
+It is written first for people building AI agents, then for the Discord communities they serve.
+Access widens in rounds: staging is internal, then a closed alpha of people Mia invites by hand.
+The public site at `textile.cx` lets anyone sign in with Discord; until they are invited, it tells
+them they don't have access yet and where to follow progress.
 
-The relay needs no database, local accounts, PATs, stored OAuth profiles, Gateway, workflow engine, or
-sandbox supervisor. The earlier control-plane libraries remain in the workspace as legacy code;
-the server executable no longer starts them. `PLAN.md` describes that historical design.
+## Access
 
-## Heading: Textile, a bot platform for agents
+Every HTTP request supplies a relay OAuth bearer credential and a separate `X-Discord-Bot-Token`
+header. Textile validates both with Discord and acts as the supplied bot. OAuth identifies a
+human; possession of the bot token determines bot access, not that human's guild permissions.
+Anyone holding relay OAuth and a bot's token manages that bot's workflows; the acting human is
+recorded.
 
-The project is being renamed Textile. It is growing from a stateless relay into a platform where
-agents run their bots: online presence, automations, voice, and one-off scripts. Textile hosts no
-inference; it relays Discord to agents and runs agent-written code. v1 serves allowlisted friends:
-the platform features (stored tokens, workflows, voice) require a configured allowlist, and an
-unset list never opens them to every Discord user.
+A user-ID allowlist gates login and every authenticated request. v1 serves allowlisted friends:
+the platform features (stored tokens, workflows, scripts, voice) require a configured allowlist,
+and an unset list never opens them to every Discord user. The hosted deployment's operator-managed
+list includes accepted developer-Team members and explicitly approved additional accounts.
+Preserve those additions during Team resyncs, and keep user IDs outside Git.
 
-- **Tiers.** A stateless, load-balanceable central tier checks OAuth and the allowlist, then
-  routes by bot ID (decoded from the token). Trusted bot hosts each own a set of bots: the
-  encrypted stored token, the REST rate limiter, Gateway shards, voice, and the capability broker.
-  Untrusted runners execute workerd isolates and hold no secrets.
-- **Bots.** An agent's first call stores the bot's token and brings it online; it goes offline
-  after 24 hours without agent calls unless automations or voice keep it up. Each shard's resume
-  state is stored so any bot host can resume it after failover. Shards spread across bot hosts.
-- **Workflows.** TypeScript against discord.js, adapted where it cannot run in an isolate, with
-  pinned npm dependencies bundled at publish. Triggers are Gateway events (interactions
-  included), cron schedules, and inbound HTTP routes. Each workflow declares grants: catalog
-  operations and reachable hosts, shown at enable time; destructive operations need an explicit
-  grant. Egress goes through a broker proxy that checks every resolved address and redirect target,
-  not just the hostname, and blocks private, loopback, and link-local ranges. Anyone holding relay
-  OAuth and the bot's token manages its workflows; the acting human is recorded.
-- **Voice.** A bidirectional voice WebSocket relays Discord voice, per speaker. Agents bring their
-  own speech-to-speech or local models; Textile never runs them. Receiving voice always posts a
-  notice whose buttons let anyone opt out of relay, from that bot in that server or from every
-  Textile bot; without the notice, a session only sends audio.
-- **Storage.** Postgres on CloudNativePG, accessed through Drizzle.
-- **Environments.** The olympus k3s homelab is dev and staging. Production runs on a managed
-  Kubernetes provider, not yet chosen, so Textile uses only portable Kubernetes features.
+Login grants travel in encrypted, audience-bound relay tokens; no login state lives in memory, so
+any central replica finishes any login. Access lasts at most seven days. Authorization codes and
+refresh tokens both enclose Discord's own refresh token: redeeming either rotates it, and Discord
+rejects reuse, so Discord is the replay guard. A refresh chain outlives its 30-day client
+registration; an unused refresh envelope expires after 30 days. Never issue a credential that
+Discord's rotation does not guard. One login serves one machine: its bridges share `login.json`
+and serialise refreshes with a lock file, and every other machine signs in separately.
 
-## Current implementation
+## Architecture
 
-The executable uses the stable MCP SDK and supports the sessionless `2026-07-28` revision plus
-stateless compatibility for older clients. Local stdio uses the caller's environment token.
-HTTP supports OAuth discovery, dynamic client registration, browser-bound consent and S256 PKCE.
-`pnpm login` is the dependency-free browser login helper. Operators configure one Discord OAuth app.
-`scripts/client.mjs` connects local agents over stdio to the hosted HTTP relay, sharing private
-client-side login and bot files without putting credentials in each agent's configuration.
-Read `README.md` for tools, configuration, and current limitations.
+- **Central** (stateless, load-balanced) serves MCP, OAuth, `/voice`, and workflow HTTP routes. It
+  checks OAuth and the allowlist, decodes the bot ID from the token, and routes to the bot host
+  that owns the bot by rendezvous hashing over `BOT_HOSTS`. It holds no tokens.
+- **Bot hosts** (trusted) own bots: the encrypted stored token, the bot's single REST rate
+  limiter, voice, the capability broker, and workflow dispatch. Gateway shards spread across bot
+  hosts under Postgres leases. Each shard's resume state is stored, so another host resumes it
+  after failover, with missed events replayed.
+- **Runners** execute agent code in self-hosted workerd: one workerd process per active bot, under
+  a supervisor that enforces a wall-clock deadline and kills the process on overrun. workerd has
+  no per-isolate limits of its own. `globalOutbound` points at the broker, so isolates reach
+  nothing else and never hold a real token.
+- **Storage** is Postgres through Drizzle: stored tokens, shard sessions and leases, workflows,
+  KV, schedules, routes, run records, voice opt-outs, and the audit log.
 
-Every cataloged operation carries hand-maintained Discord permission metadata: permission
-names, guild or channel scope, alternatives, conditions, and role-hierarchy rules, cited from
-Discord's docs. `spec:check` fails on a missing entry. `@mia-cx/discord-catalog` is the
+## Bots, workflows, and voice
+
+- **Bots.** An agent's first call stores the bot's token and brings it online. It goes offline
+  after 24 hours without agent calls unless workflows or voice keep it up.
+- **Scripts.** `discord_script_run` runs plain discord.js once in an isolate, so many Discord
+  calls cost one tool call.
+- **Workflows.** Published discord.js code with pinned npm dependencies, bundled at publish into
+  immutable revisions. Triggers: Gateway events (interactions included), cron schedules (each tick
+  at most once, by a per-bot advisory lock), and inbound HTTP routes (bounded, each handler
+  authenticates its own callers). Workflows keep state in a per-workflow KV store, and agents read
+  their runs and logs, with tokens redacted.
+- **Grants.** Each workflow and script declares catalog operations and reachable hosts; destructive
+  operations need an explicit grant. The broker matches each raw REST call to a catalog operation,
+  checks the grant, and swaps in the real token. Egress reaches granted public hosts only: every
+  resolved address and redirect target is checked, and private, loopback, and link-local ranges
+  are refused.
+- **Voice.** A bidirectional voice WebSocket relays Discord voice per speaker, with DAVE
+  encryption, in Opus or PCM16. Agents bring their own speech-to-speech or local models. Receiving
+  always posts a notice first, whose buttons let anyone opt out here or from every Textile bot;
+  without the notice, a session only sends audio. Discord does not support bots receiving voice, so
+  receive is best-effort. Textile never stores audio.
+
+Every cataloged operation carries hand-maintained Discord permission metadata cited from
+Discord's docs, and `spec:check` fails on a missing entry. `@mia-cx/discord-catalog` is the
 standalone, Workers-safe npm package for the catalog, schemas, table, and permission resolver.
-The internal `@discord-mcp/discord-api/catalog` entry re-exports it, so a relay acting for a person can
-filter and re-check calls against that person's permissions. This relay reports it in search and
-describe but does not enforce it; Discord still decides each call against the bot.
-Public setup instructions use operator-supplied URLs. Keep deployment hostnames out of this
-repository's docs and helper defaults; the login helper requires an explicit relay URL.
+Textile reports permissions in search and describe but does not enforce them; Discord decides each
+call against the bot.
 
-## Deployment boundary
+Local stdio uses the caller's environment token. `pnpm login` is the browser login helper, and
+`scripts/client.mjs` bridges local agents over stdio to the hosted relay. Public setup instructions
+use operator-supplied URLs; keep deployment hostnames out of this repository's docs and helper
+defaults. Read `README.md` for tools, configuration, and limitations.
 
-Today's public OAuth relay, the stateless one described above, runs on the olympus k3s cluster and
-serves real users. Textile's staging will be a separate deployment there, in its own `textile`
-namespace; production moves to the managed provider. Namespace `discord-mcp` has a
-single-replica, read-only Deployment pinned to a tested OAuth relay image and a
-`discord-mcp-relay` Service. The generated encryption key lives in `discord-mcp-crypto`.
-The existing Discord application's ID and secret are saved in `discord-mcp-oauth`.
-The Discord redirect is the private configured public origin plus `/auth/discord/callback`.
+## Developer experience
 
-Traefik routes the configured public origin to `discord-mcp-relay`.
-The old Athena `t3code/implement-plan` PAT/OIDC stack and its data remain intact but are not
-on the public route. Restoring that backend requires an explicit recovery decision.
+Textile is agent-first, but hand-written bots get a developer experience as good as Workers
+gives: agents work best on the tools a person would choose to use, so the human path is the
+baseline, not an afterthought. Agents and people publish the same bundle format through the same
+deploy API; the MCP tools are one client of it, and no client sends a whole bot in one request.
 
-Mia manages the deployment's DNS. Operator configuration supplies its public origin.
-Routing manifests, Athena relay units, and recovery instructions live in
-`mia-cx/yggdrasil-spec` under `argocd/discord-mcp/` and `hosts/athena-hephaestus/`.
-Consult those files when deploying the stateless relay or recovering its backend registration.
+- **CLI.** A `wrangler`-style CLI scaffolds a bot, runs it locally, and deploys from a terminal
+  or a GitHub Actions workflow.
+- **Bot environments.** Dev, staging, and production per bot, each its own Discord application,
+  with dev tunnels that run local code against live events and reload on save.
+- **Types and bindings.** Published TypeScript types for every hook (Gateway events, cron, HTTP
+  routes) and a typed `env` whose bindings (KV, schedules, routes, the Discord client) each bot
+  declares, as `@cloudflare/workers-types` and `wrangler.toml` do for Workers.
+
+## Environments and deployment
+
+The olympus k3s homelab is dev and staging. Production runs on a managed Kubernetes provider, not
+yet chosen, so Textile uses only portable Kubernetes features: Deployments, StatefulSets,
+NetworkPolicy, CloudNativePG, and a gVisor RuntimeClass for runners where offered. Bot hosts need
+outbound UDP for voice and HTTPS to the npm registry.
+
+Today's public relay on olympus is the earlier stateless relay, still serving real users from
+namespace `discord-mcp`: a single-replica Deployment pinned to a tested image, its encryption key
+in `discord-mcp-crypto`, and the Discord application's ID and secret in `discord-mcp-oauth`.
+Traefik routes the configured public origin to `discord-mcp-relay`; the Discord redirect is that
+origin plus `/auth/discord/callback`. Textile staging will run separately in namespace `textile`
+with its own CloudNativePG cluster. Mia manages DNS. Routing manifests and recovery instructions
+live in `mia-cx/yggdrasil-spec` under `argocd/discord-mcp/` and `hosts/athena-hephaestus/`. The
+old Athena PAT/OIDC stack remains intact but off the public route; restoring it needs an explicit
+recovery decision. `PLAN.md` describes that historical design.
+
+## Next
+
+- Staging on olympus, then runner isolation (gVisor, NetworkPolicy, per-bot cgroup limits).
+- The website at `textile.cx`: one SvelteKit app on Cloudflare Workers for marketing, docs, and
+  later the dashboard, where humans manage their bots and workflows beside the agents that do so
+  over MCP. Every page has a Markdown twin, served to agents by `Accept` or user agent and at
+  `<page>.md`, indexed in `/llms.txt`, with Copy page and View as Markdown controls.
+- A closed alpha, then paid plans and a free tier through Discord's own billing.
+- Real-Discord smoke tests: voice send and receive, and a workflow.
+- Renaming the repository, packages, and deployment to Textile.
+- Before public sign-up: quotas, billing, abuse handling, a host-wide limit on webhook traffic,
+  and session writes fenced per lease hold rather than per process.

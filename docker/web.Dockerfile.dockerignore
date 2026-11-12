@@ -1,0 +1,19 @@
+# The site image's build context. It replaces the root .dockerignore for web.Dockerfile, because the docs site is
+# built from the Markdown that one leaves out.
+
+node_modules
+**/node_modules
+**/.svelte-kit
+**/.svartz
+**/.wrangler
+dist
+**/dist
+
+# Secrets and local state.
+.env
+.env.*
+**/.dev.vars
+
+.git
+.github
+spike

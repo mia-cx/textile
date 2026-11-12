@@ -1,20 +1,23 @@
 name: CI
 
 # Every push and every pull request is checked. Images are built on all of them — a Dockerfile that
-# stopped building should fail the pull request, not the release — but only pushed from `main` and
-# from a version tag.
+# stopped building should fail the pull request, not the release — but only pushed from `main`,
+# from `textile`, which staging deploys, and from a version tag. Each published image is tagged
+# `sha-<commit>`, which deployments pin by digest.
 on:
   push:
-    branches: [main]
+    branches: [main, textile]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
 
-# One run per ref. A superseded push has nothing worth finishing, except on `main` and tags, where
-# cancelling could abandon a half-pushed manifest.
+# One run per ref. A superseded push has nothing worth finishing, except on pushed branches and
+# tags, where cancelling could abandon a half-pushed manifest. GitHub keeps one pending run per
+# group, so pushes queued behind a running build collapse into the newest: commits in between get
+# no image of their own, and the newest one contains them.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/textile' && !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: read
@@ -26,6 +29,17 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-24.04
+    # Real Postgres, for the scheduler's advisory locks, which PGlite's one session can't contend for.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -86,8 +100,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The stateless relay needs only the server image.
-        image: [server]
+        # One server image runs every tier; `web` is textile.cx's site in workerd.
+        image: [server, web]
         # Native runners rather than QEMU: argon2 compiles from source, and emulating that turns a
         # two-minute build into a twenty-minute one.
         platform:
@@ -117,7 +131,7 @@ jobs:
           # Pushed by digest and assembled into one multi-architecture tag by the `manifest` job.
           # Tagging here would have the two architectures race to own the same tag.
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
-          # Scoped per image and architecture, or the four images would evict each other's layers.
+          # Scoped per image and architecture, or the builds would evict each other's layers.
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
           cache-to: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }},mode=max
           provenance: mode=max
@@ -151,7 +165,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [server]
+        image: [server, web]
     steps:
       - name: Download the digests
         uses: actions/download-artifact@v4

@@ -1,0 +1,3 @@
+# The docs site's hashed files never change. The Cloudflare adapter adds the same for /_app.
+/docs/_app/immutable/*
+  Cache-Control: public, immutable, max-age=31536000

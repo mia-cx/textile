@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The colour mode the docs' toggle stored, pinned before first paint so the site matches the docs. -->
+    <script>
+      (() => { try { const m = localStorage.getItem('svartz:color-mode'); if (m === 'light' || m === 'dark') document.documentElement.classList.add(m) } catch {} })()
+    </script>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#f5f0e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d1130" media="(prefers-color-scheme: dark)" />
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

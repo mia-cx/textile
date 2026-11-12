@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `pnpm preview`. Never commit .dev.vars.
+# Central's origin: a local relay (`pnpm start` with MCP_TRANSPORT=http), or a deployed one.
+CENTRAL_URL=http://localhost:3000
+# openssl rand -base64 32
+SESSION_KEY=
