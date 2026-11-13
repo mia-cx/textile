@@ -7,6 +7,8 @@ the MCX License v1.0; third-party materials retain their original licenses.
 
 Textile is headed for a public, paid product with a free tier, billed through Discord itself.
 It is written first for people building AI agents, then for the Discord communities they serve.
+Discord is the only identity provider, enterprise included: the whole platform builds on
+Discord, so people sign in, join the waitlist, and pay there, and Textile runs no separate auth.
 Access widens in rounds: staging is internal, then a closed alpha of people Mia invites by hand.
 The public site at `textile.cx` lets anyone sign in with Discord; until they are invited, it tells
 them they don't have access yet and where to follow progress.
