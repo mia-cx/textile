@@ -1,11 +1,14 @@
+import { ConfigurationError } from '@discord-mcp/core'
 import { DiscordRest } from '@discord-mcp/discord-api/relay'
-import { Effect, Layer } from 'effect'
+import { ConfigProvider, Effect, Layer } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { communityConfig } from '../src/login.ts'
 import { createRelay } from '../src/relay.ts'
 import {
   BOT_ID,
   beginLogin,
   botToken,
+  community,
   config,
   discordOAuth,
   executor,
@@ -319,5 +322,144 @@ describe('Discord login for the relay', () => {
       new Request('https://relay.test/register', { method: 'POST', body: 'x'.repeat(16_385) }),
     )
     expect(tooLarge.status).toBe(400)
+  })
+})
+
+describe('Joining the waitlist at sign-in', () => {
+  const WAITLIST = community.waitlistRoleId
+  const PERSON = '234567890123456789'
+  const withCommunity = (allowedUserIds?: ReadonlyArray<string>) => {
+    const oauth = discordOAuth()
+    oauth.state.scope = 'identify guilds.join'
+    const log = vi.fn<(message: string) => void>()
+    const relay = createRelay(
+      {
+        ...config,
+        login: {
+          ...config.login,
+          community,
+          log,
+          ...(allowedUserIds === undefined ? {} : { allowedUserIds }),
+        },
+      },
+      execute,
+      oauth.fetch,
+    )
+    return { oauth, log, relay }
+  }
+  const guildCalls = (oauth: ReturnType<typeof discordOAuth>) =>
+    oauth.calls.filter((call) => call.path.includes('/guilds/')).map((call) => call.path)
+
+  it('asks for guilds.join and adds a new member to the server with the Waitlist role', async () => {
+    const { oauth, relay } = withCommunity()
+    const { discordUrl, tokens } = await login(relay)
+    expect(discordUrl.searchParams.get('scope')).toBe('identify guilds.join')
+    expect(oauth.members.get(PERSON)).toEqual(new Set([WAITLIST]))
+    // Discord applies `roles` to a new member, so no second request.
+    expect(guildCalls(oauth)).toEqual([`/api/v10/guilds/${community.guildId}/members/${PERSON}`])
+    expect((await relay.fetch(mcp(tokens.access_token))).status).toBe(200)
+  })
+
+  it('gives someone already in the server the Waitlist role', async () => {
+    const { oauth, relay } = withCommunity()
+    oauth.members.set(PERSON, new Set())
+    await login(relay)
+    expect(oauth.members.get(PERSON)).toEqual(new Set([WAITLIST]))
+    expect(guildCalls(oauth)).toEqual([
+      `/api/v10/guilds/${community.guildId}/members/${PERSON}`,
+      `/api/v10/guilds/${community.guildId}/members/${PERSON}/roles/${WAITLIST}`,
+    ])
+  })
+
+  it('signs in an allowed person when they can’t be added, and logs why without credentials', async () => {
+    const { oauth, log, relay } = withCommunity([PERSON])
+    oauth.state.guildStatus = 403
+    const { tokens } = await login(relay)
+    expect((await relay.fetch(mcp(tokens.access_token))).status).toBe(200)
+    expect(oauth.members.size).toBe(0)
+    const logged = log.mock.calls.join('\n')
+    expect(logged).toContain(PERSON)
+    expect(logged).toContain('Missing Permissions')
+    expect(logged).not.toContain('private-')
+
+    // A grant without guilds.join is never sent to Discord to join with.
+    oauth.state.scope = 'identify'
+    oauth.state.guildStatus = 200
+    const before = guildCalls(oauth).length
+    await login(relay)
+    expect(guildCalls(oauth)).toHaveLength(before)
+  })
+
+  // Discord's shared-resource limits can ask for a retry well after the bucket resets.
+  it('gives up on the join at its deadline, so a slow Discord can’t hold up sign-in', async () => {
+    const { oauth, log, relay } = withCommunity([PERSON])
+    oauth.state.guildReplies.push(
+      Response.json(
+        { message: 'You are being rate limited.', retry_after: 8, global: false },
+        {
+          status: 429,
+          headers: {
+            'retry-after': '8',
+            'x-ratelimit-scope': 'shared',
+            'x-ratelimit-limit': '2',
+            'x-ratelimit-remaining': '1',
+            'x-ratelimit-reset-after': '1',
+          },
+        },
+      ),
+    )
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const signingIn = login(relay)
+    await vi.waitFor(() => expect(guildCalls(oauth)).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(5_000)
+    const { tokens } = await signingIn
+    expect((await relay.fetch(mcp(tokens.access_token))).status).toBe(200)
+    expect(log.mock.calls.join('\n')).toContain(PERSON)
+    expect(oauth.members.size).toBe(0)
+  })
+
+  it('turns away a person who isn’t allowed, telling their client they joined the waitlist', async () => {
+    const { oauth, relay } = withCommunity(['345678901234567890'])
+    const finished = await finishLogin(relay, await beginLogin(relay))
+    expect(finished.destination.searchParams.get('error')).toBe('access_denied')
+    expect(finished.destination.searchParams.get('waitlist')).toBe('joined')
+    expect(finished.destination.searchParams.has('code')).toBe(false)
+    expect(oauth.members.get(PERSON)).toEqual(new Set([WAITLIST]))
+
+    // Only a join that worked says so.
+    oauth.state.guildStatus = 403
+    const failed = await finishLogin(relay, await beginLogin(relay))
+    expect(failed.destination.searchParams.get('error')).toBe('access_denied')
+    expect(failed.destination.searchParams.has('waitlist')).toBe(false)
+  })
+
+  it('starts with all of the community settings or none, and refuses anything in between', async () => {
+    const load = (env: Record<string, string>) =>
+      Effect.runPromise(
+        communityConfig.pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+          Effect.result,
+        ),
+      )
+    const all = {
+      DISCORD_COMMUNITY_GUILD_ID: community.guildId,
+      DISCORD_COMMUNITY_BOT_TOKEN: 'bot-token',
+      DISCORD_COMMUNITY_WAITLIST_ROLE_ID: community.waitlistRoleId,
+    }
+    expect(await load({})).toMatchObject({ _tag: 'Success', success: undefined })
+    expect(await load(all)).toMatchObject({
+      _tag: 'Success',
+      success: { guildId: community.guildId, waitlistRoleId: community.waitlistRoleId },
+    })
+    for (const [env, variable] of [
+      [{ DISCORD_COMMUNITY_GUILD_ID: community.guildId }, 'DISCORD_COMMUNITY_BOT_TOKEN'],
+      [{ ...all, DISCORD_COMMUNITY_WAITLIST_ROLE_ID: '' }, 'DISCORD_COMMUNITY_WAITLIST_ROLE_ID'],
+      [{ ...all, DISCORD_COMMUNITY_GUILD_ID: 'textile' }, 'DISCORD_COMMUNITY_GUILD_ID'],
+    ] as const) {
+      const result = await load(env)
+      expect(result).toMatchObject({ _tag: 'Failure' })
+      expect(result._tag === 'Failure' && result.failure).toBeInstanceOf(ConfigurationError)
+      expect(result._tag === 'Failure' && result.failure.variable).toContain(variable)
+    }
   })
 })

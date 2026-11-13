@@ -32,7 +32,8 @@ It checks the bot with `GET /users/@me`, uses that token for the request,
 and releases the request's client. Raw Discord OAuth tokens and user-account
 tokens are not accepted as MCP bearer credentials.
 
-OAuth requests only `identify`. Operators can restrict access with
+OAuth requests `identify`, plus `guilds.join` when a
+[community server](docs/operating.md#community-server-and-waitlist) is set. Operators can restrict access with
 `DISCORD_OAUTH_ALLOWED_USER_IDS`; unlisted accounts cannot finish login or use
 previously issued credentials. Without that restriction, any Discord human may sign in.
 Login does not prove bot ownership or restrict a bot to that human's guild permissions.
@@ -193,6 +194,9 @@ Keep the environment file private. Rotating the encryption key invalidates all l
 | `DISCORD_OAUTH_CLIENT_SECRET` | Required for HTTP. The application's OAuth client secret. |
 | `DISCORD_OAUTH_ALLOWED_USER_IDS` | Optional comma-separated Discord user IDs. Unset or `*` allows any human; an empty value denies everyone. |
 | `OAUTH_ENCRYPTION_KEY` | Required for HTTP. Stable random 32-byte base64 key for AES-256-GCM credentials. |
+| `DISCORD_COMMUNITY_GUILD_ID` | Optional. The [community server](docs/operating.md#community-server-and-waitlist) that everyone who signs in joins. Set all three community settings or none. |
+| `DISCORD_COMMUNITY_BOT_TOKEN` | Optional, secret. The bot token of the relay's own Discord application, which adds people to the community server. |
+| `DISCORD_COMMUNITY_WAITLIST_ROLE_ID` | Optional. The role the community server gives everyone who signs in. |
 | `ALLOWED_HOSTS` | Comma-separated hostnames; required for non-loopback binds. |
 | `ALLOWED_ORIGINS` | Optional additional browser origins. The request origin and configured public origin are accepted. |
 | `DISCORD_MCP_REST_TIMEOUT_MS` | `15000`, applied to Discord requests. |

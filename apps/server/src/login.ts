@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { ConfigurationError, renderCause } from '@discord-mcp/core'
+import { createRateLimiter, DiscordRest } from '@discord-mcp/discord-api/relay'
 import {
   type AuthInfo,
   bearerAuthChallengeResponse,
@@ -7,7 +9,7 @@ import {
   oauthMetadataResponse,
   verifyBearerToken,
 } from '@modelcontextprotocol/server'
-import { Redacted, Schema } from 'effect'
+import { Config, Duration, Effect, Option, Redacted, Schema } from 'effect'
 import { EncryptJWT, type JWTPayload, jwtDecrypt } from 'jose'
 
 const FLOW_SECONDS = 600
@@ -51,6 +53,62 @@ const Registration = Schema.Struct({
   response_types: Schema.optional(Schema.Array(Schema.Literal('code'))),
 })
 
+const SNOWFLAKE = /^\d{17,21}$/
+/**
+ * Sign-in waits for the join, so the whole join, queueing and rate-limit waits included, gets this
+ * long. Only short rate limits are waited out at all.
+ */
+const JOIN_DEADLINE_MS = 5_000
+const COMMUNITY_REST = { timeoutMs: JOIN_DEADLINE_MS, retries: 0, maxRateLimitWaitMs: 2_000 }
+
+/**
+ * The Discord server that everyone who signs in joins, with the Waitlist role. Discord adds a member
+ * only through the bot of the application that holds their `guilds.join` grant, so `botToken` is
+ * the bot of central's own Discord application.
+ */
+export interface Community {
+  readonly guildId: string
+  readonly botToken: Redacted.Redacted<string>
+  readonly waitlistRoleId: string
+}
+
+/**
+ * The community settings: all three turn joining on, and none leave it off. Partial settings or
+ * malformed IDs fail startup.
+ */
+export const communityConfig = Effect.gen(function* () {
+  const optional = (name: string) => Config.string(name).pipe(Config.withDefault(''))
+  const guildId = yield* optional('DISCORD_COMMUNITY_GUILD_ID')
+  const botToken = yield* Config.redacted('DISCORD_COMMUNITY_BOT_TOKEN').pipe(
+    Config.withDefault(Redacted.make('')),
+  )
+  const waitlistRoleId = yield* optional('DISCORD_COMMUNITY_WAITLIST_ROLE_ID')
+  const settings = {
+    DISCORD_COMMUNITY_GUILD_ID: guildId,
+    DISCORD_COMMUNITY_BOT_TOKEN: Redacted.value(botToken),
+    DISCORD_COMMUNITY_WAITLIST_ROLE_ID: waitlistRoleId,
+  }
+  const missing = Object.entries(settings).filter(([, value]) => value === '')
+  if (missing.length === Object.keys(settings).length) return undefined
+  if (missing.length > 0)
+    return yield* Effect.fail(
+      new ConfigurationError({
+        variable: missing.map(([name]) => name).join(', '),
+        message:
+          'Set DISCORD_COMMUNITY_GUILD_ID, DISCORD_COMMUNITY_BOT_TOKEN, and DISCORD_COMMUNITY_WAITLIST_ROLE_ID together, or none of them.',
+      }),
+    )
+  for (const [variable, id] of [
+    ['DISCORD_COMMUNITY_GUILD_ID', guildId],
+    ['DISCORD_COMMUNITY_WAITLIST_ROLE_ID', waitlistRoleId],
+  ] as const)
+    if (!SNOWFLAKE.test(id))
+      return yield* Effect.fail(
+        new ConfigurationError({ variable, message: `${variable} must be a Discord ID.` }),
+      )
+  return { guildId, botToken, waitlistRoleId } satisfies Community
+})
+
 export interface LoginConfig {
   readonly publicBaseUrl: string
   readonly clientId: string
@@ -59,6 +117,10 @@ export interface LoginConfig {
   readonly encryptionKey: Redacted.Redacted<string>
   /** Undefined allows any human; an empty list denies everyone. Checked on every request. */
   readonly allowedUserIds?: ReadonlyArray<string>
+  /** Set, sign-in asks for `guilds.join` and adds everyone to this server's waitlist. */
+  readonly community?: Community
+  /** Reports failures sign-in carries on through, such as a failed join. Defaults to stderr. */
+  readonly log?: (message: string) => void
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -130,7 +192,7 @@ export const createDiscordLogin = (
   authorize: (request: Request) => Promise<AuthInfo | Response>
   fetch: (request: Request) => Promise<Response | undefined>
 } => {
-  if (config.allowedUserIds?.some((id) => !/^\d{17,21}$/.test(id))) {
+  if (config.allowedUserIds?.some((id) => !SNOWFLAKE.test(id))) {
     throw new Error('DISCORD_OAUTH_ALLOWED_USER_IDS must contain Discord user IDs.')
   }
   const allowedUsers =
@@ -204,7 +266,8 @@ export const createDiscordLogin = (
       )
     return response.json() as Promise<unknown>
   }
-  const identity = async (token: string, subject?: string) => {
+  /** The Discord user a valid grant for this application belongs to, allowed or not. */
+  const discordUser = async (token: string, subject?: string) => {
     const auth = Schema.decodeUnknownSync(Authorization)(
       await discordJson('/oauth2/@me', {
         headers: { authorization: `Bearer ${token}` },
@@ -220,11 +283,73 @@ export const createDiscordLogin = (
       (subject !== undefined && auth.user.id !== subject)
     )
       throw new OAuthError(OAuthErrorCode.InvalidToken, 'Invalid Discord authorization.')
-    if (allowedUsers !== undefined && !allowedUsers.has(auth.user.id)) {
-      throw new DiscordAccessDenied('Your Discord account is not allowed to use this relay.')
-    }
     return auth.user.id
   }
+  const allowed = (userId: string) => allowedUsers === undefined || allowedUsers.has(userId)
+  const identity = async (token: string, subject?: string) => {
+    const userId = await discordUser(token, subject)
+    if (!allowed(userId))
+      throw new DiscordAccessDenied('Your Discord account is not allowed to use this relay.')
+    return userId
+  }
+  const log = config.log ?? ((message: string) => process.stderr.write(`${message}\n`))
+  /**
+   * Adds the person to the community server with the Waitlist role, as the community bot. Resolves
+   * to whether they now hold the role. A failure is logged without credentials and never thrown,
+   * so it can't block a sign-in.
+   */
+  const waitlist = (community: Community) => {
+    // One limiter for the community bot, so concurrent sign-ins queue in its rate-limit buckets.
+    const rest = DiscordRest.shared(
+      community.botToken,
+      createRateLimiter(COMMUNITY_REST, discordFetch),
+    )
+    return async (userId: string, tokens: typeof TokenResponse.Type) => {
+      if (!tokens.scope.split(' ').includes('guilds.join')) {
+        log(
+          `Discord user ${userId} signed in without the guilds.join scope; not added to the waitlist.`,
+        )
+        return false
+      }
+      const member = `/guilds/${community.guildId}/members/${userId}` as const
+      const joined = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const discord = yield* DiscordRest
+          const added = yield* discord.request({
+            method: 'PUT',
+            route: member,
+            body: { access_token: tokens.access_token, roles: [community.waitlistRoleId] },
+            operationFamily: 'waitlist',
+          })
+          // 201 returns the new member. 204, with an empty body, means they were already in the
+          // server, and Discord ignores `roles`, so the role is added on its own.
+          if (added instanceof ArrayBuffer)
+            yield* discord.request({
+              method: 'PUT',
+              route: `${member}/roles/${community.waitlistRoleId}`,
+              operationFamily: 'waitlist',
+            })
+        }).pipe(
+          Effect.provide(rest),
+          // Interrupting at the deadline cancels the requests still queued or waiting to retry.
+          Effect.timeoutOption(Duration.millis(JOIN_DEADLINE_MS)),
+        ),
+      )
+      if (joined._tag === 'Success') {
+        if (Option.isSome(joined.value)) return true
+        log(
+          `Couldn't add Discord user ${userId} to the waitlist: Discord didn't finish within ${JOIN_DEADLINE_MS} ms.`,
+        )
+        return false
+      }
+      const error = renderCause(joined.cause)
+      log(
+        `Couldn't add Discord user ${userId} to the waitlist: ${error.code}${error.httpStatus === undefined ? '' : ` ${error.httpStatus}`}: ${error.message}`,
+      )
+      return false
+    }
+  }
+  const joinWaitlist = config.community && waitlist(config.community)
   const exchange = async (parameters: Record<string, string>) => {
     const tokens = Schema.decodeUnknownSync(TokenResponse)(
       await discordJson('/oauth2/token', {
@@ -394,7 +519,7 @@ export const createDiscordLogin = (
       client_id: config.clientId,
       redirect_uri: callback,
       response_type: 'code',
-      scope: 'identify',
+      scope: joinWaitlist === undefined ? 'identify' : 'identify guilds.join',
       state: encoded,
       prompt: 'consent',
       code_challenge: challenge(text(flow.discordVerifier)),
@@ -419,14 +544,16 @@ export const createDiscordLogin = (
     if (url.searchParams.has('error')) {
       destination.searchParams.set('error', 'access_denied')
     } else {
-      try {
-        const tokens = await exchange({
-          grant_type: 'authorization_code',
-          code: text(url.searchParams.get('code')),
-          redirect_uri: callback,
-          code_verifier: text(flow.discordVerifier),
-        })
-        const subject = await identity(tokens.access_token)
+      const tokens = await exchange({
+        grant_type: 'authorization_code',
+        code: text(url.searchParams.get('code')),
+        redirect_uri: callback,
+        code_verifier: text(flow.discordVerifier),
+      })
+      const subject = await discordUser(tokens.access_token)
+      // Everyone who signs in joins the waitlist, allowed or not, so it happens before the check.
+      const joined = (await joinWaitlist?.(subject, tokens)) ?? false
+      if (allowed(subject)) {
         destination.searchParams.set(
           'code',
           await seal(
@@ -441,9 +568,10 @@ export const createDiscordLogin = (
             CODE_SECONDS,
           ),
         )
-      } catch (error) {
-        if (!(error instanceof DiscordAccessDenied)) throw error
+      } else {
         destination.searchParams.set('error', 'access_denied')
+        // Tells the client this denial put the person on the waitlist, in the community server.
+        if (joined) destination.searchParams.set('waitlist', 'joined')
       }
     }
     destination.searchParams.set('state', String(flow.state))

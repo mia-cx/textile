@@ -6,13 +6,14 @@ export const SITE_NAME = 'Textile'
 export const GITHUB_URL = 'https://github.com/mia-cx/textile'
 
 /**
- * PLACEHOLDER, until Mia picks the server: the Discord server where people without access follow progress and get
- * invited in the next round. The gate page shows its name and links its invite. `.invalid` never resolves, so the
- * placeholder can't send anyone to a stranger's server.
+ * The Textile Discord server, where people without access follow progress and get invited in the next round. The gate
+ * page shows its name. It links `invite` (a permanent invite to its #general) to join the server, or `server` once
+ * sign-in has added the person to its waitlist.
  */
 export const COMMUNITY = {
   name: 'the Textile Discord server',
-  invite: 'https://community-invite.invalid/',
+  invite: 'https://discord.gg/n9bufP4Myf',
+  server: 'https://discord.com/channels/1354453764391702748',
 }
 
 /** The site's own pages, with what search results and the Markdown index say about each. Docs pages come from the docs build. */

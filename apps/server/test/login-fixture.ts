@@ -16,6 +16,13 @@ export const config: RelayConfig = {
 
 export const BOT_ID = '345678901234567890'
 
+/** The community server sign-in adds people to, with its bot and Waitlist role. */
+export const community = {
+  guildId: '456789012345678901',
+  botToken: Redacted.make('private-community-bot-token'),
+  waitlistRoleId: '567890123456789012',
+}
+
 /** A bot token in Discord's shape: its first segment is the bot's ID in base64. */
 export const botToken = (botId = BOT_ID, secret = 'private-bot-secret') =>
   `${Buffer.from(botId).toString('base64url')}.${secret}`
@@ -32,8 +39,9 @@ export const executor = (
   })
 
 /**
- * Fake only Discord's external OAuth endpoints; the issuer, crypto, browser checks and MCP are real.
- * Refreshes rotate like Discord's: a refresh token works once and revokes its access token.
+ * Fake only Discord's external OAuth endpoints and the community server's member endpoints; the
+ * issuer, crypto, browser checks and MCP are real. Refreshes rotate like Discord's: a refresh token
+ * works once and revokes its access token.
  */
 export const discordOAuth = () => {
   const state = {
@@ -41,14 +49,53 @@ export const discordOAuth = () => {
     applicationId: config.login.clientId,
     userId: '234567890123456789',
     status: 200,
+    /** The scopes Discord grants, as its token response lists them. */
+    scope: 'identify',
+    /** What the community server's member endpoints answer with when not 200. */
+    guildStatus: 200,
+    /** Answers the member endpoints give, in order, before answering as above. */
+    guildReplies: [] as Array<Response>,
   }
+  /** The community server's members, by user ID, with their roles. */
+  const members = new Map<string, Set<string>>()
   const calls: Array<{ path: string; init: RequestInit | undefined }> = []
   /** Live refresh token → the access token it revokes when spent. */
   const grants = new Map<string, string>()
   const live = new Set<string>()
   let issued = 0
+  const memberPath = new RegExp(
+    `/guilds/${community.guildId}/members/(\\d+)(?:/roles/${community.waitlistRoleId})?$`,
+  )
+  /** Discord's add-member and add-role endpoints, as the community bot meets them. */
+  const addMember = (userId: string, path: string, init: RequestInit) => {
+    const bot = `Bot ${Redacted.value(community.botToken)}`
+    if (new Headers(init.headers).get('authorization') !== bot)
+      return Response.json({ message: '401: Unauthorized', code: 0 }, { status: 401 })
+    const scripted = state.guildReplies.shift()
+    if (scripted !== undefined) return scripted
+    if (state.guildStatus !== 200)
+      return Response.json(
+        { message: 'Missing Permissions', code: 50013 },
+        { status: state.guildStatus },
+      )
+    const roles = members.get(userId)
+    if (path.includes('/roles/')) {
+      if (roles === undefined) return Response.json({ message: 'Unknown Member' }, { status: 404 })
+      roles.add(community.waitlistRoleId)
+      return new Response(null, { status: 204 })
+    }
+    // Discord ignores `roles` for someone already in the server.
+    if (roles !== undefined) return new Response(null, { status: 204 })
+    const body: { access_token: string; roles: Array<string> } = JSON.parse(String(init.body))
+    if (!live.has(body.access_token))
+      return Response.json({ message: 'Invalid OAuth2 access token' }, { status: 403 })
+    members.set(userId, new Set(body.roles))
+    return Response.json({ user: { id: userId }, roles: body.roles }, { status: 201 })
+  }
   const network: typeof fetch = async (input, init) => {
     const path = new URL(String(input)).pathname
+    // Like fetch, an aborted request never reaches Discord.
+    init?.signal?.throwIfAborted()
     calls.push({ path, init })
     if (state.revoked) return Response.json({ error: 'invalid_token' }, { status: 401 })
     if (state.status !== 200) return Response.json({}, { status: state.status })
@@ -69,10 +116,12 @@ export const discordOAuth = () => {
         access_token: access,
         refresh_token: refresh,
         token_type: 'Bearer',
-        scope: 'identify',
+        scope: state.scope,
         expires_in: 604800,
       })
     }
+    const member = memberPath.exec(path)?.[1]
+    if (member !== undefined && init?.method === 'PUT') return addMember(member, path, init)
     if (path.endsWith('/oauth2/@me')) {
       const bearer = new Headers(init?.headers).get('authorization')?.replace(/^Bearer /, '')
       if (!live.has(bearer ?? '')) return Response.json({ message: '401' }, { status: 401 })
@@ -85,7 +134,7 @@ export const discordOAuth = () => {
     }
     throw new Error(`Unexpected Discord request: ${path}`)
   }
-  return { state, calls, fetch: network }
+  return { state, calls, members, fetch: network }
 }
 
 type Relay = { fetch: (request: Request) => Promise<Response> }

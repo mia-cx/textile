@@ -173,25 +173,29 @@ const perform = (
       const scope = rateGuardScope('bot', req.operationFamily)
       yield* guard.check(scope)
 
-      // The caller's cancellation signal, when there is a caller. Passing it to
-      // @discordjs/rest aborts the in-flight HTTP request rather than abandoning it.
-      const signal = yield* requestSignal
-
-      const options: RequestData = {
-        ...(req.query === undefined ? {} : { query: req.query }),
-        ...(req.body === undefined ? {} : { body: req.body }),
-        ...(req.auditLogReason === undefined ? {} : { reason: req.auditLogReason }),
-        ...(signal === undefined ? {} : { signal }),
-        auth: false,
-        ...(req.auth === false
-          ? {}
-          : { headers: { authorization: `Bot ${Redacted.value(token)}` } }),
-      }
+      // The caller's cancellation signal, when there is a caller.
+      const callerSignal = yield* requestSignal
 
       const seen429 = { value: false }
       const result = yield* Effect.tryPromise({
-        try: () =>
-          answered429.run(seen429, () => {
+        // Cancelling the caller or interrupting this effect, such as by a timeout, aborts the
+        // request in flight, or keeps it from going out once its queue or rate-limit wait ends,
+        // rather than abandoning it to run later.
+        try: (interrupted) => {
+          const options: RequestData = {
+            ...(req.query === undefined ? {} : { query: req.query }),
+            ...(req.body === undefined ? {} : { body: req.body }),
+            ...(req.auditLogReason === undefined ? {} : { reason: req.auditLogReason }),
+            signal:
+              callerSignal === undefined
+                ? interrupted
+                : AbortSignal.any([interrupted, callerSignal]),
+            auth: false,
+            ...(req.auth === false
+              ? {}
+              : { headers: { authorization: `Bot ${Redacted.value(token)}` } }),
+          }
+          return answered429.run(seen429, () => {
             switch (req.method) {
               case 'GET':
                 return rest.get(req.route, options)
@@ -204,7 +208,8 @@ const perform = (
               case 'DELETE':
                 return rest.delete(req.route, options)
             }
-          }),
+          })
+        },
         catch: (cause) => cause,
       }).pipe(
         Effect.catch((cause) =>

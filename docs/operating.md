@@ -102,6 +102,33 @@ membership details and this restriction remain operator-side, outside Git.
 See Discord's [application](https://docs.discord.com/developers/resources/application#get-current-application)
 and [Team](https://docs.discord.com/developers/topics/teams#data-models) documentation.
 
+## Community server and waitlist
+
+The relay can add everyone who signs in to a Discord server and give them a Waitlist role.
+The role's members are the waitlist. Granting access still goes through the allowlist above.
+Set all three settings to turn this on. Partial settings or malformed IDs stop startup.
+
+| Setting | Value |
+| --- | --- |
+| `DISCORD_COMMUNITY_GUILD_ID` | The server's ID. |
+| `DISCORD_COMMUNITY_BOT_TOKEN` | The bot token of the relay's own Discord application. Keep it in a Secret. |
+| `DISCORD_COMMUNITY_WAITLIST_ROLE_ID` | The Waitlist role's ID. |
+
+Discord adds a person to a server only through the bot of the application they signed in to,
+so the bot must belong to the application named by `DISCORD_OAUTH_CLIENT_ID`. Set it up once:
+
+1. Add the application's bot to the server with the Create Instant Invite and Manage Roles
+   permissions.
+2. In the server's role list, drag the bot's role above the Waitlist role.
+
+With the settings on, login asks Discord for `identify` and `guilds.join`. After Discord's
+callback, the relay adds the person with the Waitlist role, or gives the role to someone
+already in the server. It does this for everyone, before the allowlist check. The join gets
+five seconds, rate-limit waits included. A failed or unfinished join never blocks a listed
+person's sign-in. The relay logs the failure, with the person's Discord
+user ID and Discord's error, but no credentials. A person the allowlist doesn't name goes back
+to their client with `error=access_denied`, plus `waitlist=joined` when the join worked.
+
 Public routing and Athena's forwarding units live in `mia-cx/yggdrasil-spec`.
 The public IngressRoute targets the native `discord-mcp-relay` Service.
 Read `DIRECTION.md` before changing deployment targets. The old Athena PAT/OIDC
