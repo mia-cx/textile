@@ -110,8 +110,10 @@ Today's public relay on olympus is the earlier stateless relay, still serving re
 namespace `discord-mcp`: a single-replica Deployment pinned to a tested image, its encryption key
 in `discord-mcp-crypto`, and the Discord application's ID and secret in `discord-mcp-oauth`.
 Traefik routes the configured public origin to `discord-mcp-relay`; the Discord redirect is that
-origin plus `/auth/discord/callback`. Textile staging will run separately in namespace `textile`
-with its own CloudNativePG cluster. Mia manages DNS. Routing manifests and recovery instructions
+origin plus `/auth/discord/callback`. Textile runs separately in namespace `textile` with its own
+CloudNativePG cluster. For the closed alpha it serves `textile.cx` from olympus: the website and
+the sign-in paths it needs are public, while MCP, voice, and workflow routes stay mesh-only.
+Mia manages DNS. Routing manifests and recovery instructions
 live in `mia-cx/yggdrasil-spec` under `argocd/discord-mcp/` and `hosts/athena-hephaestus/`. The
 old Athena PAT/OIDC stack remains intact but off the public route; restoring it needs an explicit
 recovery decision. `PLAN.md` describes that historical design.
